@@ -317,6 +317,141 @@ impl RunRepository {
         Ok(tc)
     }
 
+    pub async fn get_run_by_id(&self, id: &str) -> Result<Option<Run>> {
+        let run = sqlx::query_as::<_, Run>("SELECT * FROM runs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(run)
+    }
+
+    pub async fn update_run_status(
+        &self,
+        run_id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<Run> {
+        let now = now_ms();
+        let finished_at = if matches!(status, "completed" | "failed" | "cancelled") {
+            Some(now)
+        } else {
+            None
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE runs
+            SET status = ?,
+                error = ?,
+                last_heartbeat_at = ?,
+                finished_at = COALESCE(?, finished_at)
+            WHERE id = ?
+            "#,
+        )
+        .bind(status)
+        .bind(error)
+        .bind(now)
+        .bind(finished_at)
+        .bind(run_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_run_by_id(run_id)
+            .await?
+            .with_context(|| format!("Run '{run_id}' not found after update"))
+    }
+
+    pub async fn update_tool_call_result(
+        &self,
+        tool_call_id: &str,
+        status: &str,
+        result_json: Option<&str>,
+        duration_ms: i64,
+    ) -> Result<ToolCall> {
+        sqlx::query(
+            r#"
+            UPDATE tool_calls
+            SET status = ?,
+                result = ?,
+                duration_ms = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(status)
+        .bind(result_json)
+        .bind(duration_ms)
+        .bind(tool_call_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_tool_call_by_id(tool_call_id)
+            .await?
+            .with_context(|| format!("ToolCall '{tool_call_id}' not found after update"))
+    }
+
+    pub async fn list_run_events(&self, run_id: &str, after_seq: i64) -> Result<Vec<RunEvent>> {
+        let events = sqlx::query_as::<_, RunEvent>(
+            "SELECT * FROM run_events WHERE run_id = ? AND seq > ? ORDER BY seq ASC",
+        )
+        .bind(run_id)
+        .bind(after_seq)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(events)
+    }
+
+    pub async fn record_usage(
+        &self,
+        run_id: &str,
+        model_id: Option<&str>,
+        input_tokens: i64,
+        output_tokens: i64,
+        cached_tokens: i64,
+        latency_ms: i64,
+    ) -> Result<()> {
+        let id = new_id();
+        let now = now_ms();
+
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO usage_records (
+                id, run_id, model_id, input_tokens, output_tokens, cached_tokens, cost_usd, latency_ms, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 0.0, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(run_id)
+        .bind(model_id)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(cached_tokens)
+        .bind(latency_ms)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE chats
+            SET total_input_tokens = total_input_tokens + ?,
+                total_output_tokens = total_output_tokens + ?,
+                updated_at = ?
+            WHERE id = (SELECT chat_id FROM runs WHERE id = ?)
+            "#,
+        )
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(now)
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Atomically records a user decision (`approved` or `denied`) on a `pending` approval,
     /// optionally creates a `command_rules` entry when `remember_pattern` is provided,
     /// updates `tool_calls.status` (`denied` if rejected), and writes an `audit_logs` record.
