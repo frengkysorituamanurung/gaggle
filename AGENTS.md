@@ -2,33 +2,58 @@
 
 These instructions are automatically loaded by OpenCode in every session within the **Gaggle** repository.
 
-## Mandatory Skill Loading Router (Execute Before Any Action)
+## 1. Mandatory Skill Routing & Discovery
 
-Before planning, reading, writing, or modifying any code in response to a user prompt, you **MUST** match the user's request against the routing table below and invoke the `skill` tool with the corresponding skill `id` first:
+Before planning, designing, or modifying any code in response to a user prompt, you **MUST** load the relevant canonical skill(s) from `.opencode/skills/<skill-id>/SKILL.md` using the `skill` tool:
 
-| User Prompt Topic / Crate Target | Required Skill ID to Call via `skill` Tool |
+| Domain / Task Area | Canonical Skill IDs (`.opencode/skills/<id>/SKILL.md`) |
 | :--- | :--- |
-| SQLite tables, SQL migrations, `sqlx` queries, indexes, FTS5 (`memories_fts`, `messages_fts`), model structs, or repositories in `crates/gaggle-db` | `gaggle-db-schema` |
-| Agent loop, durable runs (`runs`, `run_events`, `run_checkpoints`), 7-step `PermissionEngine`, `command_rules`, `approvals`, Code Mode, compaction (`crates/gaggle-core`), built-in tools (`crates/gaggle-tools`), MCP registry (`crates/gaggle-mcp`), recipes & cron schedules (`crates/gaggle-recipes`), or HTTP/SSE endpoints (`crates/gaggle-server`, `crates/gaggle-cli`, `crates/gaggle-ui`) | `gaggle-architecture` |
-| Tasks that span both database repositories and core/server/tool logic | Load **both** `gaggle-db-schema` and `gaggle-architecture` in parallel |
-| Security reviews, vulnerability checks, keychain `secret_ref`, sandboxing, or permission bypass audits | `security-audit` (and `gaggle-architecture`) |
+| Requirements, scope, MVP boundaries, prioritization, user stories | `product-manager`, `research-thinking` |
+| System boundaries, ADRs, durable execution, cross-crate design | `architecture`, `gaggle-architecture` |
+| Rust implementation, error handling, async concurrency, traits | `rust-engineering` |
+| Threat modeling, filesystem/path validation, shell safety, secrets, approvals | `security` |
+| SQLite schema, `sqlx` migrations, transactions, FTS5, recovery | `database-sqlite`, `gaggle-db-schema` |
+| Agent loop, tool-call lifecycle, streaming, cancellation, checkpoints | `agent-runtime`, `gaggle-architecture` |
+| Model provider adapters, auth, streaming normalization, retries | `provider-integrations` |
+| Desktop/Web UI layout, design system tokens, accessibility, UX states | `ui-ux` |
+| Built-in tools, MCP client/extensions, custom skills, recipes | `skills-and-extensions` |
+| Git status, diffs, patches, worktree lifecycle, protecting user work | `git-workflows` |
+| Startup latency, memory bounds, macOS & Linux platform compatibility | `performance-cross-platform` |
+| Structured `tracing`, redaction, metrics, actionable errors, diagnostics | `observability-reliability` |
+| Unit, integration, E2E, security, and fault-injection testing | `testing-qa` |
+| Documentation, ADRs, contributor guides, release & upgrade notes | `documentation-open-source` |
 
-**Rule**: Never skip calling the `skill` tool when a prompt touches any of the areas above, unless that skill is already loaded in the current session context.
+**Rule**: Do not skip loading the applicable skill(s) via the `skill` tool when working in its domain. Never invent skill contents.
 
 ---
 
-## Workspace Architecture (`gaggle`)
-- `crates/gaggle-db`: Global SQLite connection (`gaggle.db`), PRAGMA configuration (`WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, `auto_vacuum=INCREMENTAL`), `sqlx` migrations, 37 ERD table models, FTS5 virtual tables (`memories_fts`, `messages_fts`), and domain repositories.
-- `crates/gaggle-core`: Core agent loop logic, durable run recovery (`RunEngine`), 7-step `PermissionEngine`, context compaction, and Code Mode sandbox configuration.
-- `crates/gaggle-tools`: Built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) and unified diff generation (`similar`).
-- `crates/gaggle-mcp`: MCP client integration and extension registry (enforcing the recommended `<= 25` active tools limit per chat).
-- `crates/gaggle-recipes`: Recipe parser, required vs. optional parameter validation, `minijinja` template rendering, and `croner` scheduler.
-- `crates/gaggle-server`: Axum HTTP/SSE server, REST API endpoints, chat JSON export/import, and Web UI serving.
-- `crates/gaggle-cli`: The `gaggle` command-line binary.
-- `crates/gaggle-ui`: Web UI shell for Gaggle.
+## 2. Workspace Architecture (`gaggle`)
 
-## Core Invariants
-1. **Database Conventions**: UUIDv7 as `TEXT`, Unix epoch milliseconds as `INTEGER`, `CHECK(json_valid(...))`, `CHECK(col IN (...))`, and `secret_ref` for OS Keychain secrets (never store plaintext credentials in SQLite).
-2. **Permission Decision Order**: Strictly preserve `chat_only` -> `command_rules` deny -> `full` -> `tool_permissions` -> `is_read_only` -> `smart` `tool_risk_cache` -> `approvals`.
-3. **Language Policy**: All code, comments, commit messages, documentation, and skills in this repository must be written in English.
-4. **Verification**: Always run `cargo test --workspace` after modifying any Rust or SQL files.
+- `crates/gaggle-db`: Global SQLite persistence (`gaggle.db`), PRAGMAs (`WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, `auto_vacuum=INCREMENTAL`), versioned `sqlx` migrations, 37 ERD models, FTS5 virtual tables (`memories_fts`, `messages_fts`), and domain repositories. Must not depend on other Gaggle crates.
+- `crates/gaggle-core`: Domain types, 7-step `PermissionEngine`, bounded agent runtime & durable run recovery (`RunEngine`), context compaction, and Code Mode configuration.
+- `crates/gaggle-tools`: Controlled filesystem, shell, memory, web, browser, and diff (`similar`) tools.
+- `crates/gaggle-mcp`: Model Context Protocol (MCP) integration, extension registry, and active tool limit guard (`<= 25` tools per chat).
+- `crates/gaggle-recipes`: Reusable recipe parser, parameter validation, `minijinja` templates, and `croner` scheduler.
+- `crates/gaggle-server`: Local `axum` HTTP/SSE API, orchestration, chat JSON export/import, and UI hosting.
+- `crates/gaggle-cli`: Command-line interface (`gaggle`) and diagnostics.
+- `crates/gaggle-ui`: User interface and design system components.
+
+---
+
+## 3. Non-Negotiable Engineering & Security Constraints
+
+1. **Security & User Control First**:
+   - The LLM is never an authorization authority. Every tool call must be validated server-side immediately before execution.
+   - Default permission mode is `ask`. `command_rules` with `action = 'deny'` are authoritative even in `full` mode.
+   - Restrict filesystem operations to canonicalized, validated project roots (defend against `..` traversal and symlink escapes).
+   - Never store plaintext API keys or OAuth tokens in SQLite, config files, or logs; store only `secret_ref` identifiers pointing to the OS credential store.
+2. **Database Integrity**:
+   - Use UUIDv7 (`TEXT`) for primary keys and Unix epoch milliseconds (`INTEGER`) for timestamps.
+   - Enforce `CHECK(json_valid(...))` on JSON columns and `CHECK(col IN (...))` on enum/boolean columns.
+   - Keep transactions short and never hold SQLite locks across network or model calls.
+3. **Quality Gates & Language Policy**:
+   - All code, comments, documentation, commit messages, and skills must be written in English.
+   - Before reporting any task complete, run and report actual results for:
+     - `cargo fmt --all -- --check`
+     - `cargo clippy --workspace --all-targets -- -D warnings`
+     - `cargo test --workspace`

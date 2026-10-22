@@ -51,6 +51,7 @@ pub fn now_ms() -> i64 {
 /// - `synchronous = NORMAL`
 /// - `busy_timeout = 5000`
 /// - `auto_vacuum = INCREMENTAL`
+///
 /// and runs `sqlx::migrate!("./migrations")`.
 pub async fn connect_db(db_path: &Path) -> Result<SqlitePool> {
     if let Some(parent) = db_path.parent() {
@@ -70,7 +71,12 @@ pub async fn connect_db(db_path: &Path) -> Result<SqlitePool> {
         .max_connections(10)
         .connect_with(options)
         .await
-        .with_context(|| format!("Failed to connect to SQLite database at {}", db_path.display()))?;
+        .with_context(|| {
+            format!(
+                "Failed to connect to SQLite database at {}",
+                db_path.display()
+            )
+        })?;
 
     sqlx::migrate!("./migrations")
         .run(&pool)

@@ -12,7 +12,7 @@ pub struct Project {
     pub root_path: String,
     pub vcs_kind: String, // "git" | "none"
     pub default_branch: Option<String>,
-    pub default_mode: String, // "local" | "worktree" | "readonly"
+    pub default_mode: String,   // "local" | "worktree" | "readonly"
     pub default_access: String, // "ask" | "full"
     pub default_model_id: Option<String>,
     pub archived_at: Option<i64>,
@@ -154,8 +154,8 @@ pub struct Chat {
     pub chat_type: String, // "user" | "subagent" | "scheduled" | "hidden" | "terminal"
     pub title: String,
     pub title_user_set: i64,
-    pub mode: String,            // "local" | "worktree" | "readonly"
-    pub permission_mode: String, // "full" | "ask" | "smart" | "chat_only"
+    pub mode: String,                  // "local" | "worktree" | "readonly"
+    pub permission_mode: String,       // "full" | "ask" | "smart" | "chat_only"
     pub recipe_values: Option<String>, // JSON
     pub compact_threshold: f64,
     pub system_prompt_override: Option<String>,

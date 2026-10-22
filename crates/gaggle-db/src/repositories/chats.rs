@@ -51,7 +51,9 @@ impl ChatRepository {
         .execute(&self.pool)
         .await?;
 
-        self.get_by_id(&id).await?.ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
+        self.get_by_id(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Option<Chat>> {
@@ -83,12 +85,11 @@ impl ChatRepository {
         let part_id = new_id();
         let now = now_ms();
 
-        let next_seq: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE chat_id = ?",
-        )
-        .bind(chat_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let next_seq: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE chat_id = ?")
+                .bind(chat_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         let mut tx = self.pool.begin().await?;
 

@@ -14,7 +14,12 @@ impl RunRepository {
         Self { pool }
     }
 
-    pub async fn create(&self, chat_id: &str, trigger_message_id: Option<&str>, model_id: Option<&str>) -> Result<Run> {
+    pub async fn create(
+        &self,
+        chat_id: &str,
+        trigger_message_id: Option<&str>,
+        model_id: Option<&str>,
+    ) -> Result<Run> {
         let id = new_id();
         let now = now_ms();
 
@@ -40,16 +45,22 @@ impl RunRepository {
         Ok(run)
     }
 
-    pub async fn emit_event(&self, run_id: &str, kind: &str, payload_json: &str) -> Result<RunEvent> {
+    pub async fn emit_event(
+        &self,
+        run_id: &str,
+        kind: &str,
+        payload_json: &str,
+    ) -> Result<RunEvent> {
         let id = new_id();
         let now = now_ms();
 
-        let next_seq: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id = ?",
-        )
-        .bind(run_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let mut tx = self.pool.begin().await?;
+
+        let next_seq: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id = ?")
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
 
         sqlx::query(
             r#"
@@ -63,8 +74,10 @@ impl RunRepository {
         .bind(kind)
         .bind(payload_json)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         let ev = sqlx::query_as::<_, RunEvent>("SELECT * FROM run_events WHERE id = ?")
             .bind(&id)
@@ -73,7 +86,12 @@ impl RunRepository {
         Ok(ev)
     }
 
-    pub async fn save_checkpoint(&self, run_id: &str, step_index: i64, state_json: &str) -> Result<RunCheckpoint> {
+    pub async fn save_checkpoint(
+        &self,
+        run_id: &str,
+        step_index: i64,
+        state_json: &str,
+    ) -> Result<RunCheckpoint> {
         let id = new_id();
         let now = now_ms();
 
@@ -118,6 +136,90 @@ impl RunRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Safely transitions an interrupted run (`running` or `waiting_approval`) to `paused`,
+    /// increments `resume_count`, expires any stale `pending` approvals for that run, and
+    /// marks `running` or `awaiting_approval` tool calls as `error` with an interrupted reason
+    /// so non-idempotent side effects are never re-executed automatically on crash recovery.
+    pub async fn recover_interrupted_run(&self, run_id: &str) -> Result<Run> {
+        let now = now_ms();
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            UPDATE approvals
+            SET status = 'expired', decided_at = ?
+            WHERE status = 'pending'
+              AND tool_call_id IN (SELECT id FROM tool_calls WHERE run_id = ?)
+            "#,
+        )
+        .bind(now)
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE tool_calls
+            SET status = 'error',
+                result = '{"error":"interrupted_by_restart","recoverable":true}'
+            WHERE run_id = ?
+              AND status IN ('running', 'awaiting_approval')
+            "#,
+        )
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE runs
+            SET status = 'paused',
+                resume_count = resume_count + 1,
+                last_heartbeat_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(now)
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+
+        let event_id = new_id();
+        let next_seq: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id = ?")
+                .bind(run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+
+        let payload = serde_json::json!({
+            "new_status": "paused",
+            "reason": "server_restart_recovery"
+        })
+        .to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO run_events (id, run_id, seq, kind, payload, created_at)
+            VALUES (?, ?, ?, 'run.recovered', ?, ?)
+            "#,
+        )
+        .bind(&event_id)
+        .bind(run_id)
+        .bind(next_seq)
+        .bind(&payload)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let updated = sqlx::query_as::<_, Run>("SELECT * FROM runs WHERE id = ?")
+            .bind(run_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(updated)
     }
 
     pub async fn record_tool_call(

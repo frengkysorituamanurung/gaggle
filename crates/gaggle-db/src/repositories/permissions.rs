@@ -83,10 +83,11 @@ impl PermissionRepository {
         .execute(&self.pool)
         .await?;
 
-        let perm = sqlx::query_as::<_, ToolPermission>("SELECT * FROM tool_permissions WHERE id = ?")
-            .bind(&id)
-            .fetch_one(&self.pool)
-            .await?;
+        let perm =
+            sqlx::query_as::<_, ToolPermission>("SELECT * FROM tool_permissions WHERE id = ?")
+                .bind(&id)
+                .fetch_one(&self.pool)
+                .await?;
         Ok(perm)
     }
 
@@ -95,17 +96,16 @@ impl PermissionRepository {
         project_id: Option<&str>,
         extension_tool_id: &str,
     ) -> Result<Option<ToolPermission>> {
-        if let Some(pid) = project_id {
-            if let Some(project_perm) = sqlx::query_as::<_, ToolPermission>(
+        if let Some(pid) = project_id
+            && let Some(project_perm) = sqlx::query_as::<_, ToolPermission>(
                 "SELECT * FROM tool_permissions WHERE project_id = ? AND extension_tool_id = ?",
             )
             .bind(pid)
             .bind(extension_tool_id)
             .fetch_optional(&self.pool)
             .await?
-            {
-                return Ok(Some(project_perm));
-            }
+        {
+            return Ok(Some(project_perm));
         }
 
         let global_perm = sqlx::query_as::<_, ToolPermission>(

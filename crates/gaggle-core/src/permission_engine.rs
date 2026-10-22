@@ -67,7 +67,10 @@ impl PermissionEngine {
         // 2. command_rules (shell): deny always applies, even in `full` mode
         let mut matched_shell_rule: Option<CommandRule> = None;
         if let Some(cmd) = &ctx.shell_command {
-            let rules = self.repo.list_command_rules(ctx.project_id.as_deref()).await?;
+            let rules = self
+                .repo
+                .list_command_rules(ctx.project_id.as_deref())
+                .await?;
             for rule in rules {
                 if Self::matches_command_rule(&rule, cmd) {
                     if rule.action == "deny" {
@@ -110,7 +113,10 @@ impl PermissionEngine {
             match perm.level.as_str() {
                 "never_allow" => {
                     return Ok(PermissionDecision::Deny {
-                        reason: format!("Tool '{}' is set to never_allow", ctx.extension_tool.tool_name),
+                        reason: format!(
+                            "Tool '{}' is set to never_allow",
+                            ctx.extension_tool.tool_name
+                        ),
                     });
                 }
                 "always_allow" => return Ok(PermissionDecision::Allow),
@@ -136,10 +142,9 @@ impl PermissionEngine {
                 .repo
                 .get_risk_cache(&ctx.extension_tool.tool_name, &fp)
                 .await?
+                && cached.is_read_only == 1
             {
-                if cached.is_read_only == 1 {
-                    return Ok(PermissionDecision::Allow);
-                }
+                return Ok(PermissionDecision::Allow);
             }
         }
 

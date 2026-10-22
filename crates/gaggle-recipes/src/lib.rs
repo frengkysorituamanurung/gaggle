@@ -20,9 +20,9 @@ pub fn resolve_recipe_parameters(
                     spec.name
                 );
             }
-            let val = provided.get(&spec.name).with_context(|| {
-                format!("Missing required recipe parameter '{}'", spec.name)
-            })?;
+            let val = provided
+                .get(&spec.name)
+                .with_context(|| format!("Missing required recipe parameter '{}'", spec.name))?;
             resolved.insert(spec.name.clone(), val.clone());
         } else {
             let default_val = spec.default_value.as_ref().with_context(|| {
