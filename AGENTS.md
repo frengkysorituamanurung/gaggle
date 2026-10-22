@@ -1,18 +1,34 @@
 # Gaggle Project Instructions
 
-Panduan ini otomatis dimuat oleh OpenCode pada setiap sesi di repositori **Gaggle**.
+These instructions are automatically loaded by OpenCode in every session within the **Gaggle** repository.
 
-## Arsitektur Workspace (`gaggle`)
-- `crates/gaggle-db`: Koneksi SQLite global (`gaggle.db`), PRAGMA (`WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, `auto_vacuum=INCREMENTAL`), migrasi `sqlx`, 37 model tabel ERD, FTS5 (`memories_fts`, `messages_fts`), dan repository per domain.
-- `crates/gaggle-core`: Logika inti agent, pemulihan durable run (`RunEngine`), 7-step `PermissionEngine`, context compaction, dan konfigurasi sandbox Code Mode.
-- `crates/gaggle-tools`: Extension bawaan (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) dan diff generator (`similar`).
-- `crates/gaggle-mcp`: Klien MCP & extension registry (menjaga batas rekomendasi <= 25 active tools per chat).
-- `crates/gaggle-recipes`: Parser recipe, validasi parameter wajib/opsional, render template `minijinja`, dan scheduler (`croner`).
-- `crates/gaggle-server`: Server HTTP/SSE berbasis `axum`, REST API, ekspor/impor chat JSON, dan penyajian UI.
-- `crates/gaggle-cli`: Binary CLI `gaggle`.
-- `crates/gaggle-ui`: Shell UI web Gaggle.
+## Mandatory Skill Loading Router (Execute Before Any Action)
 
-## Aturan Wajib Sebelum Mengubah Kode
-1. **Perubahan Database / SQL / Repository**: Wajib memuat skill `@gaggle-db-schema` atau mengikuti aturan konvensi di `docs/ERD.md` (UUIDv7 `TEXT`, waktu epoch ms `INTEGER`, `CHECK(json_valid(...))`, `CHECK(col IN (...))`, dan `secret_ref` untuk rahasia di OS Keychain).
-2. **Perubahan Permission / Tool Execution / Durable Run**: Wajib memuat skill `@gaggle-architecture` agar urutan 7 langkah keputusan izin (`chat_only` -> `command_rules` deny -> `full` -> `tool_permissions` -> `is_read_only` -> `smart` `tool_risk_cache` -> `approvals`) tetap terjaga.
-3. **Verifikasi**: Selalu jalankan `cargo test --workspace` setelah mengubah kode Rust atau SQL.
+Before planning, reading, writing, or modifying any code in response to a user prompt, you **MUST** match the user's request against the routing table below and invoke the `skill` tool with the corresponding skill `id` first:
+
+| User Prompt Topic / Crate Target | Required Skill ID to Call via `skill` Tool |
+| :--- | :--- |
+| SQLite tables, SQL migrations, `sqlx` queries, indexes, FTS5 (`memories_fts`, `messages_fts`), model structs, or repositories in `crates/gaggle-db` | `gaggle-db-schema` |
+| Agent loop, durable runs (`runs`, `run_events`, `run_checkpoints`), 7-step `PermissionEngine`, `command_rules`, `approvals`, Code Mode, compaction (`crates/gaggle-core`), built-in tools (`crates/gaggle-tools`), MCP registry (`crates/gaggle-mcp`), recipes & cron schedules (`crates/gaggle-recipes`), or HTTP/SSE endpoints (`crates/gaggle-server`, `crates/gaggle-cli`, `crates/gaggle-ui`) | `gaggle-architecture` |
+| Tasks that span both database repositories and core/server/tool logic | Load **both** `gaggle-db-schema` and `gaggle-architecture` in parallel |
+| Security reviews, vulnerability checks, keychain `secret_ref`, sandboxing, or permission bypass audits | `security-audit` (and `gaggle-architecture`) |
+
+**Rule**: Never skip calling the `skill` tool when a prompt touches any of the areas above, unless that skill is already loaded in the current session context.
+
+---
+
+## Workspace Architecture (`gaggle`)
+- `crates/gaggle-db`: Global SQLite connection (`gaggle.db`), PRAGMA configuration (`WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, `auto_vacuum=INCREMENTAL`), `sqlx` migrations, 37 ERD table models, FTS5 virtual tables (`memories_fts`, `messages_fts`), and domain repositories.
+- `crates/gaggle-core`: Core agent loop logic, durable run recovery (`RunEngine`), 7-step `PermissionEngine`, context compaction, and Code Mode sandbox configuration.
+- `crates/gaggle-tools`: Built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) and unified diff generation (`similar`).
+- `crates/gaggle-mcp`: MCP client integration and extension registry (enforcing the recommended `<= 25` active tools limit per chat).
+- `crates/gaggle-recipes`: Recipe parser, required vs. optional parameter validation, `minijinja` template rendering, and `croner` scheduler.
+- `crates/gaggle-server`: Axum HTTP/SSE server, REST API endpoints, chat JSON export/import, and Web UI serving.
+- `crates/gaggle-cli`: The `gaggle` command-line binary.
+- `crates/gaggle-ui`: Web UI shell for Gaggle.
+
+## Core Invariants
+1. **Database Conventions**: UUIDv7 as `TEXT`, Unix epoch milliseconds as `INTEGER`, `CHECK(json_valid(...))`, `CHECK(col IN (...))`, and `secret_ref` for OS Keychain secrets (never store plaintext credentials in SQLite).
+2. **Permission Decision Order**: Strictly preserve `chat_only` -> `command_rules` deny -> `full` -> `tool_permissions` -> `is_read_only` -> `smart` `tool_risk_cache` -> `approvals`.
+3. **Language Policy**: All code, comments, commit messages, documentation, and skills in this repository must be written in English.
+4. **Verification**: Always run `cargo test --workspace` after modifying any Rust or SQL files.
