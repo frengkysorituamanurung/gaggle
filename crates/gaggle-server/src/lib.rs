@@ -18,17 +18,19 @@ use gaggle_core::{
 };
 use gaggle_db::{
     default_db_path,
-    models::{Approval, Chat, Model, Project, Provider, Run},
+    models::{Approval, Chat, Model, Project, Provider, Run, Worktree},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         projects::ProjectRepository,
         providers::ProviderRepository,
         runs::RunRepository,
+        worktrees::WorktreeRepository,
     },
 };
 use gaggle_tools::{
     BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
-    GitWorkspaceStatus, fs_list, git_diff, git_status, register_builtin_extensions,
+    GitWorkspaceStatus, fs_list, git_diff, git_status, git_worktree_create, git_worktree_discard,
+    git_worktree_merge, register_builtin_extensions,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -112,6 +114,12 @@ pub struct RunEventsQuery {
     pub after_seq: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct WorktreeActionRequest {
+    pub confirm: bool,
+    pub decided_by_device: Option<String>,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
@@ -121,6 +129,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/{id}/files", get(list_project_files))
         .route("/api/projects/{id}/git-status", get(project_git_status))
         .route("/api/projects/{id}/diff", get(project_git_diff))
+        .route("/api/projects/{id}/worktrees", get(list_project_worktrees))
         .route("/api/providers", get(list_providers).post(create_provider))
         .route(
             "/api/providers/{id}/models",
@@ -129,6 +138,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
         .route("/api/chats/{id}/export", get(export_chat))
+        .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
+        .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
+        .route("/api/worktrees/{id}/merge", post(merge_worktree))
+        .route("/api/worktrees/{id}/discard", post(discard_worktree))
         .route("/api/runs/{id}/cancel", post(cancel_run))
         .route("/api/runs/{id}/events", get(stream_run_events))
         .route("/api/approvals/pending", get(list_pending_approvals))
@@ -213,13 +226,61 @@ async fn create_chat(
     State(state): State<AppState>,
     Json(req): Json<CreateChatRequest>,
 ) -> Result<(StatusCode, Json<Chat>), (StatusCode, String)> {
-    let repo = ChatRepository::new(state.pool);
+    let chat_repo = ChatRepository::new(state.pool.clone());
     let mode = req.mode.as_deref().unwrap_or("local");
     let permission_mode = req.permission_mode.as_deref().unwrap_or("ask");
-    let chat = repo
+    let chat = chat_repo
         .create(&req.project_id, &req.title, "user", mode, permission_mode)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    if mode == "worktree" {
+        let proj_repo = ProjectRepository::new(state.pool.clone());
+        let project = proj_repo
+            .get_by_id(&req.project_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("Project {} not found", req.project_id),
+                )
+            })?;
+
+        let policy = WorkspacePathPolicy::new(&project.root_path)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        let vcs_kind = project.vcs_kind.clone();
+        let chat_id_clone = chat.id.clone();
+
+        let created_wt = tokio::task::spawn_blocking(move || {
+            git_worktree_create(&policy, &vcs_kind, &chat_id_clone)
+        })
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+        let wt_repo = WorktreeRepository::new(state.pool);
+        wt_repo
+            .create_and_attach_to_chat(
+                &project.id,
+                &chat.id,
+                &created_wt.path,
+                &created_wt.branch,
+                &created_wt.base_ref,
+                &created_wt.base_commit,
+            )
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        let updated_chat = chat_repo
+            .get_by_id(&chat.id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat {} not found", chat.id)))?;
+
+        return Ok((StatusCode::CREATED, Json(updated_chat)));
+    }
+
     Ok((StatusCode::CREATED, Json(chat)))
 }
 
@@ -535,4 +596,124 @@ async fn stream_run_events(
         .collect();
 
     Ok(Sse::new(tokio_stream::iter(sse_items)))
+}
+
+async fn list_project_worktrees(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<Vec<Worktree>>, (StatusCode, String)> {
+    let repo = WorktreeRepository::new(state.pool);
+    let list = repo
+        .list_by_project(&project_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(list))
+}
+
+async fn resolve_worktree_policy(
+    pool: SqlitePool,
+    worktree_id: &str,
+) -> Result<WorkspacePathPolicy, (StatusCode, String)> {
+    let repo = WorktreeRepository::new(pool);
+    let wt = repo
+        .get_by_id(worktree_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Worktree {worktree_id} not found"),
+            )
+        })?;
+
+    WorkspacePathPolicy::new(&wt.path).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+async fn worktree_git_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<GitWorkspaceStatus>, (StatusCode, String)> {
+    let policy = resolve_worktree_policy(state.pool, &id).await?;
+    let status = tokio::task::spawn_blocking(move || git_status(&policy))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(status))
+}
+
+async fn worktree_git_diff(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(query): Query<ProjectPathQuery>,
+) -> Result<Json<GitDiffOutput>, (StatusCode, String)> {
+    let policy = resolve_worktree_policy(state.pool, &id).await?;
+    let diff = tokio::task::spawn_blocking(move || {
+        git_diff(&policy, query.path.as_deref(), DEFAULT_MAX_DIFF_BYTES)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(diff))
+}
+
+async fn merge_worktree(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<WorktreeActionRequest>,
+) -> Result<Json<Worktree>, (StatusCode, String)> {
+    let wt_repo = WorktreeRepository::new(state.pool.clone());
+    let wt = wt_repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Worktree {id} not found")))?;
+
+    let policy = resolve_project_policy(state.pool, &wt.project_id).await?;
+    let wt_path = wt.path.clone();
+    let wt_branch = wt.branch.clone();
+    let confirm = req.confirm;
+
+    tokio::task::spawn_blocking(move || git_worktree_merge(&policy, &wt_path, &wt_branch, confirm))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let updated = wt_repo
+        .transition_status(&id, "merged", req.decided_by_device.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(updated))
+}
+
+async fn discard_worktree(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<WorktreeActionRequest>,
+) -> Result<Json<Worktree>, (StatusCode, String)> {
+    let wt_repo = WorktreeRepository::new(state.pool.clone());
+    let wt = wt_repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Worktree {id} not found")))?;
+
+    let policy = resolve_project_policy(state.pool, &wt.project_id).await?;
+    let wt_path = wt.path.clone();
+    let wt_branch = wt.branch.clone();
+    let confirm = req.confirm;
+
+    tokio::task::spawn_blocking(move || {
+        git_worktree_discard(&policy, &wt_path, &wt_branch, confirm)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let updated = wt_repo
+        .transition_status(&id, "discarded", req.decided_by_device.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(updated))
 }
