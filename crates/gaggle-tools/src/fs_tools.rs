@@ -1,5 +1,7 @@
+use crate::compute_unified_diff;
 use gaggle_core::{WorkspacePathError, WorkspacePathPolicy};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use thiserror::Error;
 
@@ -37,6 +39,9 @@ pub enum FsToolError {
     #[error("Search query must not be empty")]
     EmptySearchQuery,
 
+    #[error("Write operations are forbidden in readonly workspace mode")]
+    ReadOnlyMode,
+
     #[error("Filesystem I/O error on '{path}': {reason}")]
     Io { path: String, reason: String },
 }
@@ -60,6 +65,17 @@ pub struct FsSearchMatch {
     pub relative_path: String,
     pub line_number: usize,
     pub line_preview: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FsWriteOutput {
+    pub relative_path: String,
+    pub change_type: String, // "add" | "modify"
+    pub additions: i64,
+    pub deletions: i64,
+    pub patch: String,
+    pub before_sha: Option<String>,
+    pub after_sha: String,
 }
 
 /// Lists immediate entries inside a workspace directory (relative to the workspace root).
@@ -264,4 +280,89 @@ pub fn fs_search(
     }
 
     Ok(matches)
+}
+
+/// Writes UTF-8 content to a file inside the authorized workspace, enforcing `WorkspacePathPolicy`
+/// and computing the unified diff, line additions/deletions, and SHA-256 digests for `file_changes`.
+pub fn fs_write(
+    policy: &WorkspacePathPolicy,
+    workspace_mode: &str,
+    candidate_path: impl AsRef<Path>,
+    new_content: &str,
+) -> Result<FsWriteOutput, FsToolError> {
+    if workspace_mode == "readonly" {
+        return Err(FsToolError::ReadOnlyMode);
+    }
+
+    let raw_display = candidate_path.as_ref().display().to_string();
+    let resolved = policy.resolve_for_write(candidate_path)?;
+
+    let (change_type, before_content, before_sha) = if resolved.exists() {
+        let existing_bytes = std::fs::read(&resolved).map_err(|e| FsToolError::Io {
+            path: raw_display.clone(),
+            reason: e.to_string(),
+        })?;
+        let existing_sha = sha256_hex(&existing_bytes);
+        let existing_str =
+            String::from_utf8(existing_bytes).map_err(|_| FsToolError::BinaryFileRejected {
+                path: raw_display.clone(),
+            })?;
+        ("modify".to_string(), existing_str, Some(existing_sha))
+    } else {
+        ("add".to_string(), String::new(), None)
+    };
+
+    if let Some(parent) = resolved.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| FsToolError::Io {
+            path: parent.display().to_string(),
+            reason: e.to_string(),
+        })?;
+    }
+
+    // Re-validate immediately prior to writing to guard against TOCTOU symlink swaps
+    let verified_target = policy.resolve_for_write(&resolved)?;
+    std::fs::write(&verified_target, new_content.as_bytes()).map_err(|e| FsToolError::Io {
+        path: raw_display,
+        reason: e.to_string(),
+    })?;
+
+    let relative_path = verified_target
+        .strip_prefix(policy.canonical_root())
+        .unwrap_or(&verified_target)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let patch = compute_unified_diff(&relative_path, &before_content, new_content);
+    let (additions, deletions) = count_diff_lines(&before_content, new_content);
+    let after_sha = sha256_hex(new_content.as_bytes());
+
+    Ok(FsWriteOutput {
+        relative_path,
+        change_type,
+        additions,
+        deletions,
+        patch,
+        before_sha,
+        after_sha,
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn count_diff_lines(before: &str, after: &str) -> (i64, i64) {
+    let diff = similar::TextDiff::from_lines(before, after);
+    let mut additions = 0i64;
+    let mut deletions = 0i64;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            similar::ChangeTag::Insert => additions += 1,
+            similar::ChangeTag::Delete => deletions += 1,
+            similar::ChangeTag::Equal => {}
+        }
+    }
+    (additions, deletions)
 }

@@ -1,0 +1,55 @@
+name: CI Quality Gates
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+  push:
+    branches:
+      - main
+      - development
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  quality-gates:
+    name: Format, Clippy & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify Rust and Cargo versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Check formatting (cargo fmt)
+        run: cargo fmt --all -- --check
+
+      - name: Lint workspace (cargo clippy)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run workspace test suite (cargo test)
+        run: cargo test --workspace
