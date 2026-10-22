@@ -6,13 +6,17 @@ use axum::{
     response::Html,
     routing::{get, post},
 };
-use gaggle_core::{DiagnosticReport, RunEngine, WorkspacePathPolicy, collect_diagnostics};
+use gaggle_core::{
+    CredentialStore, DiagnosticReport, InMemoryCredentialStore, RunEngine, SecretString,
+    WorkspacePathPolicy, collect_diagnostics, validate_provider_base_url,
+};
 use gaggle_db::{
     default_db_path,
-    models::{Approval, Chat, Project},
+    models::{Approval, Chat, Model, Project, Provider},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         projects::ProjectRepository,
+        providers::ProviderRepository,
         runs::RunRepository,
     },
 };
@@ -20,9 +24,9 @@ use gaggle_tools::{
     DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput, GitWorkspaceStatus,
     fs_list, git_diff, git_status, register_builtin_extensions,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -30,6 +34,7 @@ use tracing::info;
 pub struct AppState {
     pub pool: SqlitePool,
     pub db_path: PathBuf,
+    pub credential_store: Arc<dyn CredentialStore>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +66,34 @@ pub struct DecideApprovalRequest {
     pub remember_match_kind: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateProviderRequest {
+    pub kind: String,
+    pub name: String,
+    pub base_url: Option<String>,
+    pub auth_kind: String,
+    pub secret_ref: Option<String>,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProviderStatusResponse {
+    pub provider: Provider,
+    pub has_configured_secret: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateModelRequest {
+    pub model_key: String,
+    pub display_name: String,
+    pub context_window: i64,
+    pub supports_tools: Option<bool>,
+    pub supports_vision: Option<bool>,
+    pub supports_reasoning: Option<bool>,
+    pub price_in_per_mtok: Option<f64>,
+    pub price_out_per_mtok: Option<f64>,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
@@ -70,6 +103,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/{id}/files", get(list_project_files))
         .route("/api/projects/{id}/git-status", get(project_git_status))
         .route("/api/projects/{id}/diff", get(project_git_diff))
+        .route("/api/providers", get(list_providers).post(create_provider))
+        .route(
+            "/api/providers/{id}/models",
+            get(list_provider_models).post(create_provider_model),
+        )
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/approvals/pending", get(list_pending_approvals))
@@ -86,7 +124,12 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
         info!(count = recovered.len(), "Recovered durable runs on startup");
     }
     let db_path = default_db_path().unwrap_or_else(|_| PathBuf::from(":memory:"));
-    Ok(AppState { pool, db_path })
+    let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
+    Ok(AppState {
+        pool,
+        db_path,
+        credential_store,
+    })
 }
 
 pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
@@ -269,4 +312,112 @@ async fn decide_approval(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     Ok(Json(updated))
+}
+
+async fn list_providers(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ProviderStatusResponse>>, (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool);
+    let providers = repo
+        .list_providers()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let statuses = providers
+        .into_iter()
+        .map(|p| {
+            let has_configured_secret = p
+                .secret_ref
+                .as_deref()
+                .is_some_and(|key| state.credential_store.has_secret(key));
+            ProviderStatusResponse {
+                provider: p,
+                has_configured_secret,
+            }
+        })
+        .collect();
+
+    Ok(Json(statuses))
+}
+
+async fn create_provider(
+    State(state): State<AppState>,
+    Json(req): Json<CreateProviderRequest>,
+) -> Result<(StatusCode, Json<ProviderStatusResponse>), (StatusCode, String)> {
+    let validated_url = match &req.base_url {
+        Some(url) => Some(
+            validate_provider_base_url(url)
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
+        ),
+        None => None,
+    };
+
+    if let (Some(secret_ref), Some(raw_key)) = (&req.secret_ref, &req.api_key) {
+        let secret =
+            SecretString::new(raw_key).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        state
+            .credential_store
+            .set_secret(secret_ref, secret)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    let repo = ProviderRepository::new(state.pool);
+    let provider = repo
+        .create_provider(
+            &req.kind,
+            &req.name,
+            validated_url.as_deref(),
+            &req.auth_kind,
+            req.secret_ref.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let has_configured_secret = provider
+        .secret_ref
+        .as_deref()
+        .is_some_and(|key| state.credential_store.has_secret(key));
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ProviderStatusResponse {
+            provider,
+            has_configured_secret,
+        }),
+    ))
+}
+
+async fn list_provider_models(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<Model>>, (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool);
+    let models = repo
+        .list_models_by_provider(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(models))
+}
+
+async fn create_provider_model(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<CreateModelRequest>,
+) -> Result<(StatusCode, Json<Model>), (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool);
+    let model = repo
+        .create_model(
+            &id,
+            &req.model_key,
+            &req.display_name,
+            req.context_window,
+            req.supports_tools.unwrap_or(true),
+            req.supports_vision.unwrap_or(false),
+            req.supports_reasoning.unwrap_or(false),
+            req.price_in_per_mtok,
+            req.price_out_per_mtok,
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok((StatusCode::CREATED, Json(model)))
 }
