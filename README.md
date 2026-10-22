@@ -143,6 +143,12 @@ On startup, Gaggle automatically:
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
 - `POST /api/chats` — Creates a new chat session within a project.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
+- `GET /api/approvals/pending` — Lists all pending tool-call approval requests.
+- `POST /api/approvals/{id}/decide` — Records an approval/denial decision, optionally remembers a `command_rules` entry, and appends an `audit_logs` record.
+- `GET /api/providers` — Lists configured model providers and credential presence status (`has_configured_secret`) without exposing secret values.
+- `POST /api/providers` — Registers a model provider, validates its `base_url`, and stores its credential in the `CredentialStore` by `secret_ref`.
+- `GET /api/providers/{id}/models` — Lists enabled models for a provider.
+- `POST /api/providers/{id}/models` — Registers a model under a provider.
 
 ---
 

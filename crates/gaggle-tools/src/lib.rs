@@ -4,14 +4,19 @@ use sqlx::SqlitePool;
 
 pub mod fs_tools;
 pub mod git_tools;
+pub mod shell_tools;
 
 pub use fs_tools::{
     DEFAULT_MAX_LIST_ENTRIES, DEFAULT_MAX_READ_BYTES, DEFAULT_MAX_SEARCH_MATCHES, FsEntry,
-    FsReadOutput, FsSearchMatch, FsToolError, fs_list, fs_read, fs_search,
+    FsReadOutput, FsSearchMatch, FsToolError, FsWriteOutput, fs_list, fs_read, fs_search, fs_write,
 };
 pub use git_tools::{
     DEFAULT_MAX_DIFF_BYTES, GitDiffOutput, GitFileStatus, GitToolError, GitWorkspaceStatus,
     git_diff, git_status,
+};
+pub use shell_tools::{
+    DEFAULT_MAX_SHELL_OUTPUT_BYTES, DEFAULT_SHELL_TIMEOUT_MS, ShellExecOutput, ShellToolError,
+    shell_exec,
 };
 
 pub struct BuiltinToolSpec {

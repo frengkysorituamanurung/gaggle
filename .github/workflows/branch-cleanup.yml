@@ -1,0 +1,30 @@
+name: Auto-Cleanup Feature Branches
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - development
+
+permissions:
+  contents: write
+
+jobs:
+  delete-head-branch:
+    name: Delete ephemeral branch after PR closes
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.ref != 'development'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete head branch (${{ github.event.pull_request.head.ref }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          echo "Deleting branch refs/heads/${BRANCH} from ${REPO}..."
+          gh api -X DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" || echo "Branch ${BRANCH} was already deleted."

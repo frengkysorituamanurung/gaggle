@@ -3,5 +3,6 @@ pub mod extensions;
 pub mod memories;
 pub mod permissions;
 pub mod projects;
+pub mod providers;
 pub mod recipes;
 pub mod runs;
