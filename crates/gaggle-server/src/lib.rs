@@ -164,8 +164,8 @@ pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     Ok(())
 }
 
-async fn index_handler() -> Html<&'static str> {
-    Html(gaggle_ui::render_index_html())
+async fn index_handler() -> Html<String> {
+    Html(gaggle_ui::render_index_html().to_string())
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
