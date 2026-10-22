@@ -44,7 +44,13 @@ impl PermissionEngine {
     pub fn fingerprint_args(args_json: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(args_json.as_bytes());
-        format!("{:x}", hasher.finalize())
+        let digest = hasher.finalize();
+        let mut hex = String::with_capacity(digest.len() * 2);
+        for byte in digest.as_slice() {
+            use std::fmt::Write as _;
+            let _ = write!(&mut hex, "{byte:02x}");
+        }
+        hex
     }
 
     fn matches_command_rule(rule: &CommandRule, cmd: &str) -> bool {
