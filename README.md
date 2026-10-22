@@ -142,7 +142,10 @@ On startup, Gaggle automatically:
 - `GET /api/projects/{id}/git-status` — Inspects the project's Git branch and modified/untracked files.
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
 - `POST /api/chats` — Creates a new chat session within a project.
+- `POST /api/chats/{id}/messages` — Submits a user message and executes a bounded agent runtime turn.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
+- `POST /api/runs/{id}/cancel` — Cancels an active run and records a `run.cancelled` event.
+- `GET /api/runs/{id}/events` — Streams ordered `run_events` via Server-Sent Events (SSE) with `Last-Event-ID` / `after_seq` replay support.
 - `GET /api/approvals/pending` — Lists all pending tool-call approval requests.
 - `POST /api/approvals/{id}/decide` — Records an approval/denial decision, optionally remembers a `command_rules` entry, and appends an `audit_logs` record.
 - `GET /api/providers` — Lists configured model providers and credential presence status (`has_configured_secret`) without exposing secret values.

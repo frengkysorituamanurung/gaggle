@@ -65,7 +65,11 @@ EOF
 fi
 
 if [ -z "$CI_TESTS" ]; then
-  CI_TESTS="- **Native CI**: Linux (`ubuntu-latest`) and macOS (`macos-latest`) jobs run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` on every push and pull request."
+  CI_TESTS=$(cat <<'EOF'
+- **Native CI**: Linux (`ubuntu-latest`) and macOS (`macos-latest`) jobs run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` on every push and pull request.
+- **Integration & security suites**: Deterministic tests verify SQLite schema & FTS5 triggers, 7-step permission decision order, workspace path boundary enforcement, safe run recovery, secret redaction, and the bounded agent runtime loop.
+EOF
+)
 fi
 
 cat <<EOF

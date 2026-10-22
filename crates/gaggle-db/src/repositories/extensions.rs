@@ -85,4 +85,17 @@ impl ExtensionRepository {
         .await?;
         Ok(tool)
     }
+
+    pub async fn find_enabled_tool_by_name(
+        &self,
+        tool_name: &str,
+    ) -> Result<Option<ExtensionTool>> {
+        let tool = sqlx::query_as::<_, ExtensionTool>(
+            "SELECT * FROM extension_tools WHERE tool_name = ? AND enabled = 1 LIMIT 1",
+        )
+        .bind(tool_name)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(tool)
+    }
 }

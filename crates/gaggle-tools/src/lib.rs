@@ -1,5 +1,10 @@
 use anyhow::Result;
-use gaggle_db::repositories::extensions::ExtensionRepository;
+use async_trait::async_trait;
+use gaggle_core::{ToolExecutor, WorkspacePathPolicy};
+use gaggle_db::{
+    models::Chat,
+    repositories::{extensions::ExtensionRepository, runs::RunRepository},
+};
 use sqlx::SqlitePool;
 
 pub mod fs_tools;
@@ -150,4 +155,146 @@ pub fn compute_unified_diff(path: &str, before: &str, after: &str) -> String {
         .unified_diff()
         .header(&format!("a/{path}"), &format!("b/{path}"))
         .to_string()
+}
+
+/// Concrete `ToolExecutor` implementation that dispatches approved tool calls to Gaggle's
+/// built-in filesystem, Git, and shell tools while enforcing `WorkspacePathPolicy` and
+/// persisting `file_changes` for `fs.write`.
+pub struct BuiltinToolExecutor {
+    pool: SqlitePool,
+}
+
+impl BuiltinToolExecutor {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for BuiltinToolExecutor {
+    async fn execute_tool(
+        &self,
+        run_id: &str,
+        chat: &Chat,
+        project_root: &str,
+        tool_name: &str,
+        args_json: &str,
+    ) -> Result<String, String> {
+        let policy = WorkspacePathPolicy::new(project_root).map_err(|e| e.to_string())?;
+        let args: serde_json::Value =
+            serde_json::from_str(args_json).map_err(|e| format!("Invalid tool args JSON: {e}"))?;
+
+        match tool_name {
+            "fs.list" => {
+                let path = args.get("path").and_then(|v| v.as_str()).map(String::from);
+                let entries = tokio::task::spawn_blocking(move || {
+                    fs_list(&policy, path.as_deref(), DEFAULT_MAX_LIST_ENTRIES)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                serde_json::to_string(&entries).map_err(|e| e.to_string())
+            }
+            "fs.read" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'path' argument".to_string())?
+                    .to_string();
+                let out = tokio::task::spawn_blocking(move || {
+                    fs_read(&policy, path, DEFAULT_MAX_READ_BYTES)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                serde_json::to_string(&out).map_err(|e| e.to_string())
+            }
+            "fs.search" => {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'query' argument".to_string())?
+                    .to_string();
+                let matches = tokio::task::spawn_blocking(move || {
+                    fs_search(&policy, &query, DEFAULT_MAX_SEARCH_MATCHES)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                serde_json::to_string(&matches).map_err(|e| e.to_string())
+            }
+            "fs.write" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'path' argument".to_string())?
+                    .to_string();
+                let content = args
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'content' argument".to_string())?
+                    .to_string();
+                let mode = chat.mode.clone();
+
+                let write_out =
+                    tokio::task::spawn_blocking(move || fs_write(&policy, &mode, path, &content))
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .map_err(|e| e.to_string())?;
+
+                let run_repo = RunRepository::new(self.pool.clone());
+                run_repo
+                    .record_file_change(
+                        run_id,
+                        &chat.id,
+                        &write_out.relative_path,
+                        &write_out.change_type,
+                        write_out.additions,
+                        write_out.deletions,
+                        &write_out.patch,
+                        write_out.before_sha.as_deref(),
+                        &write_out.after_sha,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                serde_json::to_string(&write_out).map_err(|e| e.to_string())
+            }
+            "git.status" => {
+                let status = tokio::task::spawn_blocking(move || git_status(&policy))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
+                serde_json::to_string(&status).map_err(|e| e.to_string())
+            }
+            "git.diff" => {
+                let path = args.get("path").and_then(|v| v.as_str()).map(String::from);
+                let diff = tokio::task::spawn_blocking(move || {
+                    git_diff(&policy, path.as_deref(), DEFAULT_MAX_DIFF_BYTES)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                serde_json::to_string(&diff).map_err(|e| e.to_string())
+            }
+            "shell.exec" => {
+                let command = args
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'command' argument".to_string())?;
+                let out = shell_exec(
+                    &policy,
+                    &chat.mode,
+                    None,
+                    command,
+                    DEFAULT_SHELL_TIMEOUT_MS,
+                    DEFAULT_MAX_SHELL_OUTPUT_BYTES,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                serde_json::to_string(&out).map_err(|e| e.to_string())
+            }
+            other => Err(format!("Unsupported built-in tool '{other}'")),
+        }
+    }
 }

@@ -1,3 +1,4 @@
+pub mod agent_loop;
 pub mod code_mode;
 pub mod compaction;
 pub mod credentials;
@@ -7,6 +8,10 @@ pub mod provider;
 pub mod run_engine;
 pub mod workspace_policy;
 
+pub use agent_loop::{
+    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, DEFAULT_MAX_AGENT_STEPS,
+    ToolExecutor,
+};
 pub use credentials::{
     CredentialError, CredentialStore, InMemoryCredentialStore, SecretString, redact_sensitive_text,
 };

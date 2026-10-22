@@ -2,17 +2,23 @@ use anyhow::Result;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::Html,
+    http::{HeaderMap, StatusCode},
+    response::{
+        Html,
+        sse::{Event, Sse},
+    },
     routing::{get, post},
 };
+use futures::stream::Stream;
 use gaggle_core::{
-    CredentialStore, DiagnosticReport, InMemoryCredentialStore, RunEngine, SecretString,
-    WorkspacePathPolicy, collect_diagnostics, validate_provider_base_url,
+    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
+    DiagnosticReport, InMemoryCredentialStore, MockProviderAdapter, ModelCompletionResponse,
+    RunEngine, SecretString, TokenUsage, WorkspacePathPolicy, collect_diagnostics,
+    validate_provider_base_url,
 };
 use gaggle_db::{
     default_db_path,
-    models::{Approval, Chat, Model, Project, Provider},
+    models::{Approval, Chat, Model, Project, Provider, Run},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         projects::ProjectRepository,
@@ -21,12 +27,12 @@ use gaggle_db::{
     },
 };
 use gaggle_tools::{
-    DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput, GitWorkspaceStatus,
-    fs_list, git_diff, git_status, register_builtin_extensions,
+    BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
+    GitWorkspaceStatus, fs_list, git_diff, git_status, register_builtin_extensions,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -35,6 +41,7 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub db_path: PathBuf,
     pub credential_store: Arc<dyn CredentialStore>,
+    pub active_runs: ActiveRunRegistry,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +101,17 @@ pub struct CreateModelRequest {
     pub price_out_per_mtok: Option<f64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SubmitChatMessageRequest {
+    pub prompt: String,
+    pub model_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RunEventsQuery {
+    pub after_seq: Option<i64>,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
@@ -109,7 +127,10 @@ pub fn build_router(state: AppState) -> Router {
             get(list_provider_models).post(create_provider_model),
         )
         .route("/api/chats", post(create_chat))
+        .route("/api/chats/{id}/messages", post(submit_chat_message))
         .route("/api/chats/{id}/export", get(export_chat))
+        .route("/api/runs/{id}/cancel", post(cancel_run))
+        .route("/api/runs/{id}/events", get(stream_run_events))
         .route("/api/approvals/pending", get(list_pending_approvals))
         .route("/api/approvals/{id}/decide", post(decide_approval))
         .layer(CorsLayer::permissive())
@@ -125,10 +146,12 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     }
     let db_path = default_db_path().unwrap_or_else(|_| PathBuf::from(":memory:"));
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
+    let active_runs = ActiveRunRegistry::new();
     Ok(AppState {
         pool,
         db_path,
         credential_store,
+        active_runs,
     })
 }
 
@@ -420,4 +443,96 @@ async fn create_provider_model(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn submit_chat_message(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    Json(req): Json<SubmitChatMessageRequest>,
+) -> Result<Json<AgentLoopOutcome>, (StatusCode, String)> {
+    let runtime = AgentRuntime::new(state.pool.clone(), DEFAULT_MAX_AGENT_STEPS);
+    let executor = BuiltinToolExecutor::new(state.pool.clone());
+    let model_key = req.model_key.as_deref().unwrap_or("local-mock");
+
+    // Default local fallback provider when no external provider is bound to the chat
+    let provider = MockProviderAdapter::with_response(
+        "local-mock",
+        ModelCompletionResponse {
+            text: format!("Processed request: {}", req.prompt),
+            tool_calls: vec![],
+            usage: TokenUsage {
+                input_tokens: 12,
+                output_tokens: 8,
+                cached_tokens: 0,
+            },
+        },
+    );
+
+    let cancel_token = gaggle_core::CancellationToken::new();
+    let outcome = runtime
+        .run_turn(
+            &chat_id,
+            &req.prompt,
+            model_key,
+            &provider,
+            &executor,
+            &cancel_token,
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(outcome))
+}
+
+async fn cancel_run(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+) -> Result<Json<Run>, (StatusCode, String)> {
+    state.active_runs.cancel(&run_id);
+    let repo = RunRepository::new(state.pool);
+    repo.emit_event(
+        &run_id,
+        "run.cancelled",
+        &serde_json::json!({ "reason": "user_cancelled_via_api" }).to_string(),
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let updated = repo
+        .update_run_status(&run_id, "cancelled", Some("Cancelled by user"))
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(updated))
+}
+
+async fn stream_run_events(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+    headers: HeaderMap,
+    Query(query): Query<RunEventsQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
+    let last_event_id_header = headers
+        .get("Last-Event-ID")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok());
+
+    let after_seq = query.after_seq.or(last_event_id_header).unwrap_or(0);
+
+    let repo = RunRepository::new(state.pool);
+    let events = repo
+        .list_run_events(&run_id, after_seq)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let sse_items: Vec<Result<Event, Infallible>> = events
+        .into_iter()
+        .map(|ev| {
+            Ok(Event::default()
+                .id(ev.seq.to_string())
+                .event(ev.kind)
+                .data(ev.payload))
+        })
+        .collect();
+
+    Ok(Sse::new(tokio_stream::iter(sse_items)))
 }
