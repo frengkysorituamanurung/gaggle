@@ -1,8 +1,8 @@
 use crate::{
     connection::{new_id, now_ms},
-    models::{Approval, Run, RunCheckpoint, RunEvent, ToolCall},
+    models::{Approval, AuditLog, FileChange, Run, RunCheckpoint, RunEvent, ToolCall},
 };
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use sqlx::SqlitePool;
 
 pub struct RunRepository {
@@ -290,5 +290,201 @@ impl RunRepository {
             .fetch_one(&self.pool)
             .await?;
         Ok(approval)
+    }
+
+    pub async fn list_pending_approvals(&self) -> Result<Vec<Approval>> {
+        let approvals = sqlx::query_as::<_, Approval>(
+            "SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(approvals)
+    }
+
+    pub async fn get_approval_by_id(&self, id: &str) -> Result<Option<Approval>> {
+        let approval = sqlx::query_as::<_, Approval>("SELECT * FROM approvals WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(approval)
+    }
+
+    pub async fn get_tool_call_by_id(&self, id: &str) -> Result<Option<ToolCall>> {
+        let tc = sqlx::query_as::<_, ToolCall>("SELECT * FROM tool_calls WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(tc)
+    }
+
+    /// Atomically records a user decision (`approved` or `denied`) on a `pending` approval,
+    /// optionally creates a `command_rules` entry when `remember_pattern` is provided,
+    /// updates `tool_calls.status` (`denied` if rejected), and writes an `audit_logs` record.
+    pub async fn decide_approval(
+        &self,
+        approval_id: &str,
+        approved: bool,
+        decided_by_device: Option<&str>,
+        project_id: Option<&str>,
+        remember_pattern: Option<(&str, &str)>, // (pattern, match_kind)
+    ) -> Result<Approval> {
+        let now = now_ms();
+        let mut tx = self.pool.begin().await?;
+
+        let existing = sqlx::query_as::<_, Approval>("SELECT * FROM approvals WHERE id = ?")
+            .bind(approval_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .with_context(|| format!("Approval '{approval_id}' not found"))?;
+
+        if existing.status != "pending" {
+            bail!(
+                "Approval '{}' is already in '{}' status and cannot be decided again",
+                approval_id,
+                existing.status
+            );
+        }
+
+        let new_status = if approved { "approved" } else { "denied" };
+        let rule_action = if approved { "allow" } else { "deny" };
+
+        let mut remember_rule_id: Option<String> = None;
+        if let Some((pattern, match_kind)) = remember_pattern {
+            let rule_id = new_id();
+            sqlx::query(
+                r#"
+                INSERT INTO command_rules (id, project_id, pattern, match_kind, action, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&rule_id)
+            .bind(project_id)
+            .bind(pattern)
+            .bind(match_kind)
+            .bind(rule_action)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+            remember_rule_id = Some(rule_id);
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE approvals
+            SET status = ?,
+                decided_by_device = ?,
+                remember_rule_id = ?,
+                decided_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(new_status)
+        .bind(decided_by_device)
+        .bind(&remember_rule_id)
+        .bind(now)
+        .bind(approval_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if !approved {
+            sqlx::query(
+                r#"
+                UPDATE tool_calls
+                SET status = 'denied',
+                    result = '{"error":"approval_denied_by_user"}'
+                WHERE id = ?
+                "#,
+            )
+            .bind(&existing.tool_call_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        let audit_id = new_id();
+        let metadata = serde_json::json!({
+            "tool_call_id": existing.tool_call_id,
+            "kind": existing.kind,
+            "decision": new_status,
+            "remember_rule_id": remember_rule_id,
+        })
+        .to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, actor_kind, actor_id, action, entity_type, entity_id, metadata, created_at)
+            VALUES (?, 'user', ?, ?, 'approval', ?, ?, ?)
+            "#,
+        )
+        .bind(&audit_id)
+        .bind(decided_by_device)
+        .bind(format!("approval.{new_status}"))
+        .bind(approval_id)
+        .bind(&metadata)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let updated = sqlx::query_as::<_, Approval>("SELECT * FROM approvals WHERE id = ?")
+            .bind(approval_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(updated)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_file_change(
+        &self,
+        run_id: &str,
+        chat_id: &str,
+        path: &str,
+        change_type: &str,
+        additions: i64,
+        deletions: i64,
+        patch: &str,
+        before_sha: Option<&str>,
+        after_sha: &str,
+    ) -> Result<FileChange> {
+        let id = new_id();
+        let now = now_ms();
+
+        sqlx::query(
+            r#"
+            INSERT INTO file_changes (
+                id, run_id, chat_id, path, change_type, additions, deletions,
+                patch, before_sha, after_sha, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(run_id)
+        .bind(chat_id)
+        .bind(path)
+        .bind(change_type)
+        .bind(additions)
+        .bind(deletions)
+        .bind(patch)
+        .bind(before_sha)
+        .bind(after_sha)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        let fc = sqlx::query_as::<_, FileChange>("SELECT * FROM file_changes WHERE id = ?")
+            .bind(&id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(fc)
+    }
+
+    pub async fn list_audit_logs(&self, limit: i64) -> Result<Vec<AuditLog>> {
+        let logs = sqlx::query_as::<_, AuditLog>(
+            "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(logs)
     }
 }

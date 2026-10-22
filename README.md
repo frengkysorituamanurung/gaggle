@@ -143,6 +143,8 @@ On startup, Gaggle automatically:
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
 - `POST /api/chats` — Creates a new chat session within a project.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
+- `GET /api/approvals/pending` — Lists all pending tool-call approval requests.
+- `POST /api/approvals/{id}/decide` — Records an approval/denial decision, optionally remembers a `command_rules` entry, and appends an `audit_logs` record.
 
 ---
 

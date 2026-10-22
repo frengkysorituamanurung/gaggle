@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use gaggle_db::{
-    models::{CommandRule, ExtensionTool},
+    models::{Approval, CommandRule, ExtensionTool, ToolCall},
     repositories::permissions::PermissionRepository,
 };
 use sha2::{Digest, Sha256};
@@ -153,6 +153,51 @@ impl PermissionEngine {
             kind: Self::infer_approval_kind(&ctx.extension_tool.tool_name),
             summary: format!("Execute tool '{}'", ctx.extension_tool.tool_name),
         })
+    }
+
+    /// Verifies that a resolved `Approval` is strictly bound to `tool_call` and that the
+    /// proposed arguments and shell command have not been altered since approval was requested.
+    pub fn verify_approved_execution(
+        approval: &Approval,
+        tool_call: &ToolCall,
+        current_args_json: &str,
+        current_shell_command: Option<&str>,
+    ) -> Result<()> {
+        if approval.status != "approved" {
+            bail!(
+                "Cannot execute tool call '{}': approval '{}' has status '{}'",
+                tool_call.id,
+                approval.id,
+                approval.status
+            );
+        }
+
+        if approval.tool_call_id != tool_call.id {
+            bail!(
+                "Approval '{}' is bound to tool_call '{}', not '{}'",
+                approval.id,
+                approval.tool_call_id,
+                tool_call.id
+            );
+        }
+
+        if Self::fingerprint_args(&tool_call.args) != Self::fingerprint_args(current_args_json) {
+            bail!(
+                "Approval replay rejected: tool arguments for '{}' changed after approval",
+                tool_call.id
+            );
+        }
+
+        if let Some(approved_cmd) = &approval.command
+            && Some(approved_cmd.as_str()) != current_shell_command
+        {
+            bail!(
+                "Approval replay rejected: shell command for '{}' does not match approved command",
+                tool_call.id
+            );
+        }
+
+        Ok(())
     }
 
     fn infer_approval_kind(tool_name: &str) -> String {

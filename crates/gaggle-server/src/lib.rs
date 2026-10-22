@@ -9,10 +9,11 @@ use axum::{
 use gaggle_core::{DiagnosticReport, RunEngine, WorkspacePathPolicy, collect_diagnostics};
 use gaggle_db::{
     default_db_path,
-    models::{Chat, Project},
+    models::{Approval, Chat, Project},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         projects::ProjectRepository,
+        runs::RunRepository,
     },
 };
 use gaggle_tools::{
@@ -51,6 +52,15 @@ pub struct ProjectPathQuery {
     pub path: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DecideApprovalRequest {
+    pub approved: bool,
+    pub decided_by_device: Option<String>,
+    pub project_id: Option<String>,
+    pub remember_pattern: Option<String>,
+    pub remember_match_kind: Option<String>,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
@@ -62,6 +72,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/{id}/diff", get(project_git_diff))
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/export", get(export_chat))
+        .route("/api/approvals/pending", get(list_pending_approvals))
+        .route("/api/approvals/{id}/decide", post(decide_approval))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -221,4 +233,40 @@ async fn project_git_diff(
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     Ok(Json(diff))
+}
+
+async fn list_pending_approvals(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Approval>>, (StatusCode, String)> {
+    let repo = RunRepository::new(state.pool);
+    let list = repo
+        .list_pending_approvals()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(list))
+}
+
+async fn decide_approval(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<DecideApprovalRequest>,
+) -> Result<Json<Approval>, (StatusCode, String)> {
+    let repo = RunRepository::new(state.pool);
+    let remember_pair = req.remember_pattern.as_deref().map(|pat| {
+        let kind = req.remember_match_kind.as_deref().unwrap_or("exact");
+        (pat, kind)
+    });
+
+    let updated = repo
+        .decide_approval(
+            &id,
+            req.approved,
+            req.decided_by_device.as_deref(),
+            req.project_id.as_deref(),
+            remember_pair,
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(updated))
 }
