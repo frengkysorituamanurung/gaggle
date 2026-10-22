@@ -141,9 +141,14 @@ On startup, Gaggle automatically:
 - `GET /api/projects/{id}/files` — Lists validated files and directories inside the project workspace.
 - `GET /api/projects/{id}/git-status` — Inspects the project's Git branch and modified/untracked files.
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
-- `POST /api/chats` — Creates a new chat session within a project.
+- `GET /api/projects/{id}/worktrees` — Lists isolated Git worktrees associated with a project.
+- `POST /api/chats` — Creates a new chat session within a project (automatically provisioning an isolated Git worktree when `mode = "worktree"`).
 - `POST /api/chats/{id}/messages` — Submits a user message and executes a bounded agent runtime turn.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
+- `GET /api/worktrees/{id}/git-status` — Inspects the Git status of an isolated chat worktree.
+- `GET /api/worktrees/{id}/diff` — Generates a bounded unified diff for an isolated chat worktree.
+- `POST /api/worktrees/{id}/merge` — Merges an active worktree branch back into the project repository (`git merge --no-ff`) after explicit user confirmation (`confirm = true`).
+- `POST /api/worktrees/{id}/discard` — Removes an isolated worktree directory and deletes its branch after explicit user confirmation (`confirm = true`).
 - `POST /api/runs/{id}/cancel` — Cancels an active run and records a `run.cancelled` event.
 - `GET /api/runs/{id}/events` — Streams ordered `run_events` via Server-Sent Events (SSE) with `Last-Event-ID` / `after_seq` replay support.
 - `GET /api/approvals/pending` — Lists all pending tool-call approval requests.

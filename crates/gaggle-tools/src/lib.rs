@@ -3,7 +3,9 @@ use async_trait::async_trait;
 use gaggle_core::{ToolExecutor, WorkspacePathPolicy};
 use gaggle_db::{
     models::Chat,
-    repositories::{extensions::ExtensionRepository, runs::RunRepository},
+    repositories::{
+        extensions::ExtensionRepository, runs::RunRepository, worktrees::WorktreeRepository,
+    },
 };
 use sqlx::SqlitePool;
 
@@ -16,8 +18,9 @@ pub use fs_tools::{
     FsReadOutput, FsSearchMatch, FsToolError, FsWriteOutput, fs_list, fs_read, fs_search, fs_write,
 };
 pub use git_tools::{
-    DEFAULT_MAX_DIFF_BYTES, GitDiffOutput, GitFileStatus, GitToolError, GitWorkspaceStatus,
-    git_diff, git_status,
+    CreatedWorktreeSpec, DEFAULT_MAX_DIFF_BYTES, GitDiffOutput, GitFileStatus, GitToolError,
+    GitWorkspaceStatus, git_diff, git_status, git_worktree_create, git_worktree_discard,
+    git_worktree_merge,
 };
 pub use shell_tools::{
     DEFAULT_MAX_SHELL_OUTPUT_BYTES, DEFAULT_SHELL_TIMEOUT_MS, ShellExecOutput, ShellToolError,
@@ -180,7 +183,30 @@ impl ToolExecutor for BuiltinToolExecutor {
         tool_name: &str,
         args_json: &str,
     ) -> Result<String, String> {
-        let policy = WorkspacePathPolicy::new(project_root).map_err(|e| e.to_string())?;
+        let effective_root = if chat.mode == "worktree" {
+            let wt_repo = WorktreeRepository::new(self.pool.clone());
+            let wt = wt_repo
+                .get_by_chat_id(&chat.id)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "Chat '{}' is in worktree mode but has no worktrees record",
+                        chat.id
+                    )
+                })?;
+            if wt.status != "active" {
+                return Err(format!(
+                    "Worktree '{}' for chat '{}' is not active (status = '{}')",
+                    wt.id, chat.id, wt.status
+                ));
+            }
+            wt.path
+        } else {
+            project_root.to_string()
+        };
+
+        let policy = WorkspacePathPolicy::new(&effective_root).map_err(|e| e.to_string())?;
         let args: serde_json::Value =
             serde_json::from_str(args_json).map_err(|e| format!("Invalid tool args JSON: {e}"))?;
 

@@ -6,3 +6,4 @@ pub mod projects;
 pub mod providers;
 pub mod recipes;
 pub mod runs;
+pub mod worktrees;
