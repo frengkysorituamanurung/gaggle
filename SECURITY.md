@@ -1,62 +1,62 @@
-# Kebijakan Keamanan (Security Policy)
+# Security Policy
 
-Keamanan pengguna adalah prioritas utama dalam desain **Gaggle**. Karena Gaggle adalah agent AI *self-hosted* yang bekerja langsung pada sistem file nyata, terminal (PTY), browser sandbox, dan ekstensi MCP di mesin pengguna, setiap celah keamanan pada lapisan izin (*permission engine*), eksekusi kode, maupun penyimpanan kredensial kami tangani secara serius.
+Security is a foundational priority for **Gaggle**. Because Gaggle is a self-hosted AI agent that interacts directly with local filesystems, PTY terminals, sandboxed browsers, and Model Context Protocol (MCP) extensions on the host machine, we treat any vulnerability affecting permission enforcement, command execution, or credential handling with the highest severity.
 
 ---
 
-## Versi yang Didukung (Supported Versions)
+## Supported Versions
 
-Saat ini Gaggle berada dalam tahap pengembangan aktif (`0.1.x`). Pembaruan keamanan diberikan pada rilis terbaru dan cabang utama (`main`).
+Gaggle is currently under active development (`0.1.x`). Security patches are provided for the latest release and the `main` branch.
 
-| Versi | Didukung Pembaruan Keamanan |
+| Version | Supported |
 | :--- | :--- |
-| `0.1.x` (terbaru) | :white_check_mark: Ya |
-| `< 0.1.0` | :x: Tidak |
+| `0.1.x` (latest) | :white_check_mark: Yes |
+| `< 0.1.0` | :x: No |
 
 ---
 
-## Prinsip Keamanan Arsitektur Gaggle
+## Security Architecture & Boundaries
 
-Dalam mengembangkan maupun mengaudit Gaggle, arsitektur berikut merupakan batas keamanan (*security boundary*) utama yang wajib dijaga:
+Contributors and auditors should be aware of the core security invariants enforced across the Gaggle workspace:
 
-1. **Kredensial Tidak Pernah Disimpan di SQLite**
-   - API key, token OAuth provider LLM, dan rahasia environment variable ekstensi (`env_secret_refs`) **dilarang** disimpan dalam bentuk *plaintext* di database `gaggle.db`.
-   - Database hanya menyimpan pengenal referensi (`secret_ref`) yang menunjuk ke OS Keychain (macOS Keychain, Linux Secret Service / KWallet, Windows Credential Manager).
+1. **Zero Plaintext Secrets in SQLite**
+   - Provider API keys, OAuth tokens, and extension environment secrets (`env_secret_refs`) must **never** be stored in plaintext inside `gaggle.db`.
+   - The database only stores a `secret_ref` key referencing the host OS Keychain (macOS Keychain, Linux Secret Service / KWallet, or Windows Credential Manager).
 
 2. **7-Step Permission Engine & Command Rules**
-   - Mode izin default untuk setiap percakapan baru adalah `ask` (bukan *autonomous* / `full`).
-   - Aturan perintah shell (`command_rules`) dengan aksi `deny` bersifat **mutlak** dan wajib memblokir eksekusi bahkan ketika percakapan berada dalam mode `full`.
-   - Mode `chat_only` wajib menolak seluruh pemanggilan tool tanpa terkecuali.
+   - New chats default to the `ask` permission mode (manual approval required for mutating tools), not autonomous `full` mode.
+   - Shell command rules (`command_rules`) with `action = 'deny'` are **absolute** and must block execution even when a chat is configured in `full` mode.
+   - The `chat_only` permission mode must reject every tool call unconditionally.
 
-3. **Isolasi Mode Kerja & Git Worktree**
-   - Pada mode `readonly`, agent tidak boleh memodifikasi file di dalam `root_path` proyek.
-   - Pada mode `worktree`, seluruh operasi tulis dan eksekusi tool harus terikat pada direktori Git Worktree yang terisolasi untuk percakapan tersebut.
+3. **Workspace & Git Worktree Isolation**
+   - In `readonly` mode, the agent must not modify any files inside the project's `root_path`.
+   - In `worktree` mode, all file mutations and shell executions must remain confined to the isolated Git worktree directory associated with that chat.
 
 4. **Code Mode & Extension Sandboxing**
-   - Eksekusi skrip di dalam Code Mode (`code_executions`) dibatasi oleh batas memori (`memory_limit_mb`) dan batas waktu (`timeout_ms`).
-   - Ekstensi (`extensions`) hanya boleh mengakses kemampuan (`fs.read`, `fs.write`, `shell`, `net`, `browser`, `memory`) yang telah diberikan izin eksplisit di tabel `extension_permissions`.
+   - Scripts executed inside Code Mode (`code_executions`) are constrained by strict memory limits (`memory_limit_mb`) and execution timeouts (`timeout_ms`).
+   - Extensions (`extensions`) may only exercise capabilities (`fs.read`, `fs.write`, `shell`, `net`, `browser`, `memory`) that have been explicitly granted in `extension_permissions`.
 
-5. **Otentikasi Perangkat (`devices`)**
-   - Token akses untuk perangkat jarak jauh (misalnya akses browser dari ponsel ke server lokal) hanya disimpan sebagai *cryptographic hash* (`token_hash`) dan dapat dicabut kapan saja melalui kolom `revoked_at`.
+5. **Device Pairing & Token Hashing**
+   - Access tokens for paired remote devices (`devices`, such as mobile browsers connecting to a local server) are stored exclusively as cryptographic hashes (`token_hash`) and can be revoked immediately via `revoked_at`.
 
 ---
 
-## Melaporkan Celah Keamanan (Reporting a Vulnerability)
+## Reporting a Vulnerability
 
-**Mohon JANGAN melaporkan celah keamanan melalui GitHub Issue publik.**
+**Please DO NOT report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-Jika Anda menemukan potensi kerentanan keamanan pada Gaggle (seperti *permission bypass*, *command injection*, *path traversal* di luar workspace proyek, atau kebocoran kredensial):
+If you discover a potential security vulnerability in Gaggle (such as a permission engine bypass, command injection, path traversal outside a project workspace, or credential exposure):
 
-1. **Saluran Pelaporan Privat**:
-   - Gunakan fitur **[GitHub Private Vulnerability Reporting / Security Advisories](https://github.com/frengky/gaggle/security/advisories/new)** pada repositori ini, atau hubungi pengelola utama proyek secara langsung.
+1. **Private Reporting Channel**:
+   - Report the issue privately via **[GitHub Private Vulnerability Reporting / Security Advisories](https://github.com/frengky/gaggle/security/advisories/new)** on this repository, or contact the project maintainers directly.
 
-2. **Informasi yang Perlu Disertakan**:
-   - Deskripsi rinci mengenai celah keamanan dan komponen crate yang terdampak (`gaggle-core`, `gaggle-db`, `gaggle-tools`, `gaggle-mcp`, `gaggle-server`, dll.).
-   - Langkah-langkah reproduksi (*Proof of Concept* / PoC) yang jelas.
-   - Dampak potensial jika celah tersebut dieksploitasi (mis. eksekusi perintah tanpa *approval* pada mode `ask`).
-   - Usulan perbaikan atau mitigasi (jika ada).
+2. **What to Include**:
+   - A clear description of the vulnerability and the affected crate(s) (`gaggle-core`, `gaggle-db`, `gaggle-tools`, `gaggle-mcp`, `gaggle-server`, etc.).
+   - Step-by-step reproduction instructions or a minimal Proof of Concept (PoC).
+   - Potential security impact (e.g., unauthorized tool execution in `ask` mode).
+   - Suggested remediation or mitigation, if available.
 
-3. **Waktu Respons & Proses Penanganan**:
-   - **Konfirmasi Penerimaan**: Dalam waktu maksimal **48 jam** sejak laporan diterima.
-   - **Validasi & Triase**: Dalam waktu **5 hari kerja**, kami akan memberikan penilaian tingkat keparahan dan jadwal perbaikan.
-   - **Rilis Perbaikan & Pengungkapan Terkoordinasi (*Coordinated Disclosure*)**: Setelah *patch* siap dan diuji, kami akan merilis pembaruan keamanan dan mencantumkan kredit apresiasi kepada pelapor (kecuali Anda memilih untuk tetap anonim).
+3. **Response Timeline & Coordinated Disclosure**:
+   - **Acknowledgment**: Within **48 hours** of receiving your report.
+   - **Triage & Assessment**: Within **5 business days**, we will confirm the vulnerability, assess its severity, and share a remediation plan.
+   - **Fix & Disclosure**: Once a patch is tested and released, we will publish a security advisory and credit the reporter (unless you prefer to remain anonymous).

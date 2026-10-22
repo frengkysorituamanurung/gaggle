@@ -4,150 +4,149 @@
 [![Rust Edition](https://img.shields.io/badge/Rust-2024_Edition-orange.svg)](https://www.rust-lang.org/)
 [![Database: SQLite](https://img.shields.io/badge/Database-SQLite_WAL_%2B_FTS5-003B57.svg)](https://www.sqlite.org/)
 
-**Gaggle** adalah asisten dan agent AI pribadi yang *self-hosted*, dirancang untuk bekerja langsung di dalam workspace dan proyek nyata Anda. Seluruh aplikasi ditulis dalam **Rust** dengan satu database **SQLite** global per perangkat.
+**Gaggle** is a self-hosted personal AI agent designed to work directly inside your real local projects and workspaces. Written entirely in **Rust**, Gaggle uses a single global **SQLite** database per device.
 
-Desain arsitektur Gaggle terinspirasi dari **Goose** (agent AI open-source dari Block), namun diperluas dengan konsep **Project sebagai entitas utama**, isolasi **Git Worktree per percakapan**, **panel Changes & Review Comments**, **Durable Runs** yang tahan terhadap penutupan tab maupun restart server, **Code Mode sandbox**, **Terminal PTY**, serta **Browser Sandbox**.
-
----
-
-## Fitur Utama
-
-- **Project-Centric Workspace**: Setiap percakapan (`chats`), memori (`memories`), aturan perintah (`command_rules`), worktree, jadwal (`schedules`), dan sesi terminal (`terminal_sessions`) dikelompokkan rapi di bawah entitas `projects`.
-- **Durable Runs & Event Replay**: Eksekusi agent berjalan di latar belakang (`runs`). Seluruh kejadian disimpan secara berurutan di `run_events` (satu-satunya sumber kebenaran / *single source of truth*) untuk *replay* SSE, serta `run_checkpoints` untuk memulihkan pekerjaan secara otomatis saat server di-restart.
-- **Mode Git Worktree & Panel Changes**: Isolasikan perubahan kode tiap percakapan di Git Worktree terpisah (`worktrees`), pantau *unified diff* per file di `file_changes`, dan berikan komentar review baris-demi-baris (`review_comments`) yang dapat dikirim kembali ke agent.
-- **Sistem Izin Berlapis (7-Step Permission Engine)**:
-  - Empat mode izin per chat: `ask` (*default* aman), `smart` (*LLM risk judge cache*), `full` (*autonomous*), dan `chat_only`.
-  - Aturan perintah shell (`command_rules` dengan aksi `allow`, `ask`, `deny` — di mana `deny` selalu berlaku mutlak termasuk pada mode `full`).
-  - Izin per tool (`always_allow`, `ask_before`, `never_allow`) baik di tingkat global maupun per proyek.
-- **Unified Extension & MCP Architecture**: Seluruh kemampuan bawaan (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) maupun server MCP eksternal (`stdio`, `streamable_http`, `sse`, `wasm`) dimodelkan seragam sebagai `extensions`.
-- **Recipe, Sub-Recipe, & Cron Scheduler**: Bungkus instruksi, prompt berparameter (`minijinja`), dan daftar extension menjadi `recipes` yang dapat dijalankan ulang, didelegasikan ke *subagent* (`parent_chat_id`), atau dijadwalkan otomatis dengan ekspresi cron (`schedules`).
-- **Pencarian Cepat dengan SQLite FTS5**: Pencarian teks penuh (*full-text search*) bawaan pada riwayat pesan (`messages_fts`) dan memori proyek/global (`memories_fts`), dilengkapi dukungan *vector embedding* opsional (`memory_embeddings`).
-- **Keamanan Kredensial**: API key dan token OAuth **tidak pernah** disimpan di dalam database. Database hanya menyimpan `secret_ref` yang merujuk ke OS Keychain.
+Gaggle's architecture is inspired by **Goose** (Block's open-source Rust AI agent), while introducing key capabilities tailored for local software engineering: **Project as a first-class entity**, **per-chat Git Worktree isolation**, a **Changes panel with line-level review comments**, **Durable Runs** that survive browser tab closures and server restarts, a **Code Mode sandbox**, **PTY Terminal sessions**, and a **Sandboxed Browser** agent.
 
 ---
 
-## Arsitektur Workspace
+## Key Features
 
-Gaggle menggunakan susunan Cargo Workspace multi-crate agar batas tanggung jawab setiap domain tetap bersih dan modular:
+- **Project-Centric Workspace**: Every conversation (`chats`), memory entry (`memories`), shell rule (`command_rules`), Git worktree (`worktrees`), cron job (`schedules`), and terminal session (`terminal_sessions`) is scoped cleanly under a `projects` entity.
+- **Durable Runs & Event Replay**: Agent executions (`runs`) persist independently of connected clients. Every event is recorded sequentially in `run_events` (the single source of truth for SSE replay), and `run_checkpoints` allow unfinished runs to resume automatically upon server restart.
+- **Git Worktree Mode & Changes Panel**: Isolate each chat's file modifications in a dedicated Git worktree (`worktrees`), inspect unified diffs per run in `file_changes`, and leave inline review comments (`review_comments`) that can be dispatched back to the agent.
+- **Layered 7-Step Permission Engine**:
+  - Four permission modes per chat: `ask` (safe default), `smart` (LLM risk evaluation cache), `full` (autonomous), and `chat_only`.
+  - Shell command rules (`command_rules` with `allow`, `ask`, and `deny` actions — where `deny` is strictly enforced even in `full` mode).
+  - Per-tool permissions (`always_allow`, `ask_before`, `never_allow`) configurable globally or overridden per project.
+- **Unified Extension & MCP Architecture**: Built-in capabilities (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) and external Model Context Protocol (MCP) servers (`stdio`, `streamable_http`, `sse`, `wasm`) share a unified `extensions` and `extension_tools` model.
+- **Recipes, Sub-Recipes, & Cron Scheduler**: Package instructions, parameterized prompts (`minijinja`), and required extensions into reusable `recipes`. Delegate tasks to isolated subagent chats (`parent_chat_id`) or run recipes on a recurring cron schedule (`schedules`).
+- **Full-Text & Semantic Search**: Built-in SQLite FTS5 virtual tables for instant search across chat history (`messages_fts`) and project/global memories (`memories_fts`), alongside optional vector embeddings (`memory_embeddings`).
+- **Keychain-Backed Secrets**: API keys and OAuth tokens are **never** stored in SQLite. The database stores only a `secret_ref` identifier pointing to the host OS Keychain.
+
+---
+
+## Workspace Architecture
+
+Gaggle is organized as a multi-crate Cargo workspace with clear domain boundaries:
 
 ```text
 gaggle/
-├─ Cargo.toml                # Konfigurasi Cargo Workspace
-├─ LICENSE                   # Lisensi Apache-2.0
-├─ README.md                 # Dokumentasi utama proyek
-├─ CONTRIBUTING.md           # Panduan kontribusi
-├─ CODE_OF_CONDUCT.md        # Kode etik komunitas
-├─ SECURITY.md               # Kebijakan keamanan & pelaporan celah
+├─ Cargo.toml                # Cargo workspace manifest
+├─ LICENSE                   # Apache-2.0 License
+├─ README.md                 # Project overview and usage guide
+├─ CONTRIBUTING.md           # Contribution guidelines
+├─ CODE_OF_CONDUCT.md        # Community Code of Conduct
+├─ SECURITY.md               # Security policy and vulnerability reporting
 ├─ docs/
-│  └─ ERD.md                 # Dokumentasi detail skema & ERD database
+│  └─ ERD.md                 # Database schema and ERD documentation
 └─ crates/
    ├─ gaggle-core/           # Agent loop, durable run recovery, compaction, 7-step permission engine, Code Mode
-   ├─ gaggle-db/             # Koneksi SQLite (WAL, FK), migrasi sqlx, 37 model tabel ERD, repository per domain
-   ├─ gaggle-tools/          # Extension bawaan (fs, shell, memory, web, browser) & unified diff generator
-   ├─ gaggle-mcp/            # Klien MCP, registry extension, dan penjaga batas tool aktif (~25 tools)
-   ├─ gaggle-recipes/        # Parser recipe, validasi parameter wajib/opsional, render template minijinja, scheduler
-   ├─ gaggle-server/         # Server HTTP/SSE berbasis Axum, REST API, ekspor/impor chat JSON, penyajian UI
-   ├─ gaggle-cli/            # Binary CLI `gaggle` (`serve`, `project add/list`, `db-path`)
-   └─ gaggle-ui/             # Antarmuka web yang disajikan langsung oleh gaggle-server
+   ├─ gaggle-db/             # SQLite connection (WAL, FK), sqlx migrations, 37 ERD models, domain repositories
+   ├─ gaggle-tools/          # Built-in extensions (fs, shell, memory, web, browser) and unified diff generation
+   ├─ gaggle-mcp/            # MCP client integration, extension registry, active tool limit guard (~25 tools)
+   ├─ gaggle-recipes/        # Recipe parser, required/optional parameter validation, minijinja templates, scheduler
+   ├─ gaggle-server/         # Axum HTTP/SSE server, REST API, chat JSON export/import, embedded Web UI serving
+   ├─ gaggle-cli/            # `gaggle` CLI binary (`serve`, `project add/list`, `db-path`)
+   └─ gaggle-ui/             # Web UI shell served by gaggle-server
 ```
 
 ---
 
-## Penyimpanan Data & Konvensi Database
+## Storage Design & Database Conventions
 
-Gaggle menggunakan **satu file SQLite global** untuk seluruh proyek agar direktori kerja proyek Anda tetap bersih (tanpa folder `.gaggle` yang mengotori repositori atau menggandakan database saat memakai Git Worktree).
+Gaggle uses a **single global SQLite database** across all projects. Storing the database globally prevents polluting project repositories with `.gaggle/` folders, supports read-only workspaces, avoids duplicating databases across Git worktrees, and preserves chat history if a project directory is moved or deleted.
 
-Lokasi default database ditentukan secara otomatis menggunakan standar direktori sistem operasi:
+Default database locations (resolved via the `directories` crate):
 - **macOS**: `~/Library/Application Support/gaggle/gaggle.db`
 - **Linux**: `~/.local/share/gaggle/gaggle.db`
 - **Windows**: `%APPDATA%\gaggle\data\gaggle.db`
 
-Konvensi skema SQLite yang diterapkan di `gaggle-db`:
-- **Primary Key**: UUIDv7 (`TEXT`), terurut berdasarkan waktu pembuatan.
-- **Timestamp**: `INTEGER`, Unix epoch dalam satuan milidetik.
-- **Validasi JSON & Enum**: Dijaga ketat di level database menggunakan constraint `CHECK(json_valid(...))` dan `CHECK(kolom IN (...))`.
-- **PRAGMA Koneksi**: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, dan `auto_vacuum=INCREMENTAL`.
+Core SQLite conventions enforced in `gaggle-db`:
+- **Primary Keys**: Time-ordered UUIDv7 stored as `TEXT`.
+- **Timestamps**: Unix epoch milliseconds stored as `INTEGER`.
+- **JSON & Enum Integrity**: Enforced at the schema level via `CHECK(json_valid(...))` and `CHECK(column IN (...))`.
+- **Connection PRAGMAs**: `journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`, `busy_timeout=5000`, and `auto_vacuum=INCREMENTAL`.
 
-Lihat dokumentasi lengkap skema dan diagram relasi di [`docs/ERD.md`](./docs/ERD.md).
+See [`docs/ERD.md`](./docs/ERD.md) for the complete Entity-Relationship Diagram and table specifications.
 
 ---
 
-## Memulai (Getting Started)
+## Getting Started
 
-### Prasyarat
+### Prerequisites
 
-- **Rust Toolchain**: Versi stabil terbaru (mendukung Rust 2024 Edition, mis. `rustc >= 1.85`).
-- **Git**: Diperlukan untuk fitur manajemen repositori dan mode Git Worktree.
+- **Rust Toolchain**: Latest stable Rust toolchain supporting the 2024 Edition (`rustc >= 1.85`).
+- **Git**: Required for repository management and Git Worktree isolation.
 
-### Instalasi & Build dari Source
+### Build & Test
 
-1. Kloning repositori ini:
+1. Clone the repository:
    ```bash
    git clone https://github.com/frengky/gaggle.git
    cd gaggle
    ```
 
-2. Jalankan kompilasi seluruh workspace:
+2. Build all workspace crates:
    ```bash
    cargo build --workspace
    ```
 
-3. Jalankan seluruh pengujian (termasuk pengujian migrasi skema SQLite, FTS5, dan *Permission Engine*):
+3. Run the test suite (including SQLite migrations, FTS5 triggers, and Permission Engine tests):
    ```bash
    cargo test --workspace
    ```
 
 ---
 
-## Penggunaan CLI (`gaggle`)
+## CLI Usage (`gaggle`)
 
-Binary utama tersedia melalui crate `gaggle-cli` dengan nama perintah `gaggle`.
+The `gaggle` binary is provided by the `gaggle-cli` crate.
 
-### 1. Melihat Lokasi Database Global
+### 1. Print the Global Database Path
 ```bash
 cargo run -p gaggle-cli -- db-path
 ```
 
-### 2. Mendaftarkan Proyek Baru
+### 2. Register a Project Workspace
 ```bash
 cargo run -p gaggle-cli -- project add "Gaggle Workspace" "/path/to/your/project" --vcs git
 ```
 
-### 3. Melihat Daftar Proyek Aktif
+### 3. List Active Projects
 ```bash
 cargo run -p gaggle-cli -- project list
 ```
 
-### 4. Menjalankan Server & Web UI
+### 4. Start the HTTP/SSE Server & Web UI
 ```bash
 cargo run -p gaggle-cli -- serve --addr 127.0.0.1:4321
 ```
-Saat server dijalankan, Gaggle secara otomatis:
-1. Membuka koneksi SQLite global dengan mode WAL.
-2. Menjalankan migrasi database (`sqlx::migrate!`).
-3. Mendaftarkan seluruh *built-in extensions* (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`).
-4. Memulihkan *durable runs* yang sebelumnya berstatus `running` atau `waiting_approval`.
+On startup, Gaggle automatically:
+1. Opens the global SQLite pool in WAL mode and applies any pending `sqlx` migrations.
+2. Registers all bundled built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`).
+3. Recovers any durable runs left in `running` or `waiting_approval` state from their latest checkpoint.
 
-### Endpoint API Dasar
-- `GET /` — Antarmuka Web Gaggle.
-- `GET /api/health` — Pemeriksaan status layanan (`{"status": "ok", "service": "gaggle"}`).
-- `GET /api/projects` — Daftar proyek aktif.
-- `POST /api/projects` — Mendaftarkan proyek baru.
-- `POST /api/chats` — Membuat sesi percakapan baru pada proyek.
-- `GET /api/chats/{id}/export` — Mengekspor seluruh riwayat chat beserta bagian pesannya (`message_parts`) ke format JSON.
-
----
-
-## Kontribusi & Komunitas
-
-Kami sangat terbuka terhadap kontribusi dari komunitas! Sebelum mengirimkan *Pull Request* atau membuka *Issue*, silakan baca dokumen berikut:
-
-- [Panduan Kontribusi (CONTRIBUTING.md)](./CONTRIBUTING.md)
-- [Kode Etik Komunitas (CODE_OF_CONDUCT.md)](./CODE_OF_CONDUCT.md)
-- [Kebijakan Keamanan (SECURITY.md)](./SECURITY.md)
+### Core HTTP Endpoints
+- `GET /` — Serves the Gaggle Web UI.
+- `GET /api/health` — Health check endpoint (`{"status": "ok", "service": "gaggle"}`).
+- `GET /api/projects` — Lists all active projects.
+- `POST /api/projects` — Registers a new project workspace.
+- `POST /api/chats` — Creates a new chat session within a project.
+- `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
 
 ---
 
-## Lisensi
+## Contributing & Community
 
-Proyek ini dilisensikan di bawah **Apache License, Version 2.0**. Lihat file [`LICENSE`](./LICENSE) untuk teks lisensi selengkapnya.
+Contributions are welcome! Please review the following documents before opening an issue or submitting a pull request:
+
+- [Contributing Guide (CONTRIBUTING.md)](./CONTRIBUTING.md)
+- [Code of Conduct (CODE_OF_CONDUCT.md)](./CODE_OF_CONDUCT.md)
+- [Security Policy (SECURITY.md)](./SECURITY.md)
+
+---
+
+## License
+
+Licensed under the **Apache License, Version 2.0**. See the [`LICENSE`](./LICENSE) file for full details.
