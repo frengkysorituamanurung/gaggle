@@ -725,11 +725,13 @@ name = "gaggle-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gaggle-core",
  "gaggle-db",
  "serde",
  "serde_json",
  "similar",
  "sqlx",
+ "thiserror",
  "tokio",
  "tracing",
 ]

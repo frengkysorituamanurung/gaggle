@@ -108,30 +108,39 @@ The `gaggle` binary is provided by the `gaggle-cli` crate.
 cargo run -p gaggle-cli -- db-path
 ```
 
-### 2. Register a Project Workspace
+### 2. Run Diagnostics & Database Health Check
+```bash
+cargo run -p gaggle-cli -- doctor
+```
+
+### 3. Register a Project Workspace
 ```bash
 cargo run -p gaggle-cli -- project add "Gaggle Workspace" "/path/to/your/project" --vcs git
 ```
 
-### 3. List Active Projects
+### 4. List Active Projects
 ```bash
 cargo run -p gaggle-cli -- project list
 ```
 
-### 4. Start the HTTP/SSE Server & Web UI
+### 5. Start the HTTP/SSE Server & Web UI
 ```bash
 cargo run -p gaggle-cli -- serve --addr 127.0.0.1:4321
 ```
 On startup, Gaggle automatically:
 1. Opens the global SQLite pool in WAL mode and applies any pending `sqlx` migrations.
 2. Registers all bundled built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`).
-3. Recovers any durable runs left in `running` or `waiting_approval` state from their latest checkpoint.
+3. Safely recovers any durable runs left in `running` or `waiting_approval` state by expiring stale approvals and transitioning interrupted runs to `paused`.
 
 ### Core HTTP Endpoints
 - `GET /` — Serves the Gaggle Web UI.
 - `GET /api/health` — Health check endpoint (`{"status": "ok", "service": "gaggle"}`).
+- `GET /api/diagnostics` — Returns a redacted diagnostic report of OS, SQLite PRAGMAs, migrations, and active counts.
 - `GET /api/projects` — Lists all active projects.
-- `POST /api/projects` — Registers a new project workspace.
+- `POST /api/projects` — Validates, canonicalizes, and registers a new project workspace.
+- `GET /api/projects/{id}/files` — Lists validated files and directories inside the project workspace.
+- `GET /api/projects/{id}/git-status` — Inspects the project's Git branch and modified/untracked files.
+- `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
 - `POST /api/chats` — Creates a new chat session within a project.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
 

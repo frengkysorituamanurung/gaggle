@@ -34,7 +34,9 @@ impl ProjectRepository {
         .execute(&self.pool)
         .await?;
 
-        self.get_by_id(&id).await?.ok_or_else(|| anyhow::anyhow!("Project not found after insert"))
+        self.get_by_id(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Project not found after insert"))
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Option<Project>> {

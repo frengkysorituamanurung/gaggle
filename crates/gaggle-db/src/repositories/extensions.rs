@@ -14,7 +14,12 @@ impl ExtensionRepository {
         Self { pool }
     }
 
-    pub async fn upsert_builtin(&self, name: &str, description: &str, version: &str) -> Result<Extension> {
+    pub async fn upsert_builtin(
+        &self,
+        name: &str,
+        description: &str,
+        version: &str,
+    ) -> Result<Extension> {
         let id = new_id();
         let now = now_ms();
 

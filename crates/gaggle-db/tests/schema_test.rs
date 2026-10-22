@@ -23,7 +23,13 @@ async fn test_schema_migrations_and_repositories() -> Result<()> {
     // 2. Create Chat & Messages
     let chat_repo = ChatRepository::new(pool.clone());
     let chat = chat_repo
-        .create(&project.id, "Initial Architecture Chat", "user", "local", "ask")
+        .create(
+            &project.id,
+            "Initial Architecture Chat",
+            "user",
+            "local",
+            "ask",
+        )
         .await?;
     assert_eq!(chat.permission_mode, "ask");
 
@@ -97,7 +103,13 @@ async fn test_schema_migrations_and_repositories() -> Result<()> {
         .upsert_builtin("gaggle.shell", "Built-in shell extension", "0.1.0")
         .await?;
     let tool = ext_repo
-        .upsert_tool(&ext.id, "shell.exec", "Run command", r#"{"type":"object"}"#, false)
+        .upsert_tool(
+            &ext.id,
+            "shell.exec",
+            "Run command",
+            r#"{"type":"object"}"#,
+            false,
+        )
         .await?;
 
     let perm_repo = PermissionRepository::new(pool.clone());

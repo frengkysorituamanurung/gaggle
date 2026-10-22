@@ -2,6 +2,18 @@ use anyhow::Result;
 use gaggle_db::repositories::extensions::ExtensionRepository;
 use sqlx::SqlitePool;
 
+pub mod fs_tools;
+pub mod git_tools;
+
+pub use fs_tools::{
+    DEFAULT_MAX_LIST_ENTRIES, DEFAULT_MAX_READ_BYTES, DEFAULT_MAX_SEARCH_MATCHES, FsEntry,
+    FsReadOutput, FsSearchMatch, FsToolError, fs_list, fs_read, fs_search,
+};
+pub use git_tools::{
+    DEFAULT_MAX_DIFF_BYTES, GitDiffOutput, GitFileStatus, GitToolError, GitWorkspaceStatus,
+    git_diff, git_status,
+};
+
 pub struct BuiltinToolSpec {
     pub extension_name: &'static str,
     pub extension_desc: &'static str,
@@ -15,6 +27,14 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
     BuiltinToolSpec {
         extension_name: "gaggle.fs",
         extension_desc: "Built-in filesystem operations for Gaggle",
+        tool_name: "fs.list",
+        description: "List files and directories inside the project workspace",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{"path":{"type":"string"}}}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.fs",
+        extension_desc: "Built-in filesystem operations for Gaggle",
         tool_name: "fs.read",
         description: "Read contents of a file inside the project workspace",
         is_read_only: true,
@@ -23,10 +43,34 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
     BuiltinToolSpec {
         extension_name: "gaggle.fs",
         extension_desc: "Built-in filesystem operations for Gaggle",
+        tool_name: "fs.search",
+        description: "Search UTF-8 text files inside the project workspace",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.fs",
+        extension_desc: "Built-in filesystem operations for Gaggle",
         tool_name: "fs.write",
         description: "Write or modify a file inside the project workspace",
         is_read_only: false,
         schema_json: r#"{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.git",
+        extension_desc: "Built-in Git inspection tools for Gaggle",
+        tool_name: "git.status",
+        description: "Inspect repository branch and modified/untracked files",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{}}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.git",
+        extension_desc: "Built-in Git inspection tools for Gaggle",
+        tool_name: "git.diff",
+        description: "Generate unified diff of uncommitted workspace changes",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{"path":{"type":"string"}}}"#,
     },
     BuiltinToolSpec {
         extension_name: "gaggle.shell",
@@ -77,7 +121,11 @@ pub async fn register_builtin_extensions(pool: &SqlitePool) -> Result<()> {
     let repo = ExtensionRepository::new(pool.clone());
     for spec in BUILTIN_TOOLS {
         let ext = repo
-            .upsert_builtin(spec.extension_name, spec.extension_desc, env!("CARGO_PKG_VERSION"))
+            .upsert_builtin(
+                spec.extension_name,
+                spec.extension_desc,
+                env!("CARGO_PKG_VERSION"),
+            )
             .await?;
         repo.upsert_tool(
             &ext.id,
