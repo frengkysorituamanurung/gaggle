@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   generate-pr-summary:
-    name: Build Structured PR Summary (development -> main)
+    name: Build Promotion PR Summary (development -> main)
     if: github.event.pull_request.head.ref == 'development'
     runs-on: ubuntu-latest
 
@@ -22,44 +22,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate structured PR body from commits
+      - name: Generate promotion PR body from git history
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          FIXES=$(git log --no-merges --pretty=format:"- %s (\`%h\`)" "${BASE_SHA}..${HEAD_SHA}" | grep -E "^- (fix|security|safety)(\(.*\))?:" || true)
-          FEATURES=$(git log --no-merges --pretty=format:"- %s (\`%h\`)" "${BASE_SHA}..${HEAD_SHA}" | grep -E "^- feat(\(.*\))?:" || true)
-          PERF=$(git log --no-merges --pretty=format:"- %s (\`%h\`)" "${BASE_SHA}..${HEAD_SHA}" | grep -E "^- perf(\(.*\))?:" || true)
-          CI_TESTS=$(git log --no-merges --pretty=format:"- %s (\`%h\`)" "${BASE_SHA}..${HEAD_SHA}" | grep -E "^- (ci|test|chore|docs)(\(.*\))?:" || true)
-
-          [ -z "$FIXES" ] && FIXES="- No standalone fix commits in this range (included in feature milestones)."
-          [ -z "$FEATURES" ] && FEATURES="- No feature commits in this range."
-          [ -z "$PERF" ] && PERF="- Bounded I/O, non-blocking \`spawn_blocking\` execution, and SQLite WAL concurrency."
-          [ -z "$CI_TESTS" ] && CI_TESTS="- Automated unit, integration, and security test suites."
-
-          cat <<EOF > pr_body.md
-          ## What changes
-
-          ### Correctness and safety fixes
-          ${FIXES}
-
-          ### Features
-          ${FEATURES}
-
-          ### Performance and measurement
-          ${PERF}
-
-          ### CI, tests, and evaluation foundations
-          ${CI_TESTS}
-
-          ## Before merging
-          - [x] \`cargo fmt --all -- --check\` passes
-          - [x] \`cargo clippy --workspace --all-targets -- -D warnings\` passes
-          - [x] \`cargo test --workspace\` passes across macOS & Linux matrix
-          - [x] Security boundaries (\`WorkspacePathPolicy\`, \`PermissionEngine\`, secret redaction) verified
-          - [x] Database migrations and transaction boundaries reviewed
-          EOF
-
+          chmod +x .github/scripts/generate_promotion_pr_body.sh
+          .github/scripts/generate_promotion_pr_body.sh "$BASE_SHA" "$HEAD_SHA" > pr_body.md
           gh pr edit "$PR_NUMBER" --body-file pr_body.md
