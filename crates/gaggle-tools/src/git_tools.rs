@@ -11,6 +11,15 @@ pub enum GitToolError {
     #[error(transparent)]
     Policy(#[from] WorkspacePathError),
 
+    #[error("Workspace is not a Git repository")]
+    NotGitRepository,
+
+    #[error("Invalid worktree or branch identifier '{0}'")]
+    InvalidIdentifier(String),
+
+    #[error("Worktree requires explicit user confirmation (`confirm = true`) for {0}")]
+    ConfirmationRequired(&'static str),
+
     #[error("Failed to execute git command: {0}")]
     ExecutionFailed(String),
 }
@@ -173,4 +182,245 @@ pub fn git_diff(
         patch,
         truncated,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CreatedWorktreeSpec {
+    pub path: String,
+    pub branch: String,
+    pub base_ref: String,
+    pub base_commit: String,
+}
+
+fn validate_safe_chat_id(chat_id: &str) -> Result<(), GitToolError> {
+    if chat_id.is_empty()
+        || !chat_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(GitToolError::InvalidIdentifier(chat_id.to_string()));
+    }
+    Ok(())
+}
+
+/// Creates an isolated Git worktree for a chat under `<project_root>/.gaggle/worktrees/<chat_id>`
+/// on branch `gaggle/chat-<chat_id>` using argument-based `Command::new("git")`.
+pub fn git_worktree_create(
+    project_policy: &WorkspacePathPolicy,
+    vcs_kind: &str,
+    chat_id: &str,
+) -> Result<CreatedWorktreeSpec, GitToolError> {
+    if vcs_kind != "git" {
+        return Err(GitToolError::NotGitRepository);
+    }
+    validate_safe_chat_id(chat_id)?;
+
+    let status = git_status(project_policy)?;
+    if !status.is_git_repo {
+        return Err(GitToolError::NotGitRepository);
+    }
+
+    let root = project_policy.canonical_root();
+
+    let head_ref_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+    if !head_ref_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&head_ref_out.stderr).into_owned(),
+        ));
+    }
+    let base_ref = String::from_utf8_lossy(&head_ref_out.stdout)
+        .trim()
+        .to_string();
+
+    let head_sha_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+    if !head_sha_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&head_sha_out.stderr).into_owned(),
+        ));
+    }
+    let base_commit = String::from_utf8_lossy(&head_sha_out.stdout)
+        .trim()
+        .to_string();
+
+    let rel_worktree_path = format!(".gaggle/worktrees/{chat_id}");
+    let resolved_target = project_policy.resolve_for_write(&rel_worktree_path)?;
+    if let Some(parent) = resolved_target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+    }
+
+    let branch_name = format!("gaggle/chat-{chat_id}");
+    let add_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["worktree", "add", "-b", &branch_name])
+        .arg(&resolved_target)
+        .arg(&base_commit)
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+
+    if !add_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&add_out.stderr).into_owned(),
+        ));
+    }
+
+    let canonical_wt_policy = WorkspacePathPolicy::new(&resolved_target)?;
+
+    Ok(CreatedWorktreeSpec {
+        path: canonical_wt_policy
+            .canonical_root()
+            .to_string_lossy()
+            .to_string(),
+        branch: branch_name,
+        base_ref,
+        base_commit,
+    })
+}
+
+/// Commits any pending changes in the worktree (if needed), merges the worktree branch into
+/// the main project repository with `git merge --no-ff`, and removes the worktree directory.
+pub fn git_worktree_merge(
+    project_policy: &WorkspacePathPolicy,
+    worktree_path: &str,
+    branch: &str,
+    confirm: bool,
+) -> Result<(), GitToolError> {
+    if !confirm {
+        return Err(GitToolError::ConfirmationRequired("merge"));
+    }
+
+    let wt_resolved = project_policy.resolve_existing_for_read(worktree_path)?;
+    let wt_policy = WorkspacePathPolicy::new(&wt_resolved)?;
+    let wt_status = git_status(&wt_policy)?;
+
+    // If the agent left uncommitted files inside the isolated worktree, stage & commit them
+    // on the worktree branch before merging into the main checkout.
+    if !wt_status.is_clean {
+        let add_out = Command::new("git")
+            .arg("-C")
+            .arg(&wt_resolved)
+            .args(["add", "-A"])
+            .output()
+            .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+        if !add_out.status.success() {
+            return Err(GitToolError::ExecutionFailed(
+                String::from_utf8_lossy(&add_out.stderr).into_owned(),
+            ));
+        }
+
+        let commit_out = Command::new("git")
+            .arg("-C")
+            .arg(&wt_resolved)
+            .args([
+                "-c",
+                "user.name=Gaggle Agent",
+                "-c",
+                "user.email=agent@gaggle.local",
+                "commit",
+                "-m",
+                &format!("chore(worktree): apply changes from {branch}"),
+            ])
+            .output()
+            .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+        if !commit_out.status.success() {
+            return Err(GitToolError::ExecutionFailed(
+                String::from_utf8_lossy(&commit_out.stderr).into_owned(),
+            ));
+        }
+    }
+
+    let root = project_policy.canonical_root();
+    let merge_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "-c",
+            "user.name=Gaggle Agent",
+            "-c",
+            "user.email=agent@gaggle.local",
+            "merge",
+            "--no-ff",
+            "-m",
+            &format!("Merge worktree branch '{branch}'"),
+            branch,
+        ])
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+
+    if !merge_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&merge_out.stderr).into_owned(),
+        ));
+    }
+
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["worktree", "remove", "--force"])
+        .arg(&wt_resolved)
+        .output();
+
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["branch", "-d", branch])
+        .output();
+
+    Ok(())
+}
+
+/// Discards an isolated Git worktree by running `git worktree remove --force <path>` and
+/// `git branch -D <branch>` after explicit user confirmation (`confirm = true`).
+pub fn git_worktree_discard(
+    project_policy: &WorkspacePathPolicy,
+    worktree_path: &str,
+    branch: &str,
+    confirm: bool,
+) -> Result<(), GitToolError> {
+    if !confirm {
+        return Err(GitToolError::ConfirmationRequired("discard"));
+    }
+
+    let wt_resolved = project_policy.resolve_existing_for_read(worktree_path)?;
+    let root = project_policy.canonical_root();
+
+    let rm_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["worktree", "remove", "--force"])
+        .arg(&wt_resolved)
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+
+    if !rm_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&rm_out.stderr).into_owned(),
+        ));
+    }
+
+    let branch_out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["branch", "-D", branch])
+        .output()
+        .map_err(|e| GitToolError::ExecutionFailed(e.to_string()))?;
+
+    if !branch_out.status.success() {
+        return Err(GitToolError::ExecutionFailed(
+            String::from_utf8_lossy(&branch_out.stderr).into_owned(),
+        ));
+    }
+
+    Ok(())
 }
