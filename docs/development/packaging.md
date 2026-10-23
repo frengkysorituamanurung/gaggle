@@ -31,13 +31,14 @@ bash -n .github/scripts/*.sh
 The job names and matrix are intentionally unchanged because `main` branch
 protection requires both status checks.
 
-## 2. Development and main package builds
+## 2. Pull request, development, and main package builds
 
 Workflow: `.github/workflows/package.yml`
 
-Every successful push to `development` or `main` builds native packages, runs a
-packaged server smoke test, generates checksums, and uploads Actions artifacts.
-It does not create a GitHub Release.
+Every pull request targeting `development` or `main`, and every successful push
+to either branch, builds native packages, runs a packaged server smoke test,
+generates checksums, and uploads Actions artifacts. It does not create a GitHub
+Release.
 
 | Artifact | Runner | Target | Format |
 | :--- | :--- | :--- | :--- |
@@ -67,8 +68,9 @@ A final workflow job downloads all four packages, requires the complete
 four-package set, verifies every checksum, and uploads `build-manifest.json`
 plus `SHA256SUMS` under `Gaggle-build-manifest-<sha>`.
 
-Artifacts are development/main builds, not stable releases. They are retained
-for 14 days and are associated with the exact commit that produced them.
+Artifacts are pull request, development, and main builds, not stable releases.
+They are retained for 14 days and are associated with the exact commit that
+produced them. Pull request builds never receive signing or release secrets.
 
 ## 3. Reproduce package builds locally
 
@@ -239,7 +241,9 @@ Uninstalling the application does not delete user data:
 Workflow: `.github/workflows/release.yml`
 
 A stable release is published only by pushing a tag matching the workspace
-version:
+version. Pull requests and ordinary branch pushes never publish a release;
+they only upload workflow artifacts. The tagged commit must already be on
+`main`:
 
 ```bash
 git checkout main
@@ -300,7 +304,7 @@ disables Gatekeeper and does not claim an unsigned build is notarized.
 - The `ubuntu-22.04-arm` and `macos-15-intel` runner labels must be confirmed
   by the first GitHub Actions run. Do not silently substitute unvalidated
   cross-compiled artifacts if a label is unavailable.
-- Stable releases are not created from ordinary branch pushes.
+- Stable releases are not created from ordinary branch pushes or pull requests.
 - There is no Windows package in this pipeline.
 - The application is a local browser UI, not a native webview. Users need a
   browser and a loopback-capable environment.

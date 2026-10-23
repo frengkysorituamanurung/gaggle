@@ -119,7 +119,8 @@ starts that server and opens the default browser:
 cargo run -p gaggle-cli --bin gaggle-desktop
 ```
 
-The CI/CD pipeline builds native packages on `development` and `main`:
+The CI/CD pipeline builds native packages for pull requests targeting
+`development` or `main`, and for pushes to those branches:
 
 ```text
 Gaggle-macOS-arm64.zip
@@ -129,7 +130,8 @@ Gaggle-linux-aarch64.tar.gz
 ```
 
 Each workflow artifact includes the package plus a SHA-256 file and JSON
-metadata. Stable releases are published only from `v*` tags. See
+metadata. Pull request builds are artifact-only. Stable releases are published
+only from `v*` tags whose commits are on `main`. See
 [Building and Packaging Gaggle](./docs/development/packaging.md) for
 installation steps, runtime requirements, signing status, and the release
 procedure. The macOS artifact is a ZIP containing `Gaggle.app`; no `.dmg`
