@@ -54,6 +54,13 @@ pub struct CreateProjectRequest {
     pub vcs_kind: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectStatusResponse {
+    #[serde(flatten)]
+    pub project: Project,
+    pub path_exists: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateChatRequest {
     pub project_id: String,
@@ -134,6 +141,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/diagnostics", get(diagnostics_handler))
         .route("/api/settings", get(list_settings).put(upsert_setting))
         .route("/api/projects", get(list_projects).post(create_project))
+        .route("/api/projects/{id}/chats", get(list_project_chats))
         .route("/api/projects/{id}/files", get(list_project_files))
         .route("/api/projects/{id}/git-status", get(project_git_status))
         .route("/api/projects/{id}/diff", get(project_git_diff))
@@ -235,19 +243,31 @@ async fn diagnostics_handler(
 
 async fn list_projects(
     State(state): State<AppState>,
-) -> Result<Json<Vec<Project>>, (StatusCode, String)> {
+) -> Result<Json<Vec<ProjectStatusResponse>>, (StatusCode, String)> {
     let repo = ProjectRepository::new(state.pool);
     let projects = repo
         .list_active()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(projects))
+
+    let enriched = projects
+        .into_iter()
+        .map(|project| {
+            let path_exists = std::path::Path::new(&project.root_path).is_dir();
+            ProjectStatusResponse {
+                project,
+                path_exists,
+            }
+        })
+        .collect();
+
+    Ok(Json(enriched))
 }
 
 async fn create_project(
     State(state): State<AppState>,
     Json(req): Json<CreateProjectRequest>,
-) -> Result<(StatusCode, Json<Project>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<ProjectStatusResponse>), (StatusCode, String)> {
     let policy = WorkspacePathPolicy::new(&req.root_path)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let canonical_root = policy.canonical_root().to_string_lossy().to_string();
@@ -258,7 +278,25 @@ async fn create_project(
         .create(&req.name, &canonical_root, vcs_kind)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    Ok((StatusCode::CREATED, Json(project)))
+    Ok((
+        StatusCode::CREATED,
+        Json(ProjectStatusResponse {
+            project,
+            path_exists: true,
+        }),
+    ))
+}
+
+async fn list_project_chats(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<Vec<Chat>>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let chats = repo
+        .list_by_project(&project_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(chats))
 }
 
 async fn create_chat(

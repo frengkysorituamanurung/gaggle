@@ -138,8 +138,9 @@ On startup, Gaggle automatically:
 - `GET /api/diagnostics` — Returns a redacted diagnostic report of OS, SQLite PRAGMAs, migrations, and active counts.
 - `GET /api/settings` — Lists persisted application settings (`app_settings`, including UI theme).
 - `PUT /api/settings` — Upserts a JSON-validated application setting by key.
-- `GET /api/projects` — Lists all active projects.
+- `GET /api/projects` — Lists all active projects along with `path_exists: bool` workspace accessibility status.
 - `POST /api/projects` — Validates, canonicalizes, and registers a new project workspace.
+- `GET /api/projects/{id}/chats` — Lists active conversations scoped to a project.
 - `GET /api/projects/{id}/files` — Lists validated files and directories inside the project workspace.
 - `GET /api/projects/{id}/git-status` — Inspects the project's Git branch and modified/untracked files.
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.

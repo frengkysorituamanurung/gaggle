@@ -229,7 +229,7 @@ pub fn render_index_html() -> String {
     let light_vars = format_css_variables(&light_theme_tokens());
     let dark_vars = format_css_variables(&dark_theme_tokens());
 
-    let mut html = String::with_capacity(16384);
+    let mut html = String::with_capacity(24576);
     html.push_str(
         r#"<!DOCTYPE html>
 <html lang="en" data-theme="system">
@@ -277,7 +277,7 @@ pub fn render_index_html() -> String {
     }
     #app-shell {
       display: grid;
-      grid-template-columns: 240px 1fr 320px;
+      grid-template-columns: 260px 1fr 340px;
       height: 100vh;
       gap: 0;
     }
@@ -288,27 +288,142 @@ pub fn render_index_html() -> String {
       overflow-y: auto;
       display: flex;
       flex-direction: column;
+      gap: var(--space-sm);
     }
     .sidebar-top-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: var(--space-sm);
     }
-    .theme-select {
+    .theme-select, .select-control, .text-input {
       font-family: var(--font-ui);
       font-size: var(--size-xs);
       background: var(--bg-surface);
       color: var(--text-primary);
       border: var(--border-width) solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 0.2rem 0.4rem;
+      padding: 0.35rem 0.5rem;
+    }
+    .select-control, .text-input {
+      width: 100%;
+      font-size: var(--size-sm);
+    }
+    .workspace-switcher-box {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+      padding-bottom: var(--space-sm);
+      border-bottom: var(--border-width) solid var(--border);
+    }
+    .workspace-switcher-row {
+      display: flex;
+      gap: var(--space-xs);
+    }
+    .mode-selectors-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xs);
+    }
+    .field-label {
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      font-weight: var(--weight-medium);
+      display: block;
+      margin-bottom: 0.15rem;
+    }
+    #add-project-modal {
+      background: var(--bg-surface);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm);
+      display: none;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+    #add-project-modal.open {
+      display: flex;
+    }
+    .error-banner, .warning-banner {
+      font-size: var(--size-xs);
+      padding: 0.4rem 0.6rem;
+      border-radius: var(--radius-sm);
+      border: var(--border-width) solid var(--danger);
+      background: rgba(224, 49, 49, 0.12);
+      color: var(--danger);
+      display: none;
+    }
+    .error-banner.visible, .warning-banner.visible {
+      display: block;
+    }
+    .chat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .chat-item {
+      text-align: left;
+      width: 100%;
+      background: transparent;
+      color: var(--text-primary);
+      border: var(--border-width) solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 0.45rem 0.6rem;
       cursor: pointer;
+      font-size: var(--size-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .chat-item:hover {
+      background: var(--bg-surface);
+    }
+    .chat-item[aria-current="page"] {
+      background: var(--bg-surface);
+      border-color: var(--accent);
+      font-weight: var(--weight-medium);
+    }
+    .chat-item-meta {
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
     }
     #main-workspace {
       display: flex;
       flex-direction: column;
       background: var(--bg-app);
+      min-width: 0;
+    }
+    #workspace-header {
+      background: var(--bg-panel);
+      border-bottom: var(--border-width) solid var(--border);
+      padding: 0.65rem var(--space-md);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .workspace-header-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    #active-project-name {
+      font-weight: var(--weight-bold);
+      font-size: var(--size-md);
+    }
+    #active-project-path {
+      font-family: var(--font-mono);
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+    .workspace-header-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+      align-items: center;
     }
     #messages {
       flex: 1;
@@ -326,13 +441,27 @@ pub fn render_index_html() -> String {
       padding: var(--space-md);
       overflow-y: auto;
     }
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      font-family: var(--font-mono);
+      font-size: var(--size-xs);
+    }
+    .file-entry {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.2rem 0.35rem;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+    }
     .panel-header {
       font-size: var(--size-sm);
       font-weight: var(--weight-bold);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--text-muted);
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.5rem;
     }
     .empty-state {
       color: var(--text-muted);
@@ -359,8 +488,9 @@ pub fn render_index_html() -> String {
     .btn {
       border: none;
       border-radius: var(--radius-md);
-      padding: 0.5rem 1rem;
+      padding: 0.45rem 0.85rem;
       font-weight: var(--weight-medium);
+      font-size: var(--size-sm);
       cursor: pointer;
       background: var(--accent);
       color: white;
@@ -393,15 +523,18 @@ pub fn render_index_html() -> String {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
-      padding: 0.125rem 0.5rem;
+      padding: 0.15rem 0.5rem;
       border-radius: 9999px;
       font-size: var(--size-xs);
       font-weight: var(--weight-bold);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
     }
-    .status-running { background: var(--accent); color: white; }
-    .status-waiting { background: #f08c00; color: white; }
-    .status-completed { background: var(--success); color: white; }
-    .status-failed { background: var(--danger); color: white; }
+    .status-running { background: var(--accent); color: white; border-color: var(--accent); }
+    .status-waiting { background: #f08c00; color: white; border-color: #f08c00; }
+    .status-completed { background: var(--success); color: white; border-color: var(--success); }
+    .status-failed { background: var(--danger); color: white; border-color: var(--danger); }
     .approval-card {
       background: var(--bg-surface);
       border: var(--border-width) solid var(--border);
@@ -498,10 +631,79 @@ pub fn render_index_html() -> String {
           <option value="dark">Dark</option>
         </select>
       </div>
-      <button class="btn" style="width:100%;margin-bottom:1rem;" id="btn-new-chat">+ New Chat</button>
-      <div class="empty-state" id="recent-chats">No recent conversations yet. Register a project to get started.</div>
+
+      <div class="workspace-switcher-box" aria-label="Workspace Switcher">
+        <label class="field-label" for="project-switcher">Workspace Project</label>
+        <div class="workspace-switcher-row">
+          <select id="project-switcher" class="select-control" aria-label="Select active project">
+            <option value="">No project selected</option>
+          </select>
+          <button class="btn btn-secondary" id="btn-open-add-project" type="button" aria-label="Add project">+ Add</button>
+        </div>
+
+        <form id="add-project-modal" aria-label="Register new project">
+          <label class="field-label" for="input-project-name">Project Name</label>
+          <input id="input-project-name" class="text-input" type="text" placeholder="e.g. gaggle" required />
+          <label class="field-label" for="input-project-path">Root Directory Path</label>
+          <input id="input-project-path" class="text-input" type="text" placeholder="/Users/name/projects/repo" required />
+          <label class="field-label" for="select-project-vcs">Version Control</label>
+          <select id="select-project-vcs" class="select-control">
+            <option value="git">git</option>
+            <option value="none">none</option>
+          </select>
+          <div id="add-project-error" class="error-banner" role="alert"></div>
+          <div class="workspace-switcher-row" style="margin-top:0.25rem;">
+            <button class="btn" id="btn-submit-project" type="submit" style="flex:1;">Register</button>
+            <button class="btn btn-secondary" id="btn-cancel-project" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="workspace-switcher-box" aria-label="New Chat Configuration">
+        <div class="mode-selectors-grid">
+          <div>
+            <label class="field-label" for="select-chat-mode">Execution Mode</label>
+            <select id="select-chat-mode" class="select-control" aria-label="Execution mode">
+              <option value="local">local</option>
+              <option value="worktree">worktree</option>
+              <option value="readonly">readonly</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="select-permission-mode">Permission Mode</label>
+            <select id="select-permission-mode" class="select-control" aria-label="Permission mode">
+              <option value="ask">ask</option>
+              <option value="smart">smart</option>
+              <option value="full">full</option>
+              <option value="chat_only">chat_only</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn" style="width:100%;margin-top:0.25rem;" id="btn-new-chat" type="button">+ New Chat</button>
+      </div>
+
+      <div class="panel-header" style="margin-bottom:0.25rem;">Conversations</div>
+      <div id="recent-chats" class="chat-list">
+        <div class="empty-state">No recent conversations yet. Register a project to get started.</div>
+      </div>
     </aside>
+
     <main id="main-workspace" role="main" aria-label="Main Workspace">
+      <header id="workspace-header" aria-label="Active Workspace Context">
+        <div class="workspace-header-left">
+          <div id="active-project-name">No Project Selected</div>
+          <div id="active-project-path">Register or select a workspace folder in the sidebar</div>
+          <div id="workspace-path-warning" class="warning-banner" role="alert">
+            ⚠ Workspace root directory is missing or inaccessible on disk.
+          </div>
+        </div>
+        <div class="workspace-header-badges">
+          <span id="badge-vcs-kind" class="badge">vcs: —</span>
+          <span id="badge-exec-mode" class="badge">mode: local</span>
+          <span id="badge-perm-mode" class="badge">access: ask</span>
+        </div>
+      </header>
+
       <div id="messages" role="log" aria-live="polite">
         <div class="empty-state">Welcome to Gaggle. Ask the assistant to inspect or modify your project.</div>
       </div>
@@ -513,8 +715,13 @@ pub fn render_index_html() -> String {
         </div>
       </div>
     </main>
+
     <aside id="details-panel" role="complementary" aria-label="Contextual Details">
-      <div class="panel-header">Run Timeline</div>
+      <div class="panel-header">Workspace Files</div>
+      <div id="workspace-files" class="file-list">
+        <div class="empty-state">Select a project to inspect workspace files.</div>
+      </div>
+      <div style="margin-top:1rem;" class="panel-header">Run Timeline</div>
       <div class="empty-state" id="run-timeline">No run in progress. Submit a message to start.</div>
       <div style="margin-top:1rem;" class="panel-header">Pending Approvals</div>
       <div id="approval-queue"></div>
@@ -532,6 +739,32 @@ pub fn render_index_html() -> String {
       const approvalQueue = document.getElementById('approval-queue');
       const themeSwitcher = document.getElementById('theme-switcher');
 
+      const projectSwitcher = document.getElementById('project-switcher');
+      const btnOpenAddProject = document.getElementById('btn-open-add-project');
+      const addProjectModal = document.getElementById('add-project-modal');
+      const inputProjectName = document.getElementById('input-project-name');
+      const inputProjectPath = document.getElementById('input-project-path');
+      const selectProjectVcs = document.getElementById('select-project-vcs');
+      const addProjectError = document.getElementById('add-project-error');
+      const btnCancelProject = document.getElementById('btn-cancel-project');
+
+      const selectChatMode = document.getElementById('select-chat-mode');
+      const selectPermissionMode = document.getElementById('select-permission-mode');
+      const btnNewChat = document.getElementById('btn-new-chat');
+      const recentChatsEl = document.getElementById('recent-chats');
+
+      const activeProjectNameEl = document.getElementById('active-project-name');
+      const activeProjectPathEl = document.getElementById('active-project-path');
+      const workspacePathWarningEl = document.getElementById('workspace-path-warning');
+      const badgeVcsKindEl = document.getElementById('badge-vcs-kind');
+      const badgeExecModeEl = document.getElementById('badge-exec-mode');
+      const badgePermModeEl = document.getElementById('badge-perm-mode');
+      const workspaceFilesEl = document.getElementById('workspace-files');
+
+      let projectsById = {};
+      let chatsById = {};
+      let worktreesByChatId = {};
+      let currentProjectId = null;
       let currentChatId = null;
       let currentRunId = null;
       let eventSource = null;
@@ -605,7 +838,305 @@ pub fn render_index_html() -> String {
         });
       }
 
+      function updateWorkspaceHeader() {
+        const proj = currentProjectId ? projectsById[currentProjectId] : null;
+        const chat = currentChatId ? chatsById[currentChatId] : null;
+
+        if (!proj) {
+          activeProjectNameEl.textContent = 'No Project Selected';
+          activeProjectPathEl.textContent = 'Register or select a workspace folder in the sidebar';
+          workspacePathWarningEl.classList.remove('visible');
+          badgeVcsKindEl.textContent = 'vcs: —';
+          badgeExecModeEl.textContent = 'mode: ' + selectChatMode.value;
+          badgePermModeEl.textContent = 'access: ' + selectPermissionMode.value;
+          return;
+        }
+
+        activeProjectNameEl.textContent = proj.name + (chat ? ' — ' + chat.title : '');
+        activeProjectPathEl.textContent = proj.root_path;
+
+        if (proj.path_exists === false) {
+          workspacePathWarningEl.classList.add('visible');
+        } else {
+          workspacePathWarningEl.classList.remove('visible');
+        }
+
+        badgeVcsKindEl.textContent = 'vcs: ' + (proj.vcs_kind || 'git');
+
+        const activeMode = chat ? chat.mode : selectChatMode.value;
+        const wt = (chat && worktreesByChatId[chat.id]) ? worktreesByChatId[chat.id] : null;
+        if (activeMode === 'worktree' && wt && wt.branch) {
+          badgeExecModeEl.textContent = 'mode: worktree (' + wt.branch + ')';
+        } else {
+          badgeExecModeEl.textContent = 'mode: ' + activeMode;
+        }
+
+        const activePerm = chat ? chat.permission_mode : selectPermissionMode.value;
+        badgePermModeEl.textContent = 'access: ' + activePerm;
+      }
+
+      async function loadWorkspaceFiles(projectId) {
+        workspaceFilesEl.textContent = '';
+        if (!projectId) {
+          workspaceFilesEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'Select a project to inspect workspace files.'
+          }));
+          return;
+        }
+        try {
+          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/files');
+          if (!res.ok) {
+            const errText = await res.text();
+            workspaceFilesEl.appendChild(createEl('div', {
+              className: 'empty-state',
+              textContent: 'Unable to list files: ' + errText
+            }));
+            return;
+          }
+          const entries = await res.json();
+          if (!entries.length) {
+            workspaceFilesEl.appendChild(createEl('div', {
+              className: 'empty-state',
+              textContent: 'Workspace directory is empty.'
+            }));
+            return;
+          }
+          entries.forEach(function(entry) {
+            const label = (entry.is_dir ? '📁 ' : '📄 ') + entry.relative_path;
+            const sizeLabel = entry.is_dir ? 'dir' : (entry.size_bytes + ' B');
+            workspaceFilesEl.appendChild(createEl('div', { className: 'file-entry' }, [
+              createEl('span', { textContent: label }),
+              createEl('span', { textContent: sizeLabel })
+            ]));
+          });
+        } catch (e) {
+          workspaceFilesEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'Error loading files: ' + e.message
+          }));
+        }
+      }
+
+      async function loadProjectWorktrees(projectId) {
+        worktreesByChatId = {};
+        if (!projectId) return;
+        try {
+          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/worktrees');
+          if (!res.ok) return;
+          const list = await res.json();
+          list.forEach(function(wt) {
+            worktreesByChatId[wt.chat_id] = wt;
+          });
+        } catch (e) {
+          console.error('Failed to load worktrees:', e);
+        }
+      }
+
+      function renderChatList(chats) {
+        recentChatsEl.textContent = '';
+        if (!chats.length) {
+          recentChatsEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'No conversations in this project yet. Click + New Chat to start.'
+          }));
+          return;
+        }
+        chats.forEach(function(chat) {
+          const wt = worktreesByChatId[chat.id];
+          const modeLabel = (chat.mode === 'worktree' && wt) ? ('worktree: ' + wt.branch) : chat.mode;
+          const btn = createEl('button', {
+            type: 'button',
+            className: 'chat-item',
+            'aria-current': chat.id === currentChatId ? 'page' : 'false',
+            onclick: function() { selectChat(chat.id); }
+          }, [
+            createEl('span', { textContent: chat.title }),
+            createEl('span', { className: 'chat-item-meta', textContent: modeLabel + ' • ' + chat.permission_mode })
+          ]);
+          recentChatsEl.appendChild(btn);
+        });
+      }
+
+      function selectChat(chatId) {
+        currentChatId = chatId;
+        const chatList = Object.keys(chatsById).map(function(id) { return chatsById[id]; });
+        renderChatList(chatList);
+        updateWorkspaceHeader();
+      }
+
+      async function selectProject(projectId) {
+        // Strictly isolate context when switching between projects
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        currentProjectId = projectId || null;
+        currentChatId = null;
+        currentRunId = null;
+        chatsById = {};
+        messagesEl.textContent = '';
+
+        if (projectSwitcher && projectSwitcher.value !== (projectId || '')) {
+          projectSwitcher.value = projectId || '';
+        }
+
+        if (!currentProjectId) {
+          updateWorkspaceHeader();
+          renderChatList([]);
+          await loadWorkspaceFiles(null);
+          return;
+        }
+
+        const proj = projectsById[currentProjectId];
+        if (proj) {
+          selectChatMode.value = proj.default_mode || 'local';
+          selectPermissionMode.value = proj.default_access || 'ask';
+        }
+
+        await loadProjectWorktrees(currentProjectId);
+
+        try {
+          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
+          if (res.ok) {
+            const chats = await res.json();
+            chats.forEach(function(c) { chatsById[c.id] = c; });
+            if (chats.length > 0) {
+              currentChatId = chats[0].id;
+            }
+            renderChatList(chats);
+          }
+        } catch (e) {
+          console.error('Failed to load project chats:', e);
+        }
+
+        updateWorkspaceHeader();
+        await loadWorkspaceFiles(currentProjectId);
+      }
+
+      async function loadProjects(preferredProjectId) {
+        try {
+          const res = await fetch(API_BASE + '/api/projects');
+          if (!res.ok) return;
+          const projects = await res.json();
+          projectsById = {};
+          projectSwitcher.textContent = '';
+
+          if (projects.length === 0) {
+            projectSwitcher.appendChild(createEl('option', {
+              value: '',
+              textContent: 'No projects registered'
+            }));
+            await selectProject(null);
+            return;
+          }
+
+          projects.forEach(function(p) {
+            projectsById[p.id] = p;
+            projectSwitcher.appendChild(createEl('option', {
+              value: p.id,
+              textContent: p.name + ' (' + p.vcs_kind + ')'
+            }));
+          });
+
+          const targetId = (preferredProjectId && projectsById[preferredProjectId])
+            ? preferredProjectId
+            : projects[0].id;
+          await selectProject(targetId);
+        } catch (e) {
+          console.error('Failed to load projects:', e);
+        }
+      }
+
+      projectSwitcher.addEventListener('change', function() {
+        selectProject(projectSwitcher.value);
+      });
+
+      btnOpenAddProject.addEventListener('click', function() {
+        addProjectError.textContent = '';
+        addProjectError.classList.remove('visible');
+        addProjectModal.classList.toggle('open');
+        if (addProjectModal.classList.contains('open')) {
+          inputProjectName.focus();
+        }
+      });
+
+      btnCancelProject.addEventListener('click', function() {
+        addProjectModal.classList.remove('open');
+        addProjectError.textContent = '';
+        addProjectError.classList.remove('visible');
+      });
+
+      addProjectModal.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        addProjectError.textContent = '';
+        addProjectError.classList.remove('visible');
+
+        const payload = {
+          name: inputProjectName.value.trim(),
+          root_path: inputProjectPath.value.trim(),
+          vcs_kind: selectProjectVcs.value
+        };
+
+        try {
+          const res = await fetch(API_BASE + '/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) {
+            const errMsg = await res.text();
+            addProjectError.textContent = errMsg || 'Failed to register project';
+            addProjectError.classList.add('visible');
+            return;
+          }
+          const created = await res.json();
+          inputProjectName.value = '';
+          inputProjectPath.value = '';
+          addProjectModal.classList.remove('open');
+          await loadProjects(created.id);
+        } catch (err) {
+          addProjectError.textContent = err.message;
+          addProjectError.classList.add('visible');
+        }
+      });
+
+      btnNewChat.addEventListener('click', async function() {
+        if (!currentProjectId) {
+          addProjectModal.classList.add('open');
+          addProjectError.textContent = 'Register or select a project first before creating a chat.';
+          addProjectError.classList.add('visible');
+          return;
+        }
+        try {
+          const res = await fetch(API_BASE + '/api/chats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project_id: currentProjectId,
+              title: 'Chat ' + (Object.keys(chatsById).length + 1),
+              mode: selectChatMode.value,
+              permission_mode: selectPermissionMode.value
+            })
+          });
+          if (!res.ok) {
+            appendMessage('assistant', 'Failed to create chat: ' + (await res.text()));
+            return;
+          }
+          const createdChat = await res.json();
+          chatsById[createdChat.id] = createdChat;
+          await loadProjectWorktrees(currentProjectId);
+          selectChat(createdChat.id);
+        } catch (e) {
+          appendMessage('assistant', 'Error creating chat: ' + e.message);
+        }
+      });
+
+      selectChatMode.addEventListener('change', updateWorkspaceHeader);
+      selectPermissionMode.addEventListener('change', updateWorkspaceHeader);
+
       loadSavedTheme();
+      loadProjects(null);
 
       function appendMessage(role, text) {
         const div = createEl('div', {
@@ -794,5 +1325,38 @@ mod tests {
         // Ensure no unsafe innerHTML assignments exist in the generated UI script
         assert!(!html.contains(".innerHTML"));
         assert!(html.contains("function createEl("));
+    }
+
+    #[test]
+    fn test_workspace_switcher_add_project_modal_and_mode_selectors_present() {
+        let html = render_index_html();
+
+        // Sidebar workspace switcher & + Add Project modal controls
+        assert!(html.contains("id=\"project-switcher\""));
+        assert!(html.contains("id=\"btn-open-add-project\""));
+        assert!(html.contains("id=\"add-project-modal\""));
+        assert!(html.contains("id=\"input-project-name\""));
+        assert!(html.contains("id=\"input-project-path\""));
+        assert!(html.contains("id=\"select-project-vcs\""));
+        assert!(html.contains("id=\"add-project-error\""));
+
+        // Execution mode (local, worktree, readonly) & permission mode (ask, smart, full, chat_only)
+        assert!(html.contains("id=\"select-chat-mode\""));
+        assert!(html.contains("<option value=\"local\">local</option>"));
+        assert!(html.contains("<option value=\"worktree\">worktree</option>"));
+        assert!(html.contains("<option value=\"readonly\">readonly</option>"));
+
+        assert!(html.contains("id=\"select-permission-mode\""));
+        assert!(html.contains("<option value=\"ask\">ask</option>"));
+        assert!(html.contains("<option value=\"smart\">smart</option>"));
+        assert!(html.contains("<option value=\"full\">full</option>"));
+        assert!(html.contains("<option value=\"chat_only\">chat_only</option>"));
+
+        // Active workspace header & workspace files inspector
+        assert!(html.contains("id=\"workspace-header\""));
+        assert!(html.contains("id=\"active-project-name\""));
+        assert!(html.contains("id=\"active-project-path\""));
+        assert!(html.contains("id=\"workspace-path-warning\""));
+        assert!(html.contains("id=\"workspace-files\""));
     }
 }
