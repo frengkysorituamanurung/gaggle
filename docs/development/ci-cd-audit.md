@@ -47,8 +47,9 @@ The required-check names are produced by the existing matrix job name in
 `.github/workflows/ci.yml`. The implementation preserves that job name and
 matrix so branch protection does not break.
 
-`development` also exists as the integration branch. The existing CI already
-triggers on pushes and pull requests for both `development` and `main`.
+`development` also exists as the integration branch. CI and the package matrix
+trigger on pushes and pull requests for both `development` and `main`. Pull
+request package builds are artifact-only and never publish a release.
 
 ## 3. Current Gaggle workflow inventory (before this change)
 
@@ -193,12 +194,15 @@ Each package is accompanied by:
 
 ## 8. Release policy
 
-- Ordinary pushes to `development` and `main` never create a stable GitHub
-  Release.
-- `development` and `main` package artifacts are workflow artifacts, retained
-  for 14 days, named with the full commit SHA.
+- Pull requests and ordinary pushes to `development` and `main` never create a
+  stable GitHub Release.
+- Pull requests targeting `development` or `main` run the package matrix and
+  upload commit-scoped workflow artifacts. They do not receive signing or
+  release secrets.
+- Pull request, `development`, and `main` package artifacts are workflow
+  artifacts, retained for 14 days, named with the full commit SHA.
 - Stable releases are created only by pushing a tag matching `v<workspace
-  version>` (currently `v0.1.0`).
+  version>` (currently `v0.1.0`) whose commit is already on `main`.
 - The release workflow verifies that:
   1. the tag matches `Cargo.toml`;
   2. the tag points at the checked-out commit;

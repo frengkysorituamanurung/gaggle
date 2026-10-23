@@ -105,11 +105,12 @@ Every new feature or bug fix should include automated tests:
   .github/scripts/check-ui-embedded.sh
   bash -n .github/scripts/*.sh
   ```
-- CI runs the same checks on Ubuntu and macOS for pulls targeting
-  `development` or `main`. The `Gaggle.app` and Linux package builds are
-  described in [Building and Packaging Gaggle](./docs/development/packaging.md).
-- Do not add a workflow that publishes a stable release from a branch push.
-  Stable releases are tag-driven and validated against `main`.
+- CI and the native package builds run on Ubuntu and macOS for pulls targeting
+  `development` or `main`. Pull request builds upload workflow artifacts and do
+  not create a release. The `Gaggle.app` and Linux package builds are described
+  in [Building and Packaging Gaggle](./docs/development/packaging.md).
+- Do not add a workflow that publishes a stable release from a branch push or
+  pull request. Stable releases are tag-driven and validated against `main`.
 
 ---
 
