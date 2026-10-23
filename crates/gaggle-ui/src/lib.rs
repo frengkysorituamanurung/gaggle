@@ -609,6 +609,251 @@ pub fn render_index_html() -> String {
       }
       .streaming-cursor::after { animation: none; }
     }
+    .hidden { display: none !important; }
+    #onboarding-card {
+      margin: var(--space-md);
+      border: var(--border-width) solid var(--accent);
+      border-radius: var(--radius-md);
+      background: var(--bg-panel);
+      padding: var(--space-md);
+    }
+    .onboarding-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .onboarding-steps {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-sm);
+      margin-top: var(--space-sm);
+    }
+    .onboarding-step {
+      background: var(--bg-surface);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+    .privacy-note {
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin: var(--space-sm) 0 0;
+    }
+    .composer-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+    .composer-toolbar .select-control {
+      width: auto;
+      min-width: 240px;
+      max-width: 100%;
+    }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+      background: rgba(0, 0, 0, 0.55);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-dialog {
+      width: min(940px, 100%);
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      overflow: hidden;
+    }
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: var(--space-md);
+      border-bottom: var(--border-width) solid var(--border);
+    }
+    .modal-body {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .settings-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 190px;
+      padding: var(--space-sm);
+      border-right: var(--border-width) solid var(--border);
+      background: var(--bg-app);
+    }
+    .settings-tab {
+      text-align: left;
+      background: transparent;
+      color: var(--text-primary);
+      border: var(--border-width) solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 0.5rem 0.65rem;
+      font-size: var(--size-sm);
+      cursor: pointer;
+    }
+    .settings-tab[aria-selected="true"] {
+      background: var(--bg-surface);
+      border-color: var(--accent);
+      font-weight: var(--weight-bold);
+    }
+    .settings-panels {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      padding: var(--space-md);
+    }
+    .settings-panel {
+      display: none;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+    .settings-panel.active { display: flex; }
+    .settings-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+      padding: var(--space-sm);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+    }
+    .settings-section h3 {
+      margin: 0;
+      font-size: var(--size-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: flex-end;
+    }
+    .form-row > div {
+      flex: 1 1 170px;
+      min-width: 0;
+    }
+    .settings-note {
+      margin: 0;
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--size-xs);
+    }
+    .data-table th, .data-table td {
+      text-align: left;
+      padding: 0.35rem 0.45rem;
+      border-bottom: var(--border-width) solid var(--border);
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .data-table th {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.7rem;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .status-ok { background: var(--success); color: white; border-color: var(--success); }
+    .status-warn { background: #f08c00; color: white; border-color: #f08c00; }
+    .status-danger { background: var(--danger); color: white; border-color: var(--danger); }
+    .provider-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: var(--space-sm);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-panel);
+    }
+    .provider-card + .provider-card { margin-top: var(--space-sm); }
+    .provider-card-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-xs);
+    }
+    .mono { font-family: var(--font-mono); word-break: break-all; }
+    .inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+    .settings-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .extension-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: 0.4rem 0;
+      border-bottom: var(--border-width) solid var(--border);
+    }
+    .extension-row:last-child { border-bottom: none; }
+    .extension-row-main { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+    .toggle-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--size-xs); }
+    .toast {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      z-index: 1100;
+      max-width: min(420px, calc(100vw - 2rem));
+      padding: 0.6rem 0.8rem;
+      border-radius: var(--radius-md);
+      border: var(--border-width) solid var(--border);
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      font-size: var(--size-sm);
+      display: none;
+    }
+    .toast.visible { display: block; }
+    .toast.error { border-color: var(--danger); color: var(--danger); }
+    @media (max-width: 760px) {
+      .modal-body { flex-direction: column; }
+      .settings-tabs {
+        flex-direction: row;
+        min-width: 0;
+        overflow-x: auto;
+        border-right: none;
+        border-bottom: var(--border-width) solid var(--border);
+      }
+      .settings-tab { white-space: nowrap; }
+      .onboarding-steps { grid-template-columns: 1fr; }
+    }
     @media (max-width: 900px) {
       #app-shell {
         grid-template-columns: 1fr;
@@ -630,6 +875,7 @@ pub fn render_index_html() -> String {
           <option value="light">Light</option>
           <option value="dark">Dark</option>
         </select>
+        <button id="btn-open-settings" class="icon-btn" type="button" aria-label="Open settings and diagnostics" aria-expanded="false" title="Settings (Cmd/Ctrl + ,)">⚙</button>
       </div>
 
       <div class="workspace-switcher-box" aria-label="Workspace Switcher">
@@ -709,10 +955,44 @@ pub fn render_index_html() -> String {
         </div>
       </header>
 
+      <section id="onboarding-card" class="hidden" aria-labelledby="onboarding-title">
+        <div class="onboarding-header">
+          <div>
+            <div id="onboarding-title" class="panel-header" style="margin-bottom:0.25rem;">Welcome to Gaggle</div>
+            <p class="settings-note">Two optional steps to get productive. You can skip provider setup and keep using the built-in <span class="mono">local-mock</span> model offline.</p>
+          </div>
+          <button id="btn-skip-onboarding" class="btn btn-secondary" type="button">Skip for now</button>
+        </div>
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <strong>1. Register your first project</strong>
+            <p class="settings-note">Pick a local directory. Gaggle only reads and writes inside validated project roots.</p>
+            <button id="btn-onboarding-add-project" class="btn" type="button">Register project</button>
+          </div>
+          <div class="onboarding-step">
+            <strong>2. Configure an AI provider (optional)</strong>
+            <p class="settings-note">Add OpenAI, Anthropic, OpenRouter, DeepSeek, Ollama, or an OpenAI-compatible endpoint, then choose a model in the composer.</p>
+            <button id="btn-onboarding-provider" class="btn btn-secondary" type="button">Open provider settings</button>
+          </div>
+        </div>
+        <p class="privacy-note">
+          <strong>What stays local:</strong> <span class="mono">gaggle.db</span>, your workspace files, run history, and approvals never leave this machine by default.
+          API keys are stored in the server credential store and referenced from SQLite only by <span class="mono">secret_ref</span>; the key value is never written to the database or rendered in the UI.
+          <strong>What leaves this machine:</strong> when a remote provider is active, the prompts and workspace context included in a chat turn are sent to that provider for inference.
+        </p>
+      </section>
+
       <div id="messages" role="log" aria-live="polite">
         <div class="empty-state">Welcome to Gaggle. Ask the assistant to inspect or modify your project.</div>
       </div>
       <div id="composer">
+        <div class="composer-toolbar">
+          <label class="field-label" for="select-model" style="margin:0;">Model</label>
+          <select id="select-model" class="select-control" aria-label="Active model used for chat submissions">
+            <option value="local-mock">local-mock (offline built-in)</option>
+          </select>
+          <span id="model-status-note" class="settings-note">No remote model configured. Chat runs against the offline built-in model.</span>
+        </div>
         <textarea class="composer-input" id="composer-text" placeholder="Describe a task for your project..." aria-label="Message composer"></textarea>
         <div class="composer-actions">
           <button class="btn btn-secondary" id="btn-stop" disabled>Stop</button>
@@ -739,6 +1019,222 @@ pub fn render_index_html() -> String {
       <div id="git-changes" class="empty-state">No changes detected.</div>
     </aside>
   </div>
+
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-header">
+        <div>
+          <div id="settings-title" class="panel-header" style="margin:0;">Settings &amp; Integrations</div>
+          <div class="settings-note">Cmd/Ctrl + , opens this dialog · Esc closes it</div>
+        </div>
+        <button id="btn-close-settings" class="icon-btn" type="button" aria-label="Close settings">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+          <button class="settings-tab" id="tab-providers" type="button" role="tab" data-settings-tab="providers" aria-selected="true" aria-controls="panel-providers">Providers &amp; Models</button>
+          <button class="settings-tab" id="tab-permissions" type="button" role="tab" data-settings-tab="permissions" aria-selected="false" aria-controls="panel-permissions">Permissions &amp; Rules</button>
+          <button class="settings-tab" id="tab-extensions" type="button" role="tab" data-settings-tab="extensions" aria-selected="false" aria-controls="panel-extensions">Extensions</button>
+          <button class="settings-tab" id="tab-appearance" type="button" role="tab" data-settings-tab="appearance" aria-selected="false" aria-controls="panel-appearance">Appearance</button>
+          <button class="settings-tab" id="tab-diagnostics" type="button" role="tab" data-settings-tab="diagnostics" aria-selected="false" aria-controls="panel-diagnostics">Diagnostics</button>
+        </div>
+        <div class="settings-panels">
+          <section class="settings-panel active" id="panel-providers" role="tabpanel" aria-labelledby="tab-providers">
+            <div class="settings-section">
+              <h3>Add provider</h3>
+              <form id="form-add-provider" class="form-row" autocomplete="off">
+                <div>
+                  <label class="field-label" for="input-provider-kind">Kind</label>
+                  <select id="input-provider-kind" class="select-control">
+                    <option value="openai">openai</option>
+                    <option value="anthropic">anthropic</option>
+                    <option value="openrouter">openrouter</option>
+                    <option value="deepseek">deepseek</option>
+                    <option value="ollama">ollama</option>
+                    <option value="openai_compat">openai_compat</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="input-provider-name">Display name</label>
+                  <input id="input-provider-name" class="text-input" type="text" placeholder="e.g. OpenAI production" required />
+                </div>
+                <div>
+                  <label class="field-label" for="input-provider-base-url">Base URL (optional)</label>
+                  <input id="input-provider-base-url" class="text-input" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" />
+                </div>
+                <div>
+                  <label class="field-label" for="input-provider-auth-kind">Auth kind</label>
+                  <select id="input-provider-auth-kind" class="select-control">
+                    <option value="api_key">api_key</option>
+                    <option value="oauth">oauth</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="input-provider-api-key">API key</label>
+                  <input id="input-provider-api-key" class="text-input" type="password" placeholder="Never stored in SQLite" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <button id="btn-add-provider" class="btn" type="submit" style="width:100%;">Add provider</button>
+                </div>
+              </form>
+              <div id="provider-form-status" class="error-banner" role="alert"></div>
+              <p class="settings-note">
+                The key is sent once to the local server, stored via the <span class="mono">CredentialStore</span>, and cleared from this form immediately.
+                Only <span class="mono">secret_ref</span> and a boolean credential status are persisted. When a remote provider is selected, the prompts and
+                workspace context included in a chat turn are sent to that provider for inference.
+              </p>
+            </div>
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Configured providers</h3>
+                <button id="btn-refresh-providers" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="provider-list"><div class="empty-state">Loading providers…</div></div>
+            </div>
+            <div class="settings-section">
+              <h3>Add model to provider</h3>
+              <form id="form-add-model" class="form-row" autocomplete="off">
+                <div>
+                  <label class="field-label" for="input-model-provider">Provider</label>
+                  <select id="input-model-provider" class="select-control"></select>
+                </div>
+                <div>
+                  <label class="field-label" for="input-model-key">Model key</label>
+                  <input id="input-model-key" class="text-input" type="text" placeholder="gpt-4o-mini" required />
+                </div>
+                <div>
+                  <label class="field-label" for="input-model-name">Display name</label>
+                  <input id="input-model-name" class="text-input" type="text" placeholder="GPT-4o mini" required />
+                </div>
+                <div>
+                  <label class="field-label" for="input-model-context">Context window</label>
+                  <input id="input-model-context" class="text-input" type="number" min="1" value="128000" required />
+                </div>
+                <div>
+                  <label class="toggle-label" for="input-model-supports-tools">
+                    <input id="input-model-supports-tools" type="checkbox" checked /> Supports tools
+                  </label>
+                </div>
+                <div>
+                  <button id="btn-add-model" class="btn" type="submit" style="width:100%;">Add model</button>
+                </div>
+              </form>
+              <div id="model-form-status" class="error-banner" role="alert"></div>
+              <div id="model-list"></div>
+            </div>
+            <div class="settings-section">
+              <h3>Active chat model</h3>
+              <select id="settings-active-model" class="select-control" aria-label="Active chat model"></select>
+              <p class="settings-note">The composer uses this model key. If no remote model is configured, Gaggle falls back to <span class="mono">local-mock</span>.</p>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="panel-permissions" role="tabpanel" aria-labelledby="tab-permissions">
+            <div class="settings-section">
+              <h3>Project access</h3>
+              <p class="settings-note">Default access for new chats in the active project. A <span class="mono">deny</span> command rule always wins, even in <span class="mono">full</span> access.</p>
+              <div class="form-row">
+                <div>
+                  <label class="field-label" for="settings-project-access">Default access</label>
+                  <select id="settings-project-access" class="select-control">
+                    <option value="ask">ask — approve every mutating tool call</option>
+                    <option value="full">full — execute without approval</option>
+                  </select>
+                </div>
+                <div>
+                  <button id="btn-save-project-access" class="btn" type="button" style="width:100%;">Save access</button>
+                </div>
+              </div>
+              <div id="project-access-status" class="settings-note" role="status"></div>
+            </div>
+            <div class="settings-section">
+              <h3>Tool permissions</h3>
+              <p class="settings-note">Per-tool overrides for the active project. Leaving a tool on <span class="mono">default</span> delegates to the permission engine.</p>
+              <div id="tool-permission-list"><div class="empty-state">Select a project to manage tool permissions.</div></div>
+            </div>
+            <div class="settings-section">
+              <h3>Command rules</h3>
+              <form id="form-add-command-rule" class="form-row" autocomplete="off">
+                <div>
+                  <label class="field-label" for="input-rule-pattern">Pattern</label>
+                  <input id="input-rule-pattern" class="text-input" type="text" placeholder="rm -rf" required />
+                </div>
+                <div>
+                  <label class="field-label" for="input-rule-match-kind">Match kind</label>
+                  <select id="input-rule-match-kind" class="select-control">
+                    <option value="exact">exact</option>
+                    <option value="prefix">prefix</option>
+                    <option value="regex">regex</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="input-rule-action">Action</label>
+                  <select id="input-rule-action" class="select-control">
+                    <option value="deny">deny</option>
+                    <option value="ask">ask</option>
+                    <option value="allow">allow</option>
+                  </select>
+                </div>
+                <div>
+                  <button id="btn-add-command-rule" class="btn" type="submit" style="width:100%;">Add rule</button>
+                </div>
+              </form>
+              <div id="rule-form-status" class="error-banner" role="alert"></div>
+              <div id="command-rule-list"></div>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="panel-extensions" role="tabpanel" aria-labelledby="tab-extensions">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Extensions &amp; tool budget</h3>
+                <button id="btn-refresh-extensions" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="extension-warning" class="warning-banner" role="alert">
+                Active tools exceed the recommended limit of 25. Disable extensions or tools to keep model tool selection accurate.
+              </div>
+              <p class="settings-note">
+                Enabled tools: <strong id="extension-active-count">—</strong> / recommended <strong id="extension-max-count">25</strong>.
+                Disabling a bundled extension removes its tools from future runs until re-enabled.
+              </p>
+              <div id="extension-list"><div class="empty-state">Loading extensions…</div></div>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance">
+            <div class="settings-section">
+              <h3>Theme</h3>
+              <label class="field-label" for="settings-theme-select">Color theme</label>
+              <select id="settings-theme-select" class="select-control">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+              <p class="settings-note">Theme changes are persisted in <span class="mono">app_settings</span> and shared with the sidebar switcher. Gaggle respects reduced-motion preferences.</p>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Gaggle doctor</h3>
+                <div class="inline-actions">
+                  <button id="btn-refresh-diagnostics" class="btn btn-secondary" type="button">Refresh</button>
+                  <button id="btn-copy-diagnostics" class="btn" type="button">Copy Redacted Diagnostics</button>
+                </div>
+              </div>
+              <p class="settings-note">Live report from <span class="mono">GET /api/diagnostics</span>. It contains no API keys or prompts, but database paths can reveal local directory names.</p>
+              <div id="diagnostics-status" class="settings-note" role="status"></div>
+              <div id="diagnostics-output"><div class="empty-state">Loading diagnostics…</div></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-toast" class="toast" role="status" aria-live="polite"></div>
+
   <script>
     (function() {
       const API_BASE = window.location.origin;
@@ -777,6 +1273,57 @@ pub fn render_index_html() -> String {
       const connectionStatusEl = document.getElementById('connection-status');
       const reconnectBannerEl = document.getElementById('reconnect-banner');
 
+      const selectModelEl = document.getElementById('select-model');
+      const modelStatusNoteEl = document.getElementById('model-status-note');
+      const onboardingCardEl = document.getElementById('onboarding-card');
+      const btnSkipOnboarding = document.getElementById('btn-skip-onboarding');
+      const btnOnboardingAddProject = document.getElementById('btn-onboarding-add-project');
+      const btnOnboardingProvider = document.getElementById('btn-onboarding-provider');
+      const btnOpenSettings = document.getElementById('btn-open-settings');
+      const settingsModalEl = document.getElementById('settings-modal');
+      const btnCloseSettings = document.getElementById('btn-close-settings');
+      const settingsTabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-settings-tab]'));
+      const tabProviders = document.getElementById('tab-providers');
+      const providerForm = document.getElementById('form-add-provider');
+      const inputProviderKind = document.getElementById('input-provider-kind');
+      const inputProviderName = document.getElementById('input-provider-name');
+      const inputProviderBaseUrl = document.getElementById('input-provider-base-url');
+      const inputProviderAuthKind = document.getElementById('input-provider-auth-kind');
+      const inputProviderApiKey = document.getElementById('input-provider-api-key');
+      const providerFormStatus = document.getElementById('provider-form-status');
+      const providerListEl = document.getElementById('provider-list');
+      const btnRefreshProviders = document.getElementById('btn-refresh-providers');
+      const modelForm = document.getElementById('form-add-model');
+      const inputModelProvider = document.getElementById('input-model-provider');
+      const inputModelKey = document.getElementById('input-model-key');
+      const inputModelName = document.getElementById('input-model-name');
+      const inputModelContext = document.getElementById('input-model-context');
+      const inputModelSupportsTools = document.getElementById('input-model-supports-tools');
+      const modelFormStatus = document.getElementById('model-form-status');
+      const modelListEl = document.getElementById('model-list');
+      const settingsActiveModel = document.getElementById('settings-active-model');
+      const settingsProjectAccess = document.getElementById('settings-project-access');
+      const btnSaveProjectAccess = document.getElementById('btn-save-project-access');
+      const projectAccessStatus = document.getElementById('project-access-status');
+      const toolPermissionListEl = document.getElementById('tool-permission-list');
+      const commandRuleForm = document.getElementById('form-add-command-rule');
+      const inputRulePattern = document.getElementById('input-rule-pattern');
+      const inputRuleMatchKind = document.getElementById('input-rule-match-kind');
+      const inputRuleAction = document.getElementById('input-rule-action');
+      const ruleFormStatus = document.getElementById('rule-form-status');
+      const commandRuleListEl = document.getElementById('command-rule-list');
+      const btnRefreshExtensions = document.getElementById('btn-refresh-extensions');
+      const extensionWarningEl = document.getElementById('extension-warning');
+      const extensionActiveCountEl = document.getElementById('extension-active-count');
+      const extensionMaxCountEl = document.getElementById('extension-max-count');
+      const extensionListEl = document.getElementById('extension-list');
+      const settingsThemeSelect = document.getElementById('settings-theme-select');
+      const btnRefreshDiagnostics = document.getElementById('btn-refresh-diagnostics');
+      const btnCopyDiagnostics = document.getElementById('btn-copy-diagnostics');
+      const diagnosticsStatusEl = document.getElementById('diagnostics-status');
+      const diagnosticsOutputEl = document.getElementById('diagnostics-output');
+      const appToastEl = document.getElementById('app-toast');
+
       let projectsById = {};
       let chatsById = {};
       let worktreesByChatId = {};
@@ -788,6 +1335,17 @@ pub fn render_index_html() -> String {
       let lastUserPrompt = '';
       let userScrolledUpDuringStream = false;
       let lastMessageSeq = 0;
+
+      let providers = [];
+      let modelsByProviderId = {};
+      let selectedModelKey = 'local-mock';
+      let registeredProjectCount = 0;
+      let onboardingDismissed = false;
+      let currentSettingsTab = 'providers';
+      let diagnosticsReport = null;
+      let lastFocusedBeforeSettings = null;
+
+      const PROVIDER_KINDS = ['openai', 'anthropic', 'openrouter', 'deepseek', 'ollama', 'openai_compat'];
 
       // XSS-safe DOM element builder: never interprets strings as raw HTML
       function createEl(tag, attrs, children) {
@@ -815,6 +1373,187 @@ pub fn render_index_html() -> String {
           });
         }
         return node;
+      }
+
+      function showToast(message, isError) {
+        appToastEl.textContent = message;
+        appToastEl.classList.toggle('error', Boolean(isError));
+        appToastEl.classList.add('visible');
+        window.clearTimeout(showToast._timer);
+        showToast._timer = window.setTimeout(function() {
+          appToastEl.classList.remove('visible');
+        }, 4000);
+      }
+
+      function setRequestStatus(el, message, isError) {
+        if (!el) return;
+        el.textContent = message || '';
+        if (el.classList.contains('error-banner')) {
+          el.classList.toggle('visible', Boolean(message));
+        }
+        el.classList.toggle('status-error', Boolean(isError));
+      }
+
+      async function apiRequest(path, options) {
+        const res = await fetch(API_BASE + path, options);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || ('Request failed with HTTP ' + res.status));
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.indexOf('application/json') === -1) return null;
+        return res.json();
+      }
+
+      async function persistSetting(key, value) {
+        return apiRequest('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key, value: value })
+        });
+      }
+
+      async function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const helper = createEl('textarea', {
+          'aria-hidden': 'true',
+          style: 'position:fixed;left:-9999px;top:0;'
+        });
+        helper.value = text;
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+      }
+
+      async function persistTheme(theme) {
+        applyTheme(theme);
+        try {
+          await persistSetting('theme', theme);
+        } catch (e) {
+          showToast('Theme saved locally but not persisted: ' + e.message, true);
+        }
+      }
+
+      function formatModelNote() {
+        if (!selectedModelKey || selectedModelKey === 'local-mock') {
+          modelStatusNoteEl.textContent = 'No remote model configured. Chat runs against the offline built-in model.';
+          return;
+        }
+        modelStatusNoteEl.textContent = 'Remote inference: prompts and included workspace context are sent to the selected provider.';
+      }
+
+      function syncSelectValue(selectEl, value) {
+        if (!selectEl) return;
+        const exists = Array.prototype.some.call(selectEl.options, function(option) {
+          return option.value === value;
+        });
+        selectEl.value = exists ? value : 'local-mock';
+      }
+
+      function buildModelOptions() {
+        const options = [{ value: 'local-mock', label: 'local-mock (offline built-in)' }];
+        providers.forEach(function(item) {
+          const provider = item.provider || item;
+          const models = modelsByProviderId[provider.id] || [];
+          models.forEach(function(model) {
+            options.push({
+              value: model.model_key,
+              label: provider.name + ' — ' + model.display_name + ' (' + model.model_key + ')'
+            });
+          });
+        });
+        return options;
+      }
+
+      function populateModelSelectors() {
+        const options = buildModelOptions();
+        const availableKeys = options.map(function(option) { return option.value; });
+        if (availableKeys.indexOf(selectedModelKey) === -1) {
+          selectedModelKey = 'local-mock';
+        }
+        [selectModelEl, settingsActiveModel].forEach(function(selectEl) {
+          if (!selectEl) return;
+          const previous = selectEl === selectModelEl ? selectedModelKey : (selectEl.value || selectedModelKey);
+          selectEl.textContent = '';
+          options.forEach(function(option) {
+            selectEl.appendChild(createEl('option', { value: option.value, textContent: option.label }));
+          });
+          syncSelectValue(selectEl, previous || 'local-mock');
+        });
+        syncSelectValue(selectModelEl, selectedModelKey);
+        syncSelectValue(settingsActiveModel, selectedModelKey);
+        formatModelNote();
+      }
+
+      function updateOnboardingState() {
+        if (!onboardingCardEl) return;
+        const shouldShow = !onboardingDismissed && (registeredProjectCount === 0 || providers.length === 0);
+        onboardingCardEl.classList.toggle('hidden', !shouldShow);
+      }
+
+      function openSettings(tab) {
+        if (!settingsModalEl) return;
+        lastFocusedBeforeSettings = document.activeElement;
+        settingsModalEl.classList.add('open');
+        btnOpenSettings.setAttribute('aria-expanded', 'true');
+        switchSettingsTab(tab || currentSettingsTab);
+        loadProviders();
+        loadExtensions();
+        loadDiagnostics();
+        loadPermissionsForProject();
+        window.setTimeout(function() {
+          const target = document.getElementById('tab-' + (tab || currentSettingsTab));
+          if (target) target.focus();
+        }, 0);
+      }
+
+      function closeSettings() {
+        if (!settingsModalEl) return;
+        settingsModalEl.classList.remove('open');
+        btnOpenSettings.setAttribute('aria-expanded', 'false');
+        if (lastFocusedBeforeSettings && typeof lastFocusedBeforeSettings.focus === 'function') {
+          lastFocusedBeforeSettings.focus();
+        }
+      }
+
+      function switchSettingsTab(tab) {
+        currentSettingsTab = tab || 'providers';
+        settingsTabButtons.forEach(function(button) {
+          const selected = button.getAttribute('data-settings-tab') === currentSettingsTab;
+          button.setAttribute('aria-selected', selected ? 'true' : 'false');
+          button.setAttribute('tabindex', selected ? '0' : '-1');
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.settings-panel'), function(panel) {
+          panel.classList.toggle('active', panel.id === 'panel-' + currentSettingsTab);
+        });
+        if (currentSettingsTab === 'permissions') loadPermissionsForProject();
+        if (currentSettingsTab === 'extensions') loadExtensions();
+        if (currentSettingsTab === 'diagnostics') loadDiagnostics();
+        if (currentSettingsTab === 'appearance' && settingsThemeSelect) {
+          settingsThemeSelect.value = document.documentElement.getAttribute('data-theme') || 'system';
+        }
+      }
+
+      function trapSettingsFocus(event) {
+        if (event.key !== 'Tab' || !settingsModalEl.classList.contains('open')) return;
+        const focusable = Array.prototype.filter.call(
+          settingsModalEl.querySelectorAll('button, input, select, textarea, [href]'),
+          function(node) { return !node.disabled && node.offsetParent !== null; }
+        );
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }
 
       function escapeHtml(value) {
@@ -876,37 +1615,357 @@ pub fn render_index_html() -> String {
         }
       }
 
-      async function loadSavedTheme() {
+      if (themeSwitcher) {
+        themeSwitcher.addEventListener('change', function() {
+          persistTheme(themeSwitcher.value);
+        });
+      }
+
+      if (settingsThemeSelect) {
+        settingsThemeSelect.addEventListener('change', function() {
+          themeSwitcher.value = settingsThemeSelect.value;
+          persistTheme(settingsThemeSelect.value);
+        });
+      }
+
+      async function loadAppPreferences() {
         try {
-          const res = await fetch(API_BASE + '/api/settings');
-          if (!res.ok) return;
-          const list = await res.json();
-          const entry = list.find(function(item) { return item.key === 'theme'; });
-          if (entry && entry.value) {
-            const parsed = JSON.parse(entry.value);
-            if (typeof parsed === 'string') {
-              applyTheme(parsed);
+          const settings = await apiRequest('/api/settings');
+          const values = {};
+          (settings || []).forEach(function(setting) {
+            try {
+              values[setting.key] = JSON.parse(setting.value);
+            } catch (e) {
+              values[setting.key] = setting.value;
             }
+          });
+          if (typeof values.theme === 'string') {
+            applyTheme(values.theme);
           }
+          if (typeof values.active_model_key === 'string' && values.active_model_key) {
+            selectedModelKey = values.active_model_key;
+          }
+          onboardingDismissed = values.onboarding_dismissed === true;
+          formatModelNote();
+          updateOnboardingState();
         } catch (e) {
-          console.error('Failed to load theme setting:', e);
+          console.error('Failed to load application preferences:', e);
         }
       }
 
-      if (themeSwitcher) {
-        themeSwitcher.addEventListener('change', async function() {
-          const chosen = themeSwitcher.value;
-          applyTheme(chosen);
-          try {
-            await fetch(API_BASE + '/api/settings', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ key: 'theme', value: chosen })
-            });
-          } catch (e) {
-            console.error('Failed to persist theme setting:', e);
+      async function loadProviders() {
+        if (providerListEl) {
+          providerListEl.textContent = '';
+          providerListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading providers…' }));
+        }
+        try {
+          providers = (await apiRequest('/api/providers')) || [];
+          modelsByProviderId = {};
+          await Promise.all(providers.map(async function(item) {
+            const provider = item.provider || item;
+            try {
+              modelsByProviderId[provider.id] =
+                (await apiRequest('/api/providers/' + encodeURIComponent(provider.id) + '/models')) || [];
+            } catch (e) {
+              modelsByProviderId[provider.id] = [];
+            }
+          }));
+          renderProviderList();
+          renderModelList();
+          populateModelSelectors();
+          updateOnboardingState();
+        } catch (e) {
+          if (providerListEl) {
+            providerListEl.textContent = '';
+            providerListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load providers: ' + e.message }));
           }
+        }
+      }
+
+      function renderProviderList() {
+        if (!providerListEl) return;
+        providerListEl.textContent = '';
+        inputModelProvider.textContent = '';
+
+        if (!providers.length) {
+          providerListEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'No providers configured yet. Add one above or keep using local-mock.'
+          }));
+          inputModelProvider.appendChild(createEl('option', { value: '', textContent: 'No providers configured' }));
+          inputModelProvider.disabled = true;
+          modelListEl.textContent = '';
+          modelListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Add a provider before registering models.' }));
+          return;
+        }
+
+        inputModelProvider.disabled = false;
+        providers.forEach(function(item) {
+          const provider = item.provider || item;
+          const models = modelsByProviderId[provider.id] || [];
+          inputModelProvider.appendChild(createEl('option', {
+            value: provider.id,
+            textContent: provider.name + ' (' + provider.kind + ')'
+          }));
+
+          const configured = item.has_configured_secret === true;
+          const statusBadge = createEl('span', {
+            className: 'badge ' + (configured ? 'status-ok' : 'status-warn'),
+            textContent: configured ? 'Credential configured' : 'Credential not set'
+          });
+          const head = createEl('div', { className: 'provider-card-head' }, [
+            createEl('strong', { textContent: provider.name }),
+            createEl('div', { className: 'inline-actions' }, [
+              createEl('span', { className: 'badge', textContent: provider.kind }),
+              createEl('span', { className: 'badge', textContent: 'auth: ' + provider.auth_kind }),
+              statusBadge
+            ])
+          ]);
+          const details = [head];
+          if (provider.base_url) {
+            details.push(createEl('div', { className: 'settings-note mono', textContent: 'base_url: ' + provider.base_url }));
+          }
+          details.push(createEl('div', {
+            className: 'settings-note mono',
+            textContent: 'secret_ref: ' + (provider.secret_ref || '—') + ' (reference only; the key is never returned)'
+          }));
+          details.push(createEl('div', {
+            className: 'settings-note',
+            textContent: models.length + ' model(s): ' + (models.map(function(model) { return model.model_key; }).join(', ') || 'none')
+          }));
+          providerListEl.appendChild(createEl('div', { className: 'provider-card' }, details));
         });
+      }
+
+      function renderModelList() {
+        if (!modelListEl) return;
+        modelListEl.textContent = '';
+        let total = 0;
+        providers.forEach(function(item) {
+          const provider = item.provider || item;
+          const models = modelsByProviderId[provider.id] || [];
+          models.forEach(function(model) {
+            total += 1;
+            modelListEl.appendChild(createEl('div', {
+              className: 'settings-note mono',
+              textContent: provider.name + ' · ' + model.display_name + ' · ' + model.model_key +
+                ' · ctx ' + model.context_window + (model.supports_tools ? ' · tools' : '')
+            }));
+          });
+        });
+        if (!total) {
+          modelListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No models registered yet.' }));
+        }
+      }
+
+      async function loadExtensions() {
+        try {
+          const inventory = await apiRequest('/api/extensions/inventory');
+          extensionActiveCountEl.textContent = String(inventory.active_tool_count);
+          extensionMaxCountEl.textContent = String(inventory.recommended_max_active_tools);
+          extensionWarningEl.classList.toggle('visible', Boolean(inventory.exceeds_recommended_tool_limit));
+          extensionListEl.textContent = '';
+
+          if (!inventory.extensions.length) {
+            extensionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No extensions registered.' }));
+            return;
+          }
+
+          inventory.extensions.forEach(function(extension) {
+            const checkbox = createEl('input', {
+              type: 'checkbox',
+              'aria-label': 'Enable extension ' + extension.name
+            });
+            checkbox.checked = extension.enabled === 1;
+            checkbox.addEventListener('change', async function() {
+              try {
+                await apiRequest('/api/extensions/' + encodeURIComponent(extension.id), {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ enabled: checkbox.checked })
+                });
+                showToast(extension.name + (checkbox.checked ? ' enabled' : ' disabled'));
+                await loadExtensions();
+              } catch (e) {
+                checkbox.checked = !checkbox.checked;
+                showToast('Failed to update extension: ' + e.message, true);
+              }
+            });
+
+            const toolNames = (extension.tools || []).map(function(tool) {
+              return tool.tool_name + (tool.is_read_only ? ' (ro)' : '');
+            }).join(', ') || 'No tools registered';
+
+            extensionListEl.appendChild(createEl('div', { className: 'extension-row' }, [
+              createEl('div', { className: 'extension-row-main' }, [
+                createEl('strong', { textContent: extension.name + ' · v' + extension.version }),
+                createEl('span', {
+                  className: 'settings-note',
+                  textContent: extension.kind + ' · ' + extension.source + ' · ' + extension.tool_count + ' tool(s)'
+                }),
+                createEl('span', { className: 'settings-note mono', textContent: toolNames })
+              ]),
+              createEl('label', { className: 'toggle-label' }, [checkbox, ' Enabled'])
+            ]));
+          });
+        } catch (e) {
+          extensionListEl.textContent = '';
+          extensionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load extensions: ' + e.message }));
+        }
+      }
+
+      async function loadDiagnostics() {
+        diagnosticsOutputEl.textContent = '';
+        diagnosticsOutputEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading diagnostics…' }));
+        diagnosticsStatusEl.textContent = '';
+        try {
+          const report = await apiRequest('/api/diagnostics');
+          diagnosticsReport = report;
+          const rows = [
+            ['service', report.service],
+            ['version', report.version],
+            ['os', report.os],
+            ['arch', report.arch],
+            ['db_path', report.db_path],
+            ['db_healthy', String(report.db_healthy)],
+            ['journal_mode', report.journal_mode],
+            ['foreign_keys_enabled', String(report.foreign_keys_enabled)],
+            ['applied_migrations', String(report.applied_migrations)],
+            ['active_projects_count', String(report.active_projects_count)],
+            ['enabled_extensions_count', String(report.enabled_extensions_count)],
+            ['pending_approvals_count', String(report.pending_approvals_count)]
+          ];
+          const tbody = createEl('tbody');
+          rows.forEach(function(row) {
+            tbody.appendChild(createEl('tr', {}, [
+              createEl('th', { textContent: row[0] }),
+              createEl('td', { className: 'mono', textContent: row[1] })
+            ]));
+          });
+          const table = createEl('table', { className: 'data-table' }, [
+            createEl('thead', {}, [createEl('tr', {}, [
+              createEl('th', { textContent: 'Field' }),
+              createEl('th', { textContent: 'Value' })
+            ])]),
+            tbody
+          ]);
+          diagnosticsOutputEl.textContent = '';
+          diagnosticsOutputEl.appendChild(table);
+          diagnosticsStatusEl.textContent = 'Fetched live from the local server. Redaction removes secrets; paths are shown as-is.';
+        } catch (e) {
+          diagnosticsOutputEl.textContent = '';
+          diagnosticsOutputEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load diagnostics: ' + e.message }));
+        }
+      }
+
+      async function loadPermissionsForProject() {
+        if (!settingsProjectAccess || !toolPermissionListEl || !commandRuleListEl) return;
+
+        if (!currentProjectId) {
+          settingsProjectAccess.disabled = true;
+          btnSaveProjectAccess.disabled = true;
+          projectAccessStatus.textContent = 'Register or select a project to configure permissions.';
+          toolPermissionListEl.textContent = '';
+          toolPermissionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select a project to manage tool permissions.' }));
+          commandRuleListEl.textContent = '';
+          commandRuleListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select a project to manage command rules.' }));
+          return;
+        }
+
+        const project = projectsById[currentProjectId];
+        settingsProjectAccess.disabled = false;
+        btnSaveProjectAccess.disabled = false;
+        settingsProjectAccess.value = (project && project.default_access === 'full') ? 'full' : 'ask';
+        projectAccessStatus.textContent = 'Editing permissions for ' + ((project && project.name) || 'the active project') + '.';
+
+        toolPermissionListEl.textContent = '';
+        toolPermissionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading tool permissions…' }));
+        commandRuleListEl.textContent = '';
+        commandRuleListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading command rules…' }));
+
+        try {
+          const statuses = await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/tool-permissions');
+          toolPermissionListEl.textContent = '';
+          if (!statuses.length) {
+            toolPermissionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No enabled tools registered.' }));
+          } else {
+            const tbody = createEl('tbody');
+            statuses.forEach(function(status) {
+              const select = createEl('select', {
+                className: 'select-control',
+                'aria-label': 'Permission level for ' + status.tool_name
+              });
+              [['', 'default'], ['always_allow', 'always_allow'], ['ask_before', 'ask_before'], ['never_allow', 'never_allow']].forEach(function(pair) {
+                select.appendChild(createEl('option', { value: pair[0], textContent: pair[1] }));
+              });
+              select.value = status.level || '';
+              select.addEventListener('change', async function() {
+                const previous = status.level || '';
+                try {
+                  await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/tool-permissions', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ extension_tool_id: status.extension_tool_id, level: select.value })
+                  });
+                  status.level = select.value || null;
+                  showToast('Permission updated for ' + status.tool_name);
+                } catch (e) {
+                  select.value = previous;
+                  showToast('Failed to update permission: ' + e.message, true);
+                }
+              });
+              tbody.appendChild(createEl('tr', {}, [
+                createEl('td', {}, [
+                  createEl('div', { textContent: status.tool_name }),
+                  createEl('div', { className: 'settings-note', textContent: status.extension_name })
+                ]),
+                createEl('td', {}, [
+                  createEl('span', {
+                    className: 'badge ' + (status.is_read_only ? 'status-ok' : 'status-warn'),
+                    textContent: status.is_read_only ? 'read-only' : 'mutating'
+                  })
+                ]),
+                createEl('td', {}, [select])
+              ]));
+            });
+            toolPermissionListEl.appendChild(createEl('table', { className: 'data-table' }, [
+              createEl('thead', {}, [createEl('tr', {}, [
+                createEl('th', { textContent: 'Tool' }),
+                createEl('th', { textContent: 'Risk' }),
+                createEl('th', { textContent: 'Level' })
+              ])]),
+              tbody
+            ]));
+          }
+
+          const rules = await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/command-rules');
+          commandRuleListEl.textContent = '';
+          if (!rules.length) {
+            commandRuleListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No command rules. Add a deny rule for destructive commands.' }));
+          } else {
+            const tbody = createEl('tbody');
+            rules.forEach(function(rule) {
+              const badgeClass = rule.action === 'deny' ? 'status-danger' : (rule.action === 'allow' ? 'status-ok' : 'status-warn');
+              tbody.appendChild(createEl('tr', {}, [
+                createEl('td', { className: 'mono', textContent: rule.pattern }),
+                createEl('td', { textContent: rule.match_kind }),
+                createEl('td', {}, [createEl('span', { className: 'badge ' + badgeClass, textContent: rule.action })])
+              ]));
+            });
+            commandRuleListEl.appendChild(createEl('table', { className: 'data-table' }, [
+              createEl('thead', {}, [createEl('tr', {}, [
+                createEl('th', { textContent: 'Pattern' }),
+                createEl('th', { textContent: 'Match' }),
+                createEl('th', { textContent: 'Action' })
+              ])]),
+              tbody
+            ]));
+          }
+        } catch (e) {
+          toolPermissionListEl.textContent = '';
+          toolPermissionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load permissions: ' + e.message }));
+          commandRuleListEl.textContent = '';
+        }
       }
 
       function updateWorkspaceHeader() {
@@ -1114,6 +2173,9 @@ pub fn render_index_html() -> String {
           await hydrateChatHistory(currentChatId);
         }
         await loadWorkspaceFiles(currentProjectId);
+        if (settingsModalEl && settingsModalEl.classList.contains('open')) {
+          await loadPermissionsForProject();
+        }
       }
 
       async function loadProjects(preferredProjectId) {
@@ -1122,7 +2184,9 @@ pub fn render_index_html() -> String {
           if (!res.ok) return;
           const projects = await res.json();
           projectsById = {};
+          registeredProjectCount = projects.length;
           projectSwitcher.textContent = '';
+          updateOnboardingState();
 
           if (projects.length === 0) {
             projectSwitcher.appendChild(createEl('option', {
@@ -1237,8 +2301,220 @@ pub fn render_index_html() -> String {
       selectChatMode.addEventListener('change', updateWorkspaceHeader);
       selectPermissionMode.addEventListener('change', updateWorkspaceHeader);
 
-      loadSavedTheme();
-      loadProjects(null);
+      if (btnOpenSettings) {
+        btnOpenSettings.addEventListener('click', function() {
+          openSettings('providers');
+        });
+      }
+      if (btnCloseSettings) btnCloseSettings.addEventListener('click', closeSettings);
+      if (settingsModalEl) {
+        settingsModalEl.addEventListener('click', function(event) {
+          if (event.target === settingsModalEl) closeSettings();
+        });
+      }
+      settingsTabButtons.forEach(function(button) {
+        button.addEventListener('click', function() {
+          switchSettingsTab(button.getAttribute('data-settings-tab'));
+        });
+      });
+      document.addEventListener('keydown', function(event) {
+        if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+          event.preventDefault();
+          openSettings(currentSettingsTab);
+          return;
+        }
+        if (event.key === 'Escape' && settingsModalEl && settingsModalEl.classList.contains('open')) {
+          event.preventDefault();
+          closeSettings();
+          return;
+        }
+        trapSettingsFocus(event);
+      });
+
+      if (btnSkipOnboarding) {
+        btnSkipOnboarding.addEventListener('click', async function() {
+          onboardingDismissed = true;
+          updateOnboardingState();
+          try {
+            await persistSetting('onboarding_dismissed', true);
+          } catch (e) {
+            console.error('Failed to persist onboarding dismissal:', e);
+          }
+        });
+      }
+      if (btnOnboardingAddProject) {
+        btnOnboardingAddProject.addEventListener('click', function() {
+          btnOpenAddProject.click();
+        });
+      }
+      if (btnOnboardingProvider) {
+        btnOnboardingProvider.addEventListener('click', function() {
+          openSettings('providers');
+        });
+      }
+
+      providerForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setRequestStatus(providerFormStatus, '');
+        // Clear the field before the network round-trip: the raw key is never
+        // re-rendered, echoed back, or written to SQLite.
+        const rawApiKey = inputProviderApiKey.value;
+        inputProviderApiKey.value = '';
+
+        const payload = {
+          kind: inputProviderKind.value,
+          name: inputProviderName.value.trim(),
+          base_url: inputProviderBaseUrl.value.trim() || null,
+          auth_kind: inputProviderAuthKind.value,
+          api_key: rawApiKey ? rawApiKey : null
+        };
+        if (!payload.name) {
+          setRequestStatus(providerFormStatus, 'Provider display name is required.', true);
+          return;
+        }
+        if (PROVIDER_KINDS.indexOf(payload.kind) === -1) {
+          setRequestStatus(providerFormStatus, 'Unsupported provider kind.', true);
+          return;
+        }
+
+        try {
+          await apiRequest('/api/providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          inputProviderName.value = '';
+          inputProviderBaseUrl.value = '';
+          showToast('Provider added. Credential stored by reference only.');
+          await loadProviders();
+        } catch (e) {
+          setRequestStatus(providerFormStatus, 'Failed to add provider: ' + e.message, true);
+        }
+      });
+
+      modelForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setRequestStatus(modelFormStatus, '');
+        const providerId = inputModelProvider.value;
+        if (!providerId) {
+          setRequestStatus(modelFormStatus, 'Add a provider before registering a model.', true);
+          return;
+        }
+        const payload = {
+          model_key: inputModelKey.value.trim(),
+          display_name: inputModelName.value.trim(),
+          context_window: Number(inputModelContext.value || 0),
+          supports_tools: inputModelSupportsTools.checked
+        };
+        if (!payload.model_key || !payload.display_name || payload.context_window <= 0) {
+          setRequestStatus(modelFormStatus, 'Model key, display name, and a positive context window are required.', true);
+          return;
+        }
+        try {
+          const createdModel = await apiRequest('/api/providers/' + encodeURIComponent(providerId) + '/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          inputModelKey.value = '';
+          inputModelName.value = '';
+          showToast('Model registered and selected.');
+          await loadProviders();
+          handleModelSelection(createdModel.model_key);
+          renderModelList();
+        } catch (e) {
+          setRequestStatus(modelFormStatus, 'Failed to add model: ' + e.message, true);
+        }
+      });
+
+      function handleModelSelection(nextKey) {
+        selectedModelKey = nextKey || 'local-mock';
+        syncSelectValue(selectModelEl, selectedModelKey);
+        syncSelectValue(settingsActiveModel, selectedModelKey);
+        formatModelNote();
+        persistSetting('active_model_key', selectedModelKey).catch(function(e) {
+          showToast('Model selection not persisted: ' + e.message, true);
+        });
+      }
+
+      selectModelEl.addEventListener('change', function() {
+        handleModelSelection(selectModelEl.value);
+      });
+      settingsActiveModel.addEventListener('change', function() {
+        handleModelSelection(settingsActiveModel.value);
+      });
+
+      btnRefreshProviders.addEventListener('click', function() {
+        loadProviders();
+      });
+
+      btnSaveProjectAccess.addEventListener('click', async function() {
+        if (!currentProjectId) return;
+        try {
+          const updated = await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ default_access: settingsProjectAccess.value })
+          });
+          projectsById[updated.id] = updated;
+          selectPermissionMode.value = updated.default_access;
+          projectAccessStatus.textContent = 'Saved default access: ' + updated.default_access;
+          showToast('Project access updated to ' + updated.default_access);
+          updateWorkspaceHeader();
+        } catch (e) {
+          projectAccessStatus.textContent = 'Failed to save access: ' + e.message;
+          showToast('Failed to save project access: ' + e.message, true);
+        }
+      });
+
+      commandRuleForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        setRequestStatus(ruleFormStatus, '');
+        if (!currentProjectId) {
+          setRequestStatus(ruleFormStatus, 'Select a project first.', true);
+          return;
+        }
+        try {
+          await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/command-rules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pattern: inputRulePattern.value.trim(),
+              match_kind: inputRuleMatchKind.value,
+              action: inputRuleAction.value
+            })
+          });
+          inputRulePattern.value = '';
+          showToast('Command rule added.');
+          await loadPermissionsForProject();
+        } catch (e) {
+          setRequestStatus(ruleFormStatus, 'Failed to add command rule: ' + e.message, true);
+        }
+      });
+
+      btnRefreshExtensions.addEventListener('click', function() {
+        loadExtensions();
+      });
+      btnRefreshDiagnostics.addEventListener('click', function() {
+        loadDiagnostics();
+      });
+      btnCopyDiagnostics.addEventListener('click', async function() {
+        try {
+          if (!diagnosticsReport) await loadDiagnostics();
+          if (!diagnosticsReport) throw new Error('No diagnostics report loaded');
+          await copyToClipboard(JSON.stringify(diagnosticsReport, null, 2));
+          diagnosticsStatusEl.textContent = 'Copied redacted diagnostics to the clipboard.';
+          showToast('Redacted diagnostics copied.');
+        } catch (e) {
+          showToast('Copy failed: ' + e.message, true);
+        }
+      });
+
+      (async function initializeUi() {
+        await loadAppPreferences();
+        await loadProviders();
+        await loadProjects(null);
+      })();
 
       function appendMessage(role, text, autoScroll) {
         if (autoScroll === undefined) autoScroll = true;
@@ -1422,7 +2698,7 @@ pub fn render_index_html() -> String {
           const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: prompt, model_key: 'local-mock' })
+            body: JSON.stringify({ prompt: prompt, model_key: selectedModelKey || 'local-mock' })
           });
           if (!res.ok) throw new Error(await res.text());
           const outcome = await res.json();
@@ -1560,6 +2836,56 @@ mod tests {
 
         // Responsive media query for narrow windows
         assert!(html.contains("@media (max-width: 900px)"));
+    }
+
+    #[test]
+    fn test_settings_first_run_onboarding_and_model_selection_present() {
+        let html = render_index_html();
+
+        // Progressive first-run onboarding card (skippable, inline)
+        assert!(html.contains("id=\"onboarding-card\""));
+        assert!(html.contains("id=\"btn-skip-onboarding\""));
+        assert!(html.contains("id=\"btn-onboarding-add-project\""));
+        assert!(html.contains("id=\"btn-onboarding-provider\""));
+        assert!(html.contains("What stays local"));
+
+        // Settings modal, entry point and keyboard shortcut
+        assert!(html.contains("id=\"settings-modal\""));
+        assert!(html.contains("id=\"btn-open-settings\""));
+        assert!(html.contains("event.key === ','"));
+
+        // Five settings tabs and their panels
+        assert!(html.contains("data-settings-tab=\"providers\""));
+        assert!(html.contains("data-settings-tab=\"permissions\""));
+        assert!(html.contains("data-settings-tab=\"extensions\""));
+        assert!(html.contains("data-settings-tab=\"appearance\""));
+        assert!(html.contains("data-settings-tab=\"diagnostics\""));
+        assert!(html.contains("id=\"panel-providers\""));
+        assert!(html.contains("id=\"panel-permissions\""));
+        assert!(html.contains("id=\"panel-extensions\""));
+        assert!(html.contains("id=\"panel-appearance\""));
+        assert!(html.contains("id=\"panel-diagnostics\""));
+
+        // Providers/models tab and credential status without secret exposure
+        assert!(html.contains("id=\"form-add-provider\""));
+        assert!(html.contains("type=\"password\""));
+        assert!(html.contains("autocomplete=\"off\""));
+        assert!(html.contains("has_configured_secret"));
+        assert!(html.contains("id=\"provider-list\""));
+        assert!(html.contains("id=\"form-add-model\""));
+
+        // Permissions, extensions, diagnostics controls
+        assert!(html.contains("id=\"settings-project-access\""));
+        assert!(html.contains("id=\"tool-permission-list\""));
+        assert!(html.contains("id=\"form-add-command-rule\""));
+        assert!(html.contains("id=\"extension-warning\""));
+        assert!(html.contains("exceeds_recommended_tool_limit"));
+        assert!(html.contains("id=\"btn-copy-diagnostics\""));
+
+        // Composer model selector replaces the hardcoded model key
+        assert!(html.contains("id=\"select-model\""));
+        assert!(html.contains("selectedModelKey || 'local-mock'"));
+        assert!(!html.contains("model_key: 'local-mock'"));
     }
 
     #[test]
