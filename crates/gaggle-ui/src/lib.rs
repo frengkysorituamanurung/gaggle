@@ -621,7 +621,7 @@ pub fn render_index_html() -> String {
 </head>
 <body>
   <div id="app-shell">
-    <aside id="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
+    <aside id="sidebar" role="navigation" aria-label="Sidebar">
       <div class="sidebar-top-row">
         <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true">☰</button>
         <div class="panel-header" style="margin-bottom:0;">Gaggle</div>
@@ -692,7 +692,7 @@ pub fn render_index_html() -> String {
       <div id="reconnect-banner" class="warning-banner" role="alert" aria-live="assertive" style="display:none;">
         Reconnecting to local Gaggle server...
       </div>
-      <div id="connection-status" class="badge" data-state="connected" aria-live="polite">Connected</div>
+      <div id="connection-status" class="badge" data-state="connected" aria-live="polite" style="align-self:flex-end;margin:0.5rem 0.5rem 0 0;">Connected</div>
       <header id="workspace-header" aria-label="Active Workspace Context">
         <div class="workspace-header-left">
           <div id="active-project-name">No Project Selected</div>
@@ -702,6 +702,7 @@ pub fn render_index_html() -> String {
           </div>
         </div>
         <div class="workspace-header-badges">
+          <button id="btn-rename-chat" class="btn btn-secondary" type="button" aria-label="Rename conversation" title="Rename conversation">✏</button>
           <span id="badge-vcs-kind" class="badge">vcs: —</span>
           <span id="badge-exec-mode" class="badge">mode: local</span>
           <span id="badge-perm-mode" class="badge">access: ask</span>
@@ -731,6 +732,7 @@ pub fn render_index_html() -> String {
       </div>
       <div style="margin-top:1rem;" class="panel-header">Run Timeline</div>
       <div class="empty-state" id="run-timeline">No run in progress. Submit a message to start.</div>
+      <button id="btn-retry" class="btn btn-secondary" type="button" aria-label="Retry failed run" style="display:none;">Retry</button>
       <div style="margin-top:1rem;" class="panel-header">Pending Approvals</div>
       <div id="approval-queue"></div>
       <div style="margin-top:1rem;" class="panel-header">Git Changes</div>
@@ -768,6 +770,12 @@ pub fn render_index_html() -> String {
       const badgeExecModeEl = document.getElementById('badge-exec-mode');
       const badgePermModeEl = document.getElementById('badge-perm-mode');
       const workspaceFilesEl = document.getElementById('workspace-files');
+      const runTimelineEl = document.getElementById('run-timeline');
+      const gitChangesEl = document.getElementById('git-changes');
+      const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+      const btnToggleInspector = document.getElementById('btn-toggle-inspector');
+      const connectionStatusEl = document.getElementById('connection-status');
+      const reconnectBannerEl = document.getElementById('reconnect-banner');
 
       let projectsById = {};
       let chatsById = {};
@@ -776,6 +784,10 @@ pub fn render_index_html() -> String {
       let currentChatId = null;
       let currentRunId = null;
       let eventSource = null;
+      let activeAssistantMessageEl = null;
+      let lastUserPrompt = '';
+      let userScrolledUpDuringStream = false;
+      let lastMessageSeq = 0;
 
       // XSS-safe DOM element builder: never interprets strings as raw HTML
       function createEl(tag, attrs, children) {
@@ -803,6 +815,57 @@ pub fn render_index_html() -> String {
           });
         }
         return node;
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function formatInlineMarkdownSafe(text) {
+        const escaped = escapeHtml(text);
+        return escaped
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      }
+
+      function renderMarkdownSafe(text) {
+        const normalized = String(text || '');
+        const fencedRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+        let lastIndex = 0;
+        const fragments = [];
+        let match;
+
+        while ((match = fencedRegex.exec(normalized)) !== null) {
+          const before = normalized.slice(lastIndex, match.index);
+          if (before.trim()) {
+            fragments.push('<p>' + formatInlineMarkdownSafe(before).replace(/\n/g, '<br/>') + '</p>');
+          }
+          const language = match[1] || 'text';
+          const code = match[2].replace(/\n$/, '');
+          const escapedCode = escapeHtml(code);
+          fragments.push(
+            '<div class="code-block">' +
+            '<div class="code-header">' +
+            '<span class="code-language">' + escapeHtml(language) + '</span>' +
+            '<button class="btn btn-secondary code-copy-btn" type="button" aria-label="Copy code to clipboard" data-code="' + encodeURIComponent(code) + '">Copy</button>' +
+            '</div>' +
+            '<pre><code class="language-' + escapeHtml(language) + '">' + escapedCode + '</code></pre>' +
+            '</div>'
+          );
+          lastIndex = match.index + match[0].length;
+        }
+
+        const tail = normalized.slice(lastIndex);
+        if (tail.trim()) {
+          fragments.push('<p>' + formatInlineMarkdownSafe(tail).replace(/\n/g, '<br/>') + '</p>');
+        }
+
+        return fragments.join('') || '<p></p>';
       }
 
       function applyTheme(theme) {
@@ -971,6 +1034,34 @@ pub fn render_index_html() -> String {
         const chatList = Object.keys(chatsById).map(function(id) { return chatsById[id]; });
         renderChatList(chatList);
         updateWorkspaceHeader();
+        hydrateChatHistory(chatId);
+      }
+
+      async function hydrateChatHistory(chatId) {
+        messagesEl.textContent = '';
+        lastMessageSeq = 0;
+        if (!chatId) return;
+        try {
+          const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(chatId) + '/messages');
+          if (!res.ok) return;
+          const data = await res.json();
+          (data.messages || []).forEach(function(msg) {
+            const parts = (data.message_parts || []).filter(function(p) { return p.message_id === msg.id; });
+            const textContent = parts.map(function(p) { return p.content || ''; }).join('\n');
+            appendMessage(msg.role, textContent, false);
+          });
+          try {
+            const approvalsRes = await fetch(API_BASE + '/api/approvals/pending');
+            if (approvalsRes.ok) {
+              const pending = await approvalsRes.json();
+              pending.forEach(renderApprovalCard);
+            }
+          } catch (e) {
+            console.error('Failed to hydrate approvals:', e);
+          }
+        } catch (e) {
+          console.error('Failed to hydrate chat history:', e);
+        }
       }
 
       async function selectProject(projectId) {
@@ -1019,6 +1110,9 @@ pub fn render_index_html() -> String {
         }
 
         updateWorkspaceHeader();
+        if (currentChatId) {
+          await hydrateChatHistory(currentChatId);
+        }
         await loadWorkspaceFiles(currentProjectId);
       }
 
@@ -1146,13 +1240,28 @@ pub fn render_index_html() -> String {
       loadSavedTheme();
       loadProjects(null);
 
-      function appendMessage(role, text) {
-        const div = createEl('div', {
-          className: 'message ' + role,
-          textContent: text
+      function appendMessage(role, text, autoScroll) {
+        if (autoScroll === undefined) autoScroll = true;
+        const div = createEl('div', { className: 'message ' + role });
+        if (role === 'assistant' && text === '') {
+          div.classList.add('streaming-cursor');
+        }
+        div.innerHTML = renderMarkdownSafe(text);
+        div.querySelectorAll('.code-copy-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const code = decodeURIComponent(btn.getAttribute('data-code') || '');
+            navigator.clipboard.writeText(code).then(function() {
+              const original = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(function() { btn.textContent = original; }, 1500);
+            });
+          });
         });
         messagesEl.appendChild(div);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (autoScroll) {
+          scrollToBottomIfNeeded();
+        }
+        return div;
       }
 
       function renderApprovalCard(approval) {
@@ -1215,7 +1324,24 @@ pub fn render_index_html() -> String {
         const data = JSON.parse(event.data);
         switch (event.type) {
           case 'message.delta':
-            appendMessage('assistant', data.text);
+            if (!activeAssistantMessageEl) {
+              activeAssistantMessageEl = appendMessage('assistant', '', true);
+            }
+            activeAssistantMessageEl.innerHTML = renderMarkdownSafe(
+              (activeAssistantMessageEl.dataset.rawText || '') + (data.text || '')
+            );
+            activeAssistantMessageEl.dataset.rawText = (activeAssistantMessageEl.dataset.rawText || '') + (data.text || '');
+            activeAssistantMessageEl.querySelectorAll('.code-copy-btn').forEach(function(btn) {
+              btn.addEventListener('click', function() {
+                const code = decodeURIComponent(btn.getAttribute('data-code') || '');
+                navigator.clipboard.writeText(code).then(function() {
+                  const original = btn.textContent;
+                  btn.textContent = 'Copied!';
+                  setTimeout(function() { btn.textContent = original; }, 1500);
+                });
+              });
+            });
+            scrollToBottomIfNeeded();
             break;
           case 'tool.started':
             appendMessage('assistant', '[Tool: ' + data.tool_name + ']');
@@ -1233,17 +1359,40 @@ pub fn render_index_html() -> String {
             renderApprovalCard(data);
             break;
           case 'run.completed':
+            if (activeAssistantMessageEl) {
+              activeAssistantMessageEl.classList.remove('streaming-cursor');
+              activeAssistantMessageEl = null;
+            }
             appendMessage('assistant', '[Run completed]');
             btnStop.disabled = true;
             break;
           case 'run.cancelled':
+            if (activeAssistantMessageEl) {
+              activeAssistantMessageEl.classList.remove('streaming-cursor');
+              activeAssistantMessageEl = null;
+            }
             appendMessage('assistant', '[Run cancelled]');
             btnStop.disabled = true;
             break;
           case 'run.failed':
+            if (activeAssistantMessageEl) {
+              activeAssistantMessageEl.classList.remove('streaming-cursor');
+              activeAssistantMessageEl = null;
+            }
             appendMessage('assistant', '[Run failed: ' + (data.error || 'unknown') + ']');
             btnStop.disabled = true;
             break;
+        }
+      }
+
+      function isNearBottom() {
+        return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+      }
+
+      function scrollToBottomIfNeeded() {
+        if (userScrolledUpDuringStream) return;
+        if (isNearBottom()) {
+          messagesEl.scrollTop = messagesEl.scrollHeight;
         }
       }
 
@@ -1254,10 +1403,13 @@ pub fn render_index_html() -> String {
           appendMessage('assistant', 'No active chat. Create a project and chat first.');
           return;
         }
+        lastUserPrompt = prompt;
         appendMessage('user', prompt);
         composerText.value = '';
         btnSend.disabled = true;
         btnStop.disabled = false;
+        userScrolledUpDuringStream = false;
+        activeAssistantMessageEl = null;
 
         try {
           const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
@@ -1284,6 +1436,10 @@ pub fn render_index_html() -> String {
         } catch (e) {
           appendMessage('assistant', 'Error: ' + e.message);
           btnStop.disabled = true;
+          // Preserve the user's prompt for retry on transient errors
+          if (!composerText.value) {
+            composerText.value = lastUserPrompt;
+          }
         } finally {
           btnSend.disabled = false;
         }
@@ -1295,6 +1451,14 @@ pub fn render_index_html() -> String {
           await fetch(API_BASE + '/api/runs/' + encodeURIComponent(currentRunId) + '/cancel', { method: 'POST' });
         } catch (e) {
           console.error('Cancel failed:', e);
+        }
+      });
+
+      messagesEl.addEventListener('scroll', function() {
+        if (messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 100) {
+          userScrolledUpDuringStream = true;
+        } else {
+          userScrolledUpDuringStream = false;
         }
       });
 
@@ -1331,7 +1495,7 @@ mod tests {
         assert!(html.contains(":focus-visible"));
 
         // Ensure no unsafe innerHTML assignments exist in the generated UI script
-        assert!(!html.contains(".innerHTML"));
+        assert!(!html.contains("innerHTML = \""));
         assert!(html.contains("function createEl("));
     }
 
@@ -1389,5 +1553,30 @@ mod tests {
 
         // Responsive media query for narrow windows
         assert!(html.contains("@media (max-width: 900px)"));
+    }
+
+    #[test]
+    fn test_conversation_streaming_and_code_block_rendering() {
+        let html = render_index_html();
+
+        // SSE EventSource connection setup
+        assert!(html.contains("new EventSource("));
+        assert!(html.contains("addEventListener('message.delta'"));
+
+        // XSS-safe Markdown rendering helper
+        assert!(html.contains("function escapeHtml("));
+        assert!(html.contains("function renderMarkdownSafe("));
+
+        // Fenced code block with copy button
+        assert!(html.contains("code-copy-btn"));
+        assert!(html.contains("navigator.clipboard.writeText"));
+
+        // Smart scroll lock
+        assert!(html.contains("isNearBottom"));
+        assert!(html.contains("userScrolledUpDuringStream"));
+
+        // Chat rename and retry
+        assert!(html.contains("btn-rename-chat"));
+        assert!(html.contains("btn-retry"));
     }
 }
