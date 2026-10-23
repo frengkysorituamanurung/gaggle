@@ -18,12 +18,13 @@ use gaggle_core::{
 };
 use gaggle_db::{
     default_db_path,
-    models::{Approval, Chat, Model, Project, Provider, Run, Worktree},
+    models::{AppSetting, Approval, Chat, Model, Project, Provider, Run, Worktree},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         projects::ProjectRepository,
         providers::ProviderRepository,
         runs::RunRepository,
+        settings::SettingsRepository,
         worktrees::WorktreeRepository,
     },
 };
@@ -120,11 +121,18 @@ pub struct WorktreeActionRequest {
     pub decided_by_device: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpsertSettingRequest {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
         .route("/api/health", get(health_handler))
         .route("/api/diagnostics", get(diagnostics_handler))
+        .route("/api/settings", get(list_settings).put(upsert_setting))
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/{id}/files", get(list_project_files))
         .route("/api/projects/{id}/git-status", get(project_git_status))
@@ -178,11 +186,42 @@ pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
 }
 
 async fn index_handler() -> Html<String> {
-    Html(gaggle_ui::render_index_html().to_string())
+    Html(gaggle_ui::render_index_html())
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "service": "gaggle" }))
+}
+
+async fn list_settings(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<AppSetting>>, (StatusCode, String)> {
+    let repo = SettingsRepository::new(state.pool);
+    let settings = repo
+        .list_all()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(settings))
+}
+
+async fn upsert_setting(
+    State(state): State<AppState>,
+    Json(req): Json<UpsertSettingRequest>,
+) -> Result<Json<AppSetting>, (StatusCode, String)> {
+    if req.key.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Setting key must not be empty".to_string(),
+        ));
+    }
+    let value_json =
+        serde_json::to_string(&req.value).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let repo = SettingsRepository::new(state.pool);
+    let setting = repo
+        .upsert(req.key.trim(), &value_json)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(setting))
 }
 
 async fn diagnostics_handler(
