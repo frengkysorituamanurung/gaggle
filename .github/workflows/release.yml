@@ -1,0 +1,239 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+    steps:
+      - name: Checkout tagged commit with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify tag, version, and main ancestry
+        id: validate
+        run: |
+          VERSION="$(.github/scripts/validate-release.sh "$GITHUB_REF_NAME" "$GITHUB_SHA")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+  verify:
+    name: Verify release commit
+    needs:
+      - validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check compilation
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Validate embedded UI scripts
+        run: .github/scripts/check-ui-embedded.sh
+
+      - name: Validate shell script syntax
+        run: bash -n .github/scripts/*.sh
+
+  signing:
+    name: Check macOS signing credentials
+    needs:
+      - validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Check signing secret availability
+        id: check
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE_BASE64" ] \
+            && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] \
+            && [ -n "$APPLE_ID" ] \
+            && [ -n "$APPLE_ID_PASSWORD" ] \
+            && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "macOS signing and notarization are enabled"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "macOS signing secrets are not configured; publishing an unsigned bundle"
+          fi
+
+  macos:
+    name: macOS ${{ matrix.artifact_name }}
+    needs:
+      - validate
+      - verify
+      - signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact_name: Gaggle-macOS-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - artifact_name: Gaggle-macOS-x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      platform: macos
+      runner: ${{ matrix.runner }}
+      target: ${{ matrix.target }}
+      artifact_name: ${{ matrix.artifact_name }}
+      version: ${{ needs.validate.outputs.version }}
+      ref: ${{ github.sha }}
+      signing: ${{ needs.signing.outputs.enabled == 'true' }}
+    secrets:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  linux:
+    name: Linux ${{ matrix.artifact_name }}
+    needs:
+      - validate
+      - verify
+      - signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact_name: Gaggle-linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - artifact_name: Gaggle-linux-aarch64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      platform: linux
+      runner: ${{ matrix.runner }}
+      target: ${{ matrix.target }}
+      artifact_name: ${{ matrix.artifact_name }}
+      version: ${{ needs.validate.outputs.version }}
+      ref: ${{ github.sha }}
+      signing: false
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - validate
+      - macos
+      - linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - name: Checkout tagged commit with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: Gaggle-*-${{ github.sha }}
+          path: dist
+          merge-multiple: true
+
+      - name: Validate checksums and generate manifest
+        env:
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          .github/scripts/generate-build-manifest.sh \
+            --dist "$PWD/dist" \
+            --version "${{ needs.validate.outputs.version }}" \
+            --commit "$GITHUB_SHA" \
+            --git-ref "$GITHUB_REF" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --expected-count 4
+
+      - name: Generate release notes
+        run: |
+          .github/scripts/generate-release-notes.sh \
+            "$GITHUB_REF_NAME" \
+            "${{ needs.validate.outputs.version }}" \
+            "$GITHUB_SHA" \
+            release-notes.md
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" \
+              --title "Gaggle $VERSION" \
+              --notes-file release-notes.md \
+              --draft=false
+          else
+            gh release create "$TAG" dist/* \
+              --title "Gaggle $VERSION" \
+              --notes-file release-notes.md \
+              --verify-tag
+          fi
