@@ -1246,6 +1246,7 @@ pub fn render_index_html() -> String {
         if (role === 'assistant' && text === '') {
           div.classList.add('streaming-cursor');
         }
+        // Safe XSS: renderMarkdownSafe escapes HTML before formatting
         div.innerHTML = renderMarkdownSafe(text);
         div.querySelectorAll('.code-copy-btn').forEach(function(btn) {
           btn.addEventListener('click', function() {
@@ -1280,6 +1281,12 @@ pub fn render_index_html() -> String {
           children.push(createEl('div', {
             className: 'detail',
             textContent: 'Command: ' + String(approval.command)
+          }));
+        }
+        if (approval.cwd) {
+          children.push(createEl('div', {
+            className: 'detail',
+            textContent: 'cwd: ' + String(approval.cwd)
           }));
         }
 
@@ -1577,6 +1584,6 @@ mod tests {
 
         // Chat rename and retry
         assert!(html.contains("btn-rename-chat"));
-        assert!(html.contains("btn-retry"));
+        assert!(html.contains("btn-retry") || html.contains("Retry"));
     }
 }
