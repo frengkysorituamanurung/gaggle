@@ -117,6 +117,86 @@ impl PermissionRepository {
         Ok(global_perm)
     }
 
+    /// Lists the effective permission rows that apply to a project: project-scoped
+    /// rows plus global defaults.
+    pub async fn list_tool_permissions(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<ToolPermission>> {
+        let permissions = sqlx::query_as::<_, ToolPermission>(
+            r#"
+            SELECT * FROM tool_permissions
+            WHERE project_id IS NULL OR project_id = ?
+            ORDER BY extension_tool_id ASC
+            "#,
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(permissions)
+    }
+
+    /// Creates or replaces the permission level for one tool, scoped to the project
+    /// when a project id is supplied.
+    pub async fn upsert_tool_permission(
+        &self,
+        project_id: Option<&str>,
+        extension_tool_id: &str,
+        level: &str,
+    ) -> Result<ToolPermission> {
+        let now = now_ms();
+
+        let existing_id: Option<String> = if let Some(pid) = project_id {
+            sqlx::query_scalar(
+                "SELECT id FROM tool_permissions WHERE project_id = ? AND extension_tool_id = ?",
+            )
+            .bind(pid)
+            .bind(extension_tool_id)
+            .fetch_optional(&self.pool)
+            .await?
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM tool_permissions WHERE project_id IS NULL AND extension_tool_id = ?",
+            )
+            .bind(extension_tool_id)
+            .fetch_optional(&self.pool)
+            .await?
+        };
+
+        let id = if let Some(existing_id) = existing_id {
+            sqlx::query("UPDATE tool_permissions SET level = ?, updated_at = ? WHERE id = ?")
+                .bind(level)
+                .bind(now)
+                .bind(&existing_id)
+                .execute(&self.pool)
+                .await?;
+            existing_id
+        } else {
+            let id = new_id();
+            sqlx::query(
+                r#"
+                INSERT INTO tool_permissions (id, project_id, extension_tool_id, level, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(project_id)
+            .bind(extension_tool_id)
+            .bind(level)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+            id
+        };
+
+        let permission =
+            sqlx::query_as::<_, ToolPermission>("SELECT * FROM tool_permissions WHERE id = ?")
+                .bind(&id)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(permission)
+    }
+
     pub async fn get_risk_cache(
         &self,
         tool_name: &str,

@@ -56,6 +56,37 @@ impl ProjectRepository {
         Ok(projects)
     }
 
+    pub async fn update_defaults(
+        &self,
+        id: &str,
+        default_mode: Option<&str>,
+        default_access: Option<&str>,
+        default_model_id: Option<&str>,
+    ) -> Result<Project> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            UPDATE projects SET
+                default_mode = COALESCE(?, default_mode),
+                default_access = COALESCE(?, default_access),
+                default_model_id = COALESCE(?, default_model_id),
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(default_mode)
+        .bind(default_access)
+        .bind(default_model_id)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Project {id} not found after update"))
+    }
+
     pub async fn upsert_settings(&self, settings: &ProjectSettings) -> Result<()> {
         sqlx::query(
             r#"

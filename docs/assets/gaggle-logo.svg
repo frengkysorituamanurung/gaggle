@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="184" height="50" viewBox="0 0 184 50" role="img" aria-label="gaggle">
+  <defs>
+    <linearGradient id="gaggle-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4dabf7"/>
+      <stop offset="1" stop-color="#1c7ed6"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="6" width="38" height="38" rx="12" fill="url(#gaggle-mark)"/>
+  <circle cx="14" cy="21" r="3.1" fill="#ffffff"/>
+  <circle cx="24" cy="16" r="3.1" fill="#ffffff" opacity="0.85"/>
+  <circle cx="30" cy="27" r="3.1" fill="#ffffff" opacity="0.7"/>
+  <text x="52" y="35"
+        font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="27" font-weight="700" letter-spacing="-0.6"
+        fill="url(#gaggle-mark)">gaggle</text>
+</svg>
