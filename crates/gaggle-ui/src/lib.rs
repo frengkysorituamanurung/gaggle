@@ -1584,6 +1584,6 @@ mod tests {
 
         // Chat rename and retry
         assert!(html.contains("btn-rename-chat"));
-        assert!(html.contains("btn-retry") || html.contains("Retry"));
+        assert!(html.contains("btn-retry"));
     }
 }
