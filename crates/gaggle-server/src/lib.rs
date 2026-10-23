@@ -11,20 +11,22 @@ use axum::{
 };
 use futures::stream::Stream;
 use gaggle_core::{
-    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
+    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter, ChatGptAdapter,
+    ChatGptOAuthClient, ChatGptOAuthConfig, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
     DiagnosticReport, InMemoryCredentialStore, MockProviderAdapter, ModelCompletionResponse,
-    RunEngine, SecretString, TokenUsage, WorkspacePathPolicy, collect_diagnostics,
-    validate_provider_base_url,
+    ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString,
+    TokenUsage, WorkspacePathPolicy, collect_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
-    connection::new_id,
+    connection::{new_id, now_ms},
     models::{
-        AppSetting, Approval, Chat, CommandRule, Extension, ExtensionTool, Model, Project,
+        AppSetting, Approval, Chat, CommandRule, Extension, ExtensionTool, Memory, Model, Project,
         Provider, Run, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         extensions::ExtensionRepository,
+        memories::MemoryRepository,
         permissions::PermissionRepository,
         projects::ProjectRepository,
         providers::ProviderRepository,
@@ -41,9 +43,26 @@ use gaggle_tools::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 use tower_http::cors::CorsLayer;
 use tracing::info;
+
+/// Pending ChatGPT OAuth authorization keyed by the OAuth `state` value. The PKCE verifier is
+/// held only in memory for the short authorization window and is never written to SQLite.
+#[derive(Clone)]
+pub struct PendingOAuthSession {
+    pub provider_id: String,
+    pub secret_ref: String,
+    pub code_verifier: String,
+    pub config: ChatGptOAuthConfig,
+    pub created_at_ms: i64,
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -51,6 +70,7 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub credential_store: Arc<dyn CredentialStore>,
     pub active_runs: ActiveRunRegistry,
+    pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,6 +223,72 @@ pub struct UpsertSettingRequest {
     pub value: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MemoryQuery {
+    pub project_id: Option<String>,
+    pub query: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMemoryRequest {
+    pub project_id: String,
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub tags: Option<Vec<String>>,
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateMemoryRequest {
+    pub kind: Option<String>,
+    pub title: Option<String>,
+    pub content: Option<String>,
+    pub pinned: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryResponse {
+    #[serde(flatten)]
+    pub memory: Memory,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartChatGptOAuthRequest {
+    pub client_id: Option<String>,
+    pub auth_url: Option<String>,
+    pub token_url: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub scopes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartChatGptOAuthResponse {
+    pub authorization_url: String,
+    pub state: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExchangeChatGptOAuthRequest {
+    pub state: String,
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatGptOAuthCallbackQuery {
+    pub state: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatGptOAuthStatusResponse {
+    pub configured: bool,
+    pub provider_id: String,
+}
+
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
@@ -228,6 +314,24 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/providers/{id}/models",
             get(list_provider_models).post(create_provider_model),
+        )
+        .route(
+            "/api/providers/{id}/oauth/chatgpt/start",
+            post(start_chatgpt_oauth),
+        )
+        .route(
+            "/api/providers/{id}/oauth/chatgpt/exchange",
+            post(exchange_chatgpt_oauth),
+        )
+        .route("/api/oauth/chatgpt/callback", get(chatgpt_oauth_callback))
+        .route("/api/memories", get(list_memories).post(create_memory))
+        .route("/api/memories/export", get(export_memories))
+        .route(
+            "/api/memories/{id}",
+            get(get_memory)
+                .patch(update_memory)
+                .put(update_memory)
+                .delete(delete_memory),
         )
         .route("/api/extensions", get(list_extensions))
         .route("/api/extensions/inventory", get(extensions_inventory))
@@ -263,6 +367,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
         db_path,
         credential_store,
         active_runs,
+        oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
     })
 }
 
@@ -851,9 +956,11 @@ async fn create_provider(
     // A provider credential is stored exclusively in the CredentialStore. SQLite only
     // ever receives the generated `secret_ref` identifier, never the raw key.
     let secret_ref = req.secret_ref.clone().or_else(|| {
-        req.api_key
-            .as_ref()
-            .map(|_| format!("provider:{}", new_id()))
+        if req.api_key.is_some() || req.auth_kind == "oauth" {
+            Some(format!("provider:{}", new_id()))
+        } else {
+            None
+        }
     });
 
     if let Some(raw_key) = &req.api_key {
@@ -932,6 +1039,538 @@ async fn create_provider_model(
     Ok((StatusCode::CREATED, Json(model)))
 }
 
+const DEFAULT_PROVIDER_TIMEOUT_MS: u64 = 120_000;
+
+fn default_base_url(kind: &str) -> Option<&'static str> {
+    match kind {
+        "openai" | "chatgpt" => Some("https://api.openai.com/v1"),
+        "anthropic" => Some("https://api.anthropic.com/v1"),
+        "openrouter" => Some("https://openrouter.ai/api/v1"),
+        "deepseek" => Some("https://api.deepseek.com/v1"),
+        "ollama" => Some("http://127.0.0.1:11434"),
+        _ => None,
+    }
+}
+
+fn chatgpt_oauth_config(redirect_uri: Option<String>) -> Option<ChatGptOAuthConfig> {
+    let client_id = std::env::var("GAGGLE_CHATGPT_CLIENT_ID").ok()?;
+    let auth_url = std::env::var("GAGGLE_CHATGPT_AUTH_URL")
+        .unwrap_or_else(|_| "https://auth.openai.com/oauth/authorize".to_string());
+    let token_url = std::env::var("GAGGLE_CHATGPT_TOKEN_URL")
+        .unwrap_or_else(|_| "https://auth.openai.com/oauth/token".to_string());
+    let redirect_uri = redirect_uri
+        .or_else(|| std::env::var("GAGGLE_CHATGPT_REDIRECT_URI").ok())
+        .unwrap_or_else(|| "http://127.0.0.1:4321/api/oauth/chatgpt/callback".to_string());
+    Some(ChatGptOAuthConfig {
+        client_id,
+        auth_url,
+        token_url,
+        redirect_uri,
+        scopes: vec![
+            "openid".to_string(),
+            "profile".to_string(),
+            "email".to_string(),
+            "offline_access".to_string(),
+        ],
+    })
+}
+
+fn build_provider_adapter(
+    state: &AppState,
+    provider: &Provider,
+) -> Result<Box<dyn ModelProviderAdapter>, (StatusCode, String)> {
+    let base_url = provider
+        .base_url
+        .clone()
+        .or_else(|| default_base_url(&provider.kind).map(String::from))
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Provider '{}' of kind '{}' requires a base_url",
+                    provider.name, provider.kind
+                ),
+            )
+        })?;
+
+    match provider.kind.as_str() {
+        "anthropic" => AnthropicAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "ollama" => OllamaAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "chatgpt" => {
+            let oauth = chatgpt_oauth_config(None).and_then(|config| {
+                ChatGptOAuthClient::new(
+                    config,
+                    state.credential_store.clone(),
+                    DEFAULT_PROVIDER_TIMEOUT_MS,
+                )
+                .ok()
+            });
+            ChatGptAdapter::new(
+                provider.name.clone(),
+                &base_url,
+                provider.secret_ref.clone(),
+                state.credential_store.clone(),
+                oauth,
+                DEFAULT_PROVIDER_TIMEOUT_MS,
+            )
+            .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>)
+        }
+        _ => OpenAiCompatibleAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+    }
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+async fn resolve_chat_provider(
+    state: &AppState,
+    chat: &Chat,
+    requested_model_key: &str,
+    user_prompt: &str,
+) -> Result<(Box<dyn ModelProviderAdapter>, String), (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool.clone());
+
+    let mut resolved: Option<(Model, Provider)> = None;
+    if requested_model_key != "local-mock" {
+        resolved = repo
+            .find_model_by_key(requested_model_key)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        if resolved.is_none() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Unknown model key '{}'", requested_model_key),
+            ));
+        }
+    } else if let Some(model_id) = chat.model_id.as_deref()
+        && let Some(model) = repo
+            .get_model_by_id(model_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        resolved = repo
+            .get_provider_by_id(&model.provider_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map(|provider| (model, provider));
+    }
+
+    match resolved {
+        Some((model, provider)) => {
+            let adapter = build_provider_adapter(state, &provider)?;
+            Ok((adapter, model.model_key))
+        }
+        None => {
+            // Offline built-in fallback when no provider/model is configured.
+            let provider = MockProviderAdapter::with_response(
+                "local-mock",
+                ModelCompletionResponse {
+                    text: format!("Processed request: {user_prompt}"),
+                    tool_calls: vec![],
+                    usage: TokenUsage {
+                        input_tokens: 12,
+                        output_tokens: 8,
+                        cached_tokens: 0,
+                    },
+                },
+            );
+            Ok((Box::new(provider), "local-mock".to_string()))
+        }
+    }
+}
+
+async fn list_memories(
+    State(state): State<AppState>,
+    Query(query): Query<MemoryQuery>,
+) -> Result<Json<Vec<MemoryResponse>>, (StatusCode, String)> {
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let repo = MemoryRepository::new(state.pool);
+    let memories = match query
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(search) => repo
+            .search_scoped(query.project_id.as_deref(), search, limit)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+        None => {
+            let project_id = query.project_id.as_deref().ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "project_id or a non-empty query is required".to_string(),
+                )
+            })?;
+            repo.list_by_project(project_id, limit)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        }
+    };
+
+    let mut response = Vec::with_capacity(memories.len());
+    for memory in memories {
+        let tags = repo
+            .list_tags(&memory.id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        response.push(MemoryResponse { memory, tags });
+    }
+    Ok(Json(response))
+}
+
+async fn create_memory(
+    State(state): State<AppState>,
+    Json(req): Json<CreateMemoryRequest>,
+) -> Result<(StatusCode, Json<MemoryResponse>), (StatusCode, String)> {
+    ProjectRepository::new(state.pool.clone())
+        .get_by_id(&req.project_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Project '{}' not found", req.project_id),
+            )
+        })?;
+
+    let repo = MemoryRepository::new(state.pool);
+    let tags = req.tags.unwrap_or_default();
+    let memory = repo
+        .create_with_options(
+            Some(&req.project_id),
+            None,
+            None,
+            &req.kind,
+            &req.title,
+            &req.content,
+            &tags,
+            req.pinned.unwrap_or(false),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let stored_tags = repo
+        .list_tags(&memory.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((
+        StatusCode::CREATED,
+        Json(MemoryResponse {
+            memory,
+            tags: stored_tags,
+        }),
+    ))
+}
+
+async fn get_memory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<MemoryResponse>, (StatusCode, String)> {
+    let repo = MemoryRepository::new(state.pool);
+    let memory = repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Memory '{id}' not found")))?;
+    let tags = repo
+        .list_tags(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(MemoryResponse { memory, tags }))
+}
+
+async fn update_memory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateMemoryRequest>,
+) -> Result<Json<MemoryResponse>, (StatusCode, String)> {
+    let repo = MemoryRepository::new(state.pool);
+    let memory = repo
+        .update(
+            &id,
+            req.kind.as_deref(),
+            req.title.as_deref(),
+            req.content.as_deref(),
+            req.pinned,
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    if let Some(tags) = req.tags {
+        repo.set_tags(&id, &tags)
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
+    let stored_tags = repo
+        .list_tags(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(MemoryResponse {
+        memory,
+        tags: stored_tags,
+    }))
+}
+
+async fn delete_memory(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let repo = MemoryRepository::new(state.pool);
+    let deleted = repo
+        .soft_delete(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !deleted {
+        return Err((StatusCode::NOT_FOUND, format!("Memory '{id}' not found")));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn export_memories(
+    State(state): State<AppState>,
+    Query(query): Query<MemoryQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let project_id = query.project_id.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "project_id is required".to_string(),
+        )
+    })?;
+    let repo = MemoryRepository::new(state.pool);
+    let markdown = repo
+        .export_markdown(&project_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({
+        "project_id": project_id,
+        "markdown": markdown
+    })))
+}
+
+fn remove_expired_oauth_sessions(sessions: &mut HashMap<String, PendingOAuthSession>) {
+    let cutoff = now_ms().saturating_sub(10 * 60 * 1000);
+    sessions.retain(|_, session| session.created_at_ms >= cutoff);
+}
+
+async fn start_chatgpt_oauth(
+    State(state): State<AppState>,
+    Path(provider_id): Path<String>,
+    Json(req): Json<StartChatGptOAuthRequest>,
+) -> Result<Json<StartChatGptOAuthResponse>, (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool.clone());
+    let mut provider = repo
+        .get_provider_by_id(&provider_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Provider '{provider_id}' not found"),
+            )
+        })?;
+    if provider.kind != "chatgpt" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "ChatGPT OAuth is only available for providers of kind 'chatgpt'".to_string(),
+        ));
+    }
+
+    if provider.secret_ref.is_none() {
+        provider = repo
+            .set_secret_ref(&provider.id, &format!("provider:{}", new_id()))
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    let secret_ref = provider.secret_ref.clone().ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Provider is missing a secret reference".to_string(),
+        )
+    })?;
+
+    let env_config = chatgpt_oauth_config(req.redirect_uri.clone());
+    let config = ChatGptOAuthConfig {
+        client_id: req
+            .client_id
+            .or_else(|| env_config.as_ref().map(|config| config.client_id.clone()))
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "client_id is required (or set GAGGLE_CHATGPT_CLIENT_ID)".to_string(),
+                )
+            })?,
+        auth_url: req
+            .auth_url
+            .or_else(|| env_config.as_ref().map(|config| config.auth_url.clone()))
+            .unwrap_or_else(|| "https://auth.openai.com/oauth/authorize".to_string()),
+        token_url: req
+            .token_url
+            .or_else(|| env_config.as_ref().map(|config| config.token_url.clone()))
+            .unwrap_or_else(|| "https://auth.openai.com/oauth/token".to_string()),
+        redirect_uri: req
+            .redirect_uri
+            .or_else(|| {
+                env_config
+                    .as_ref()
+                    .map(|config| config.redirect_uri.clone())
+            })
+            .unwrap_or_else(|| "http://127.0.0.1:4321/api/oauth/chatgpt/callback".to_string()),
+        scopes: req
+            .scopes
+            .or_else(|| env_config.as_ref().map(|config| config.scopes.clone()))
+            .unwrap_or_else(|| {
+                vec![
+                    "openid".to_string(),
+                    "profile".to_string(),
+                    "email".to_string(),
+                    "offline_access".to_string(),
+                ]
+            }),
+    };
+
+    let client = ChatGptOAuthClient::new(
+        config.clone(),
+        state.credential_store.clone(),
+        DEFAULT_PROVIDER_TIMEOUT_MS,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let authorization = client
+        .authorization_url()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let mut sessions = state.oauth_sessions.write().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "OAuth session lock poisoned".to_string(),
+        )
+    })?;
+    remove_expired_oauth_sessions(&mut sessions);
+    sessions.insert(
+        authorization.state.clone(),
+        PendingOAuthSession {
+            provider_id: provider.id.clone(),
+            secret_ref,
+            code_verifier: authorization.code_verifier,
+            config,
+            created_at_ms: now_ms(),
+        },
+    );
+
+    Ok(Json(StartChatGptOAuthResponse {
+        authorization_url: authorization.url,
+        state: authorization.state,
+    }))
+}
+
+async fn exchange_chatgpt_oauth(
+    State(state): State<AppState>,
+    Path(provider_id): Path<String>,
+    Json(req): Json<ExchangeChatGptOAuthRequest>,
+) -> Result<Json<ChatGptOAuthStatusResponse>, (StatusCode, String)> {
+    let session = {
+        let mut sessions = state.oauth_sessions.write().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "OAuth session lock poisoned".to_string(),
+            )
+        })?;
+        sessions.remove(&req.state)
+    }
+    .ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Unknown or expired OAuth state".to_string(),
+        )
+    })?;
+
+    if session.provider_id != provider_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "OAuth state does not match this provider".to_string(),
+        ));
+    }
+    if session.created_at_ms < now_ms().saturating_sub(10 * 60 * 1000) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "OAuth session expired; start sign-in again".to_string(),
+        ));
+    }
+
+    let client = ChatGptOAuthClient::new(
+        session.config,
+        state.credential_store.clone(),
+        DEFAULT_PROVIDER_TIMEOUT_MS,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    client
+        .exchange_code(&session.secret_ref, &req.code, &session.code_verifier)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Json(ChatGptOAuthStatusResponse {
+        configured: true,
+        provider_id,
+    }))
+}
+
+async fn chatgpt_oauth_callback(
+    State(state): State<AppState>,
+    Query(query): Query<ChatGptOAuthCallbackQuery>,
+) -> Result<Html<String>, (StatusCode, String)> {
+    let session = {
+        let mut sessions = state.oauth_sessions.write().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "OAuth session lock poisoned".to_string(),
+            )
+        })?;
+        sessions.remove(&query.state)
+    }
+    .ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Unknown or expired OAuth state".to_string(),
+        )
+    })?;
+
+    let client = ChatGptOAuthClient::new(
+        session.config,
+        state.credential_store.clone(),
+        DEFAULT_PROVIDER_TIMEOUT_MS,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    client
+        .exchange_code(&session.secret_ref, &query.code, &session.code_verifier)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(Html(
+        "<!doctype html><html><body style=\"font-family:system-ui;padding:2rem;\">\
+         <h1>ChatGPT sign-in complete</h1>\
+         <p>You can close this window and return to Gaggle.</p>\
+         <script>window.setTimeout(function(){window.close();},1200);</script>\
+         </body></html>"
+            .to_string(),
+    ))
+}
+
 async fn submit_chat_message(
     State(state): State<AppState>,
     Path(chat_id): Path<String>,
@@ -939,40 +1578,36 @@ async fn submit_chat_message(
 ) -> Result<Json<AgentLoopOutcome>, (StatusCode, String)> {
     let runtime = AgentRuntime::new(state.pool.clone(), DEFAULT_MAX_AGENT_STEPS);
     let executor = BuiltinToolExecutor::new(state.pool.clone());
-    let model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
-    if model_key.len() > 200 {
+    let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
+    if requested_model_key.len() > 200 {
         return Err((
             StatusCode::BAD_REQUEST,
             "model_key must be at most 200 characters".to_string(),
         ));
     }
-    let model_key = if model_key.is_empty() {
+    let requested_model_key = if requested_model_key.is_empty() {
         "local-mock"
     } else {
-        model_key
+        requested_model_key
     };
 
-    // Default local fallback provider when no external provider is bound to the chat
-    let provider = MockProviderAdapter::with_response(
-        "local-mock",
-        ModelCompletionResponse {
-            text: format!("Processed request: {}", req.prompt),
-            tool_calls: vec![],
-            usage: TokenUsage {
-                input_tokens: 12,
-                output_tokens: 8,
-                cached_tokens: 0,
-            },
-        },
-    );
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+
+    let (provider, model_key) =
+        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt).await?;
 
     let cancel_token = gaggle_core::CancellationToken::new();
     let outcome = runtime
         .run_turn(
             &chat_id,
             &req.prompt,
-            model_key,
-            &provider,
+            &model_key,
+            provider.as_ref(),
             &executor,
             &cancel_token,
         )

@@ -1,10 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use gaggle_core::{ToolExecutor, WorkspacePathPolicy};
+use gaggle_core::{ToolExecutor, WorkspacePathPolicy, redact_context_secrets};
 use gaggle_db::{
     models::Chat,
     repositories::{
-        extensions::ExtensionRepository, runs::RunRepository, worktrees::WorktreeRepository,
+        extensions::ExtensionRepository, memories::MemoryRepository, runs::RunRepository,
+        worktrees::WorktreeRepository,
     },
 };
 use sqlx::SqlitePool;
@@ -99,7 +100,7 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
         tool_name: "memory.read",
         description: "Search project and global memories using FTS5",
         is_read_only: true,
-        schema_json: r#"{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}"#,
+        schema_json: r#"{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"]}"#,
     },
     BuiltinToolSpec {
         extension_name: "gaggle.memory",
@@ -107,7 +108,7 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
         tool_name: "memory.write",
         description: "Store a fact, preference, decision, todo, or summary in memory",
         is_read_only: false,
-        schema_json: r#"{"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"content":{"type":"string"}},"required":["kind","title","content"]}"#,
+        schema_json: r#"{"type":"object","properties":{"kind":{"type":"string","enum":["fact","preference","decision","todo","summary"]},"title":{"type":"string"},"content":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"pinned":{"type":"boolean"}},"required":["kind","title","content"]}"#,
     },
     BuiltinToolSpec {
         extension_name: "gaggle.web",
@@ -319,6 +320,109 @@ impl ToolExecutor for BuiltinToolExecutor {
                 .await
                 .map_err(|e| e.to_string())?;
                 serde_json::to_string(&out).map_err(|e| e.to_string())
+            }
+            "memory.write" => {
+                let kind = args
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'kind' argument".to_string())?;
+                let title = args
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'title' argument".to_string())?;
+                let content = args
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'content' argument".to_string())?;
+                let tags: Vec<String> = args
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let pinned = args
+                    .get("pinned")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                // Memory content can accidentally include credentials. Never persist secrets in
+                // SQLite; the agent receives the redacted form in the tool result.
+                let title = redact_context_secrets(title);
+                let content = redact_context_secrets(content);
+                let tags: Vec<String> = tags
+                    .into_iter()
+                    .map(|tag| redact_context_secrets(&tag))
+                    .collect();
+
+                let repo = MemoryRepository::new(self.pool.clone());
+                // Project scope always comes from the authenticated chat, never from model input.
+                let memory = repo
+                    .create_with_options(
+                        Some(&chat.project_id),
+                        Some(&chat.id),
+                        Some(run_id),
+                        kind,
+                        &title,
+                        &content,
+                        &tags,
+                        pinned,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let stored_tags = repo
+                    .list_tags(&memory.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                serde_json::to_string(&serde_json::json!({
+                    "memory": memory,
+                    "tags": stored_tags
+                }))
+                .map_err(|e| e.to_string())
+            }
+            "memory.read" => {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim();
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(10)
+                    .clamp(1, 50);
+                let repo = MemoryRepository::new(self.pool.clone());
+                let memories = if query.is_empty() {
+                    repo.list_by_project(&chat.project_id, limit)
+                        .await
+                        .map_err(|e| e.to_string())?
+                } else {
+                    repo.search_scoped(Some(&chat.project_id), query, limit)
+                        .await
+                        .map_err(|e| e.to_string())?
+                };
+
+                let mut items = Vec::with_capacity(memories.len());
+                for memory in memories {
+                    let tags = repo
+                        .list_tags(&memory.id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let _ = repo.touch_last_used(&memory.id).await;
+                    items.push(serde_json::json!({
+                        "memory": memory,
+                        "tags": tags
+                    }));
+                }
+                serde_json::to_string(&serde_json::json!({
+                    "query": query,
+                    "count": items.len(),
+                    "results": items
+                }))
+                .map_err(|e| e.to_string())
             }
             other => Err(format!("Unsupported built-in tool '{other}'")),
         }

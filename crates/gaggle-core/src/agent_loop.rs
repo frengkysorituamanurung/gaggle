@@ -1,12 +1,13 @@
 use crate::{
-    PermissionDecision, PermissionEngine, ToolCallContext,
+    ContextAssembler, PermissionDecision, PermissionEngine, ToolCallContext,
     provider::{
-        ModelCompletionRequest, ModelProviderAdapter, ProposedToolCall, ProviderMessage,
-        ToolDefinition,
+        ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
+        ProposedToolCall, ProviderMessage, TokenUsage,
     },
 };
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
+use futures::StreamExt;
 use gaggle_db::{
     models::{Chat, Run},
     repositories::{
@@ -156,7 +157,14 @@ impl AgentRuntime {
             .await?
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
 
-        // 1. Persist user message and create durable run
+        // 1. Assemble bounded context before persisting the current user message. The assembler
+        // loads project instructions, AGENTS.md, recent history, relevant memories, and enabled
+        // tool definitions while excluding secrets.
+        let assembled = ContextAssembler::new(self.pool.clone())
+            .assemble(chat_id, user_prompt)
+            .await?;
+
+        // 2. Persist user message and create durable run
         let user_msg = chat_repo
             .append_message(chat_id, None, "user", user_prompt)
             .await?;
@@ -177,10 +185,23 @@ impl AgentRuntime {
             )
             .await?;
 
-        let mut conversation = vec![ProviderMessage {
-            role: "user".to_string(),
-            content: user_prompt.to_string(),
-        }];
+        run_repo
+            .emit_event(
+                &run.id,
+                "context.assembled",
+                &serde_json::json!({
+                    "estimated_tokens": assembled.estimated_tokens,
+                    "budget_tokens": assembled.budget_tokens,
+                    "truncated": assembled.truncated,
+                    "agents_md": assembled.agents_md_paths,
+                    "tool_count": assembled.tools.len()
+                })
+                .to_string(),
+            )
+            .await?;
+
+        let mut conversation = assembled.messages;
+        let tool_definitions = assembled.tools;
 
         for step_idx in 1..=self.max_steps {
             if cancel_token.is_cancelled() {
@@ -191,11 +212,88 @@ impl AgentRuntime {
             let req = ModelCompletionRequest {
                 model_key: model_key.to_string(),
                 messages: conversation.clone(),
-                tools: Vec::<ToolDefinition>::new(),
+                tools: tool_definitions.clone(),
                 max_output_tokens: Some(1024),
             };
 
-            let completion = match provider.complete(&req).await {
+            // Prefer native provider streaming when available; otherwise fall back to a single
+            // blocking completion. Both paths normalize to `ModelCompletionResponse`.
+            let mut used_native_stream = false;
+            let completion_result: Result<ModelCompletionResponse, crate::ProviderError> =
+                if let Some(mut stream) = provider.stream(req.clone()) {
+                    used_native_stream = true;
+                    let mut streamed_text = String::new();
+                    let mut streamed_calls = Vec::new();
+                    let mut streamed_usage = TokenUsage::default();
+                    let mut done_response = None;
+                    let mut stream_error = None;
+
+                    while let Some(item) = stream.next().await {
+                        if cancel_token.is_cancelled() {
+                            return self.finish_cancelled(&run_repo, &run.id).await;
+                        }
+                        match item {
+                            Ok(ModelStreamEvent::TextDelta(delta)) => {
+                                if !delta.is_empty() {
+                                    streamed_text.push_str(&delta);
+                                    run_repo
+                                        .emit_event(
+                                            &run.id,
+                                            "message.delta",
+                                            &serde_json::json!({
+                                                "step": step_idx,
+                                                "text": delta
+                                            })
+                                            .to_string(),
+                                        )
+                                        .await?;
+                                }
+                            }
+                            Ok(ModelStreamEvent::ToolCall(call)) => streamed_calls.push(call),
+                            Ok(ModelStreamEvent::Usage(usage)) => streamed_usage = usage,
+                            Ok(ModelStreamEvent::Done(response)) => done_response = Some(response),
+                            Err(err) => {
+                                stream_error = Some(err);
+                                break;
+                            }
+                        }
+                    }
+
+                    match (stream_error, done_response) {
+                        (Some(err), _) => Err(err),
+                        (None, Some(response)) => {
+                            if response.text.is_empty() && !streamed_text.is_empty() {
+                                Ok(ModelCompletionResponse {
+                                    text: streamed_text,
+                                    ..response
+                                })
+                            } else if response.tool_calls.is_empty() && !streamed_calls.is_empty() {
+                                Ok(ModelCompletionResponse {
+                                    tool_calls: streamed_calls,
+                                    ..response
+                                })
+                            } else if response.usage == TokenUsage::default()
+                                && streamed_usage != TokenUsage::default()
+                            {
+                                Ok(ModelCompletionResponse {
+                                    usage: streamed_usage,
+                                    ..response
+                                })
+                            } else {
+                                Ok(response)
+                            }
+                        }
+                        (None, None) => Ok(ModelCompletionResponse {
+                            text: streamed_text,
+                            tool_calls: streamed_calls,
+                            usage: streamed_usage,
+                        }),
+                    }
+                } else {
+                    provider.complete(&req).await
+                };
+
+            let completion = match completion_result {
                 Ok(resp) => resp,
                 Err(err) => {
                     let err_msg = err.to_string();
@@ -228,7 +326,7 @@ impl AgentRuntime {
                 )
                 .await?;
 
-            if !completion.text.is_empty() {
+            if !used_native_stream && !completion.text.is_empty() {
                 run_repo
                     .emit_event(
                         &run.id,

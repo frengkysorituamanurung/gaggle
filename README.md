@@ -26,7 +26,9 @@ Gaggle's architecture is inspired by **Goose** (Block's open-source Rust AI agen
 - **Unified Extension & MCP Architecture**: Built-in capabilities (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`) and external Model Context Protocol (MCP) servers (`stdio`, `streamable_http`, `sse`, `wasm`) share a unified `extensions` and `extension_tools` model.
 - **Recipes, Sub-Recipes, & Cron Scheduler**: Package instructions, parameterized prompts (`minijinja`), and required extensions into reusable `recipes`. Delegate tasks to isolated subagent chats (`parent_chat_id`) or run recipes on a recurring cron schedule (`schedules`).
 - **Full-Text & Semantic Search**: Built-in SQLite FTS5 virtual tables for instant search across chat history (`messages_fts`) and project/global memories (`memories_fts`), alongside optional vector embeddings (`memory_embeddings`).
-- **Keychain-Backed Secrets**: API keys and OAuth tokens are **never** stored in SQLite. The database stores only a `secret_ref` identifier pointing to the host OS Keychain.
+- **Multi-Provider Streaming**: Normalized adapters for OpenAI-compatible APIs, Anthropic (SSE), local Ollama (NDJSON), and ChatGPT OAuth + PKCE. `AgentRuntime` consumes native streams with tool calls and usage reporting.
+- **Bounded Context Assembly**: Project instructions, nested `AGENTS.md`, recent history, pinned/FTS memories, and enabled tool definitions are assembled within the model context budget with secret redaction.
+- **Credential References Only**: API keys and OAuth tokens are **never** stored in SQLite. The database stores only a `secret_ref` identifier resolved through the `CredentialStore` abstraction (currently an in-memory store; OS keychain integration is planned).
 
 ---
 
@@ -168,18 +170,34 @@ On startup, Gaggle automatically:
 - `GET /api/approvals/pending` — Lists all pending tool-call approval requests.
 - `POST /api/approvals/{id}/decide` — Records an approval/denial decision, optionally remembers a `command_rules` entry, and appends an `audit_logs` record.
 - `GET /api/providers` — Lists configured model providers and credential presence status (`has_configured_secret`) without exposing secret values.
-- `POST /api/providers` — Registers a model provider, validates its `base_url`, and stores its credential in the `CredentialStore` by `secret_ref`.
+- `POST /api/providers` — Registers a model provider (`openai`, `anthropic`, `chatgpt`, `openrouter`, `deepseek`, `ollama`, or `openai_compat`), validates its `base_url`, and stores credentials in the `CredentialStore` by `secret_ref`.
 - `GET /api/providers/{id}/models` — Lists enabled models for a provider.
 - `POST /api/providers/{id}/models` — Registers a model under a provider.
+- `POST /api/providers/{id}/oauth/chatgpt/start` — Starts a ChatGPT OAuth 2.0 authorization-code + PKCE flow and returns the authorization URL and `state`.
+- `POST /api/providers/{id}/oauth/chatgpt/exchange` — Exchanges an authorization code for OAuth tokens stored only in the `CredentialStore`.
+- `GET /api/oauth/chatgpt/callback` — OAuth redirect target that completes the PKCE exchange and closes the sign-in window.
+- `GET /api/memories` — Lists project + global memories, or runs sanitized FTS5 search when `query` is supplied.
+- `POST /api/memories` — Creates a memory with `kind`, `title`, `content`, optional `tags`, and `pinned`.
+- `PATCH /api/memories/{id}` — Updates memory content, kind, pin state, or tags.
+- `DELETE /api/memories/{id}` — Soft-deletes a memory (`deleted_at`) so it is excluded from context and search.
+- `GET /api/memories/export` — Returns a Markdown export of active project + global memories with secrets redacted.
 - `GET /api/extensions` — Lists enabled extensions.
 - `GET /api/extensions/inventory` — Lists every extension with tool counts plus the workspace active-tool budget (`RECOMMENDED_MAX_ACTIVE_TOOLS = 25`).
 - `PATCH /api/extensions/{id}` — Enables or disables an extension.
 
 ### Settings, onboarding & diagnostics UI
 - First-run onboarding card appears when no project or provider is configured and can be skipped.
-- `Cmd/Ctrl + ,` opens Settings with Providers & Models, Permissions & Rules, Extensions, Appearance, and Diagnostics tabs.
+- `Cmd/Ctrl + ,` opens Settings with Providers & Models, Permissions & Rules, Extensions, Memory, Appearance, and Diagnostics tabs.
 - The composer model selector persists `active_model_key` in `app_settings` and falls back to `local-mock` when no remote model is configured.
 - API keys are submitted once, cleared from the form immediately, stored in the server `CredentialStore`, and surfaced only as `has_configured_secret: bool`.
+- ChatGPT providers can complete an OAuth + PKCE sign-in from Settings; access and refresh tokens remain in the credential store.
+- The Memory tab creates, searches, pins, and soft-deletes project-scoped and global memories.
+
+### Context assembly, memory & providers
+- `ContextAssembler` loads `project_settings.instructions`, bounded `AGENTS.md` files from the project root and nested directories, recent chat history, pinned and FTS-matched memories, and enabled extension tool definitions before each model turn.
+- Context is bounded by the model's `context_window` and the chat's `compact_threshold`; secrets are redacted and repository/tool content is marked as untrusted.
+- Native streaming is implemented for OpenAI-compatible, Anthropic (SSE), Ollama (NDJSON), and ChatGPT OAuth providers, with normalized `text`, `tool_calls`, and `usage` events consumed by `AgentRuntime`.
+- Provider-specific errors map rate limits, authentication failures, timeouts, and malformed streams without logging credentials.
 
 ---
 
