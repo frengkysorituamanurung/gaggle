@@ -4,6 +4,7 @@ use gaggle_db::{
     repositories::{
         chats::ChatRepository, extensions::ExtensionRepository, memories::MemoryRepository,
         permissions::PermissionRepository, projects::ProjectRepository, runs::RunRepository,
+        settings::SettingsRepository,
     },
 };
 
@@ -117,6 +118,15 @@ async fn test_schema_migrations_and_repositories() -> Result<()> {
         .set_tool_permission(None, &tool.id, "ask_before")
         .await?;
     assert_eq!(perm.level, "ask_before");
+
+    // 7. App Settings (theme persistence)
+    let settings_repo = SettingsRepository::new(pool.clone());
+    let saved = settings_repo.upsert("theme", r#""dark""#).await?;
+    assert_eq!(saved.key, "theme");
+    assert_eq!(saved.value, r#""dark""#);
+
+    let all_settings = settings_repo.list_all().await?;
+    assert_eq!(all_settings.len(), 1);
 
     Ok(())
 }
