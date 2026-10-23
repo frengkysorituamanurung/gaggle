@@ -90,8 +90,14 @@ impl ExtensionRepository {
         &self,
         tool_name: &str,
     ) -> Result<Option<ExtensionTool>> {
+        // A tool is executable only when both the extension and the tool are enabled.
         let tool = sqlx::query_as::<_, ExtensionTool>(
-            "SELECT * FROM extension_tools WHERE tool_name = ? AND enabled = 1 LIMIT 1",
+            r#"
+            SELECT et.* FROM extension_tools et
+            INNER JOIN extensions e ON e.id = et.extension_id
+            WHERE et.tool_name = ? AND et.enabled = 1 AND e.enabled = 1
+            LIMIT 1
+            "#,
         )
         .bind(tool_name)
         .fetch_optional(&self.pool)
@@ -146,6 +152,24 @@ impl ExtensionRepository {
         .fetch_one(&self.pool)
         .await?;
         Ok(count)
+    }
+
+    /// Lists every enabled tool that belongs to an enabled extension, ordered by tool name.
+    ///
+    /// The result is intentionally uncapped: callers (context assembly, tool registries)
+    /// apply their own active-tool budget.
+    pub async fn list_enabled_tools(&self) -> Result<Vec<ExtensionTool>> {
+        let tools = sqlx::query_as::<_, ExtensionTool>(
+            r#"
+            SELECT et.* FROM extension_tools et
+            INNER JOIN extensions e ON e.id = et.extension_id
+            WHERE e.enabled = 1 AND et.enabled = 1
+            ORDER BY et.tool_name ASC, et.id ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(tools)
     }
 
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<Extension> {
