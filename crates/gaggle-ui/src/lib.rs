@@ -155,7 +155,6 @@ pub fn dark_theme_tokens() -> DesignTokens {
     }
 }
 
-/// Formats a `DesignTokens` instance into CSS custom property declarations.
 pub fn format_css_variables(tokens: &DesignTokens) -> String {
     format!(
         "--bg-app: {bg_app};\n      \
@@ -622,8 +621,9 @@ pub fn render_index_html() -> String {
 </head>
 <body>
   <div id="app-shell">
-    <aside id="sidebar" role="navigation" aria-label="Sidebar">
+    <aside id="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
       <div class="sidebar-top-row">
+        <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true">☰</button>
         <div class="panel-header" style="margin-bottom:0;">Gaggle</div>
         <select id="theme-switcher" class="theme-select" aria-label="Color theme">
           <option value="system">System</option>
@@ -689,6 +689,10 @@ pub fn render_index_html() -> String {
     </aside>
 
     <main id="main-workspace" role="main" aria-label="Main Workspace">
+      <div id="reconnect-banner" class="warning-banner" role="alert" aria-live="assertive" style="display:none;">
+        Reconnecting to local Gaggle server...
+      </div>
+      <div id="connection-status" class="badge" data-state="connected" aria-live="polite">Connected</div>
       <header id="workspace-header" aria-label="Active Workspace Context">
         <div class="workspace-header-left">
           <div id="active-project-name">No Project Selected</div>
@@ -716,7 +720,11 @@ pub fn render_index_html() -> String {
       </div>
     </main>
 
-    <aside id="details-panel" role="complementary" aria-label="Contextual Details">
+    <aside id="details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
+      <div class="workspace-header-row">
+        <div class="panel-header" style="margin-bottom:0;">Inspector</div>
+        <button id="btn-toggle-inspector" class="icon-btn" type="button" aria-label="Toggle contextual details panel" aria-expanded="true">⚙</button>
+      </div>
       <div class="panel-header">Workspace Files</div>
       <div id="workspace-files" class="file-list">
         <div class="empty-state">Select a project to inspect workspace files.</div>
@@ -1358,5 +1366,28 @@ mod tests {
         assert!(html.contains("id=\"active-project-path\""));
         assert!(html.contains("id=\"workspace-path-warning\""));
         assert!(html.contains("id=\"workspace-files\""));
+    }
+
+    #[test]
+    fn test_responsive_app_shell_drawer_toggles_and_connection_banner_present() {
+        let html = render_index_html();
+
+        // Header drawer toggle buttons for narrow viewports (<= 900px)
+        assert!(html.contains("id=\"btn-toggle-sidebar\""));
+        assert!(html.contains("id=\"btn-toggle-inspector\""));
+        assert!(html.contains("aria-expanded"));
+
+        // Connection health indicator and reconnection banner
+        assert!(html.contains("id=\"connection-status\""));
+        assert!(html.contains("id=\"reconnect-banner\""));
+
+        // App shell structure with 3 panels
+        assert!(html.contains("id=\"app-shell\""));
+        assert!(html.contains("id=\"sidebar\""));
+        assert!(html.contains("id=\"main-workspace\""));
+        assert!(html.contains("id=\"details-panel\""));
+
+        // Responsive media query for narrow windows
+        assert!(html.contains("@media (max-width: 900px)"));
     }
 }
