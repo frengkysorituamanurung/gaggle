@@ -99,6 +99,7 @@ pub trait ToolExecutor: Send + Sync {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum AgentLoopOutcome {
     Completed {
         run: Run,
