@@ -144,11 +144,16 @@ On startup, Gaggle automatically:
 - `PUT /api/settings` — Upserts a JSON-validated application setting by key.
 - `GET /api/projects` — Lists all active projects along with `path_exists: bool` workspace accessibility status.
 - `POST /api/projects` — Validates, canonicalizes, and registers a new project workspace.
+- `PATCH /api/projects/{id}` — Updates project defaults (`default_mode`, `default_access`, `default_model_id`).
 - `GET /api/projects/{id}/chats` — Lists active conversations scoped to a project.
 - `GET /api/projects/{id}/files` — Lists validated files and directories inside the project workspace.
 - `GET /api/projects/{id}/git-status` — Inspects the project's Git branch and modified/untracked files.
 - `GET /api/projects/{id}/diff` — Generates a bounded unified diff of uncommitted workspace changes.
 - `GET /api/projects/{id}/worktrees` — Lists isolated Git worktrees associated with a project.
+- `GET /api/projects/{id}/command-rules` — Lists global and project-scoped shell command rules.
+- `POST /api/projects/{id}/command-rules` — Adds an `allow`, `ask`, or `deny` command rule (deny rules always win).
+- `GET /api/projects/{id}/tool-permissions` — Lists enabled tools with their effective per-project permission level.
+- `PUT /api/projects/{id}/tool-permissions` — Sets `always_allow`, `ask_before`, or `never_allow` for one tool.
 - `POST /api/chats` — Creates a new chat session within a project (automatically provisioning an isolated Git worktree when `mode = "worktree"`).
 - `POST /api/chats/{id}/messages` — Submits a user message and executes a bounded agent runtime turn.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
@@ -166,6 +171,15 @@ On startup, Gaggle automatically:
 - `POST /api/providers` — Registers a model provider, validates its `base_url`, and stores its credential in the `CredentialStore` by `secret_ref`.
 - `GET /api/providers/{id}/models` — Lists enabled models for a provider.
 - `POST /api/providers/{id}/models` — Registers a model under a provider.
+- `GET /api/extensions` — Lists enabled extensions.
+- `GET /api/extensions/inventory` — Lists every extension with tool counts plus the workspace active-tool budget (`RECOMMENDED_MAX_ACTIVE_TOOLS = 25`).
+- `PATCH /api/extensions/{id}` — Enables or disables an extension.
+
+### Settings, onboarding & diagnostics UI
+- First-run onboarding card appears when no project or provider is configured and can be skipped.
+- `Cmd/Ctrl + ,` opens Settings with Providers & Models, Permissions & Rules, Extensions, Appearance, and Diagnostics tabs.
+- The composer model selector persists `active_model_key` in `app_settings` and falls back to `local-mock` when no remote model is configured.
+- API keys are submitted once, cleared from the form immediately, stored in the server `CredentialStore`, and surfaced only as `has_configured_secret: bool`.
 
 ---
 

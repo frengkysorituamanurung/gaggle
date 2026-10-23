@@ -107,4 +107,56 @@ impl ExtensionRepository {
         .await?;
         Ok(exts)
     }
+
+    pub async fn list_all_extensions(&self) -> Result<Vec<Extension>> {
+        let exts = sqlx::query_as::<_, Extension>("SELECT * FROM extensions ORDER BY name ASC")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(exts)
+    }
+
+    pub async fn get_extension_by_id(&self, id: &str) -> Result<Option<Extension>> {
+        let ext = sqlx::query_as::<_, Extension>("SELECT * FROM extensions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(ext)
+    }
+
+    pub async fn list_tools_for_extension(&self, extension_id: &str) -> Result<Vec<ExtensionTool>> {
+        let tools = sqlx::query_as::<_, ExtensionTool>(
+            "SELECT * FROM extension_tools WHERE extension_id = ? ORDER BY tool_name ASC",
+        )
+        .bind(extension_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(tools)
+    }
+
+    /// Counts every enabled tool that belongs to an enabled extension. This is the
+    /// workspace-wide active tool budget surfaced by the Settings UI.
+    pub async fn count_active_tools(&self) -> Result<i64> {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM extension_tools et
+            INNER JOIN extensions e ON e.id = et.extension_id
+            WHERE e.enabled = 1 AND et.enabled = 1
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count)
+    }
+
+    pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<Extension> {
+        sqlx::query("UPDATE extensions SET enabled = ? WHERE id = ?")
+            .bind(if enabled { 1 } else { 0 })
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        self.get_extension_by_id(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {id} not found after update"))
+    }
 }

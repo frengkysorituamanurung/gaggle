@@ -17,11 +17,15 @@ use gaggle_core::{
     validate_provider_base_url,
 };
 use gaggle_db::{
-    default_db_path,
-    models::{AppSetting, Approval, Chat, Extension, Model, Project, Provider, Run, Worktree},
+    connection::new_id,
+    models::{
+        AppSetting, Approval, Chat, CommandRule, Extension, ExtensionTool, Model, Project,
+        Provider, Run, Worktree,
+    },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
         extensions::ExtensionRepository,
+        permissions::PermissionRepository,
         projects::ProjectRepository,
         providers::ProviderRepository,
         runs::RunRepository,
@@ -29,6 +33,7 @@ use gaggle_db::{
         worktrees::WorktreeRepository,
     },
 };
+use gaggle_mcp::{ExtensionRegistry, RECOMMENDED_MAX_ACTIVE_TOOLS};
 use gaggle_tools::{
     BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
     GitWorkspaceStatus, fs_list, git_diff, git_status, git_worktree_create, git_worktree_discard,
@@ -129,6 +134,64 @@ pub struct UpdateChatRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateProjectRequest {
+    pub default_mode: Option<String>,
+    pub default_access: Option<String>,
+    pub default_model_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCommandRuleRequest {
+    pub pattern: String,
+    pub match_kind: Option<String>,
+    pub action: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetToolPermissionRequest {
+    pub extension_tool_id: String,
+    pub level: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateExtensionRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExtensionToolSummary {
+    pub tool_name: String,
+    pub is_read_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExtensionInventoryItem {
+    #[serde(flatten)]
+    pub extension: Extension,
+    pub tool_count: i64,
+    pub tools: Vec<ExtensionToolSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExtensionsInventoryResponse {
+    pub recommended_max_active_tools: usize,
+    pub active_tool_count: i64,
+    pub exceeds_recommended_tool_limit: bool,
+    pub extensions: Vec<ExtensionInventoryItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolPermissionStatus {
+    pub extension_tool_id: String,
+    pub extension_name: String,
+    pub tool_name: String,
+    pub is_read_only: bool,
+    /// `None` means no explicit override: the permission engine's default
+    /// (`ask_before` unless the tool is annotated read-only) applies.
+    pub level: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorktreeActionRequest {
     pub confirm: bool,
     pub decided_by_device: Option<String>,
@@ -147,17 +210,28 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/diagnostics", get(diagnostics_handler))
         .route("/api/settings", get(list_settings).put(upsert_setting))
         .route("/api/projects", get(list_projects).post(create_project))
+        .route("/api/projects/{id}", patch(update_project))
         .route("/api/projects/{id}/chats", get(list_project_chats))
         .route("/api/projects/{id}/files", get(list_project_files))
         .route("/api/projects/{id}/git-status", get(project_git_status))
         .route("/api/projects/{id}/diff", get(project_git_diff))
         .route("/api/projects/{id}/worktrees", get(list_project_worktrees))
+        .route(
+            "/api/projects/{id}/command-rules",
+            get(list_project_command_rules).post(create_project_command_rule),
+        )
+        .route(
+            "/api/projects/{id}/tool-permissions",
+            get(list_project_tool_permissions).put(set_project_tool_permission),
+        )
         .route("/api/providers", get(list_providers).post(create_provider))
         .route(
             "/api/providers/{id}/models",
             get(list_provider_models).post(create_provider_model),
         )
         .route("/api/extensions", get(list_extensions))
+        .route("/api/extensions/inventory", get(extensions_inventory))
+        .route("/api/extensions/{id}", patch(update_extension))
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
         .route("/api/chats/{id}", patch(update_chat))
@@ -181,7 +255,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     if !recovered.is_empty() {
         info!(count = recovered.len(), "Recovered durable runs on startup");
     }
-    let db_path = default_db_path().unwrap_or_else(|_| PathBuf::from(":memory:"));
+    let db_path = pool.connect_options().get_filename().to_path_buf();
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
     Ok(AppState {
@@ -293,6 +367,41 @@ async fn create_project(
             path_exists: true,
         }),
     ))
+}
+
+async fn update_project(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateProjectRequest>,
+) -> Result<Json<Project>, (StatusCode, String)> {
+    if let Some(mode) = &req.default_mode
+        && !matches!(mode.as_str(), "local" | "worktree" | "readonly")
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "default_mode must be one of: local, worktree, readonly".to_string(),
+        ));
+    }
+    if let Some(access) = &req.default_access
+        && !matches!(access.as_str(), "ask" | "full")
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "default_access must be one of: ask, full".to_string(),
+        ));
+    }
+
+    let repo = ProjectRepository::new(state.pool);
+    let updated = repo
+        .update_defaults(
+            &id,
+            req.default_mode.as_deref(),
+            req.default_access.as_deref(),
+            req.default_model_id.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(updated))
 }
 
 async fn list_project_chats(
@@ -502,6 +611,138 @@ async fn decide_approval(
     Ok(Json(updated))
 }
 
+async fn list_project_command_rules(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<Vec<CommandRule>>, (StatusCode, String)> {
+    let repo = PermissionRepository::new(state.pool);
+    let rules = repo
+        .list_command_rules(Some(&project_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(rules))
+}
+
+async fn create_project_command_rule(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(req): Json<CreateCommandRuleRequest>,
+) -> Result<(StatusCode, Json<CommandRule>), (StatusCode, String)> {
+    let pattern = req.pattern.trim();
+    if pattern.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Command rule pattern must not be empty".to_string(),
+        ));
+    }
+    let match_kind = req.match_kind.as_deref().unwrap_or("exact");
+    if !matches!(match_kind, "exact" | "prefix" | "regex") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "match_kind must be one of: exact, prefix, regex".to_string(),
+        ));
+    }
+    if !matches!(req.action.as_str(), "allow" | "deny" | "ask") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "action must be one of: allow, deny, ask".to_string(),
+        ));
+    }
+
+    let repo = PermissionRepository::new(state.pool);
+    let rule = repo
+        .add_command_rule(Some(&project_id), pattern, match_kind, &req.action)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok((StatusCode::CREATED, Json(rule)))
+}
+
+async fn list_project_tool_permissions(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> Result<Json<Vec<ToolPermissionStatus>>, (StatusCode, String)> {
+    let ext_repo = ExtensionRepository::new(state.pool.clone());
+    let perm_repo = PermissionRepository::new(state.pool);
+
+    let extensions = ext_repo
+        .list_enabled_extensions()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut statuses = Vec::new();
+    for extension in extensions {
+        let tools = ext_repo
+            .list_tools_for_extension(&extension.id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for tool in tools.into_iter().filter(|tool| tool.enabled == 1) {
+            let effective = perm_repo
+                .get_tool_permission(Some(&project_id), &tool.id)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            statuses.push(ToolPermissionStatus {
+                extension_tool_id: tool.id,
+                extension_name: extension.name.clone(),
+                tool_name: tool.tool_name,
+                is_read_only: tool.is_read_only == 1,
+                level: effective.map(|perm| perm.level),
+            });
+        }
+    }
+
+    Ok(Json(statuses))
+}
+
+async fn set_project_tool_permission(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(req): Json<SetToolPermissionRequest>,
+) -> Result<Json<ToolPermissionStatus>, (StatusCode, String)> {
+    if !matches!(
+        req.level.as_str(),
+        "always_allow" | "ask_before" | "never_allow"
+    ) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "level must be one of: always_allow, ask_before, never_allow".to_string(),
+        ));
+    }
+
+    let ext_repo = ExtensionRepository::new(state.pool.clone());
+    let perm_repo = PermissionRepository::new(state.pool.clone());
+    let tool = sqlx::query_as::<_, ExtensionTool>("SELECT * FROM extension_tools WHERE id = ?")
+        .bind(&req.extension_tool_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Extension tool {} not found", req.extension_tool_id),
+            )
+        })?;
+
+    let permission = perm_repo
+        .upsert_tool_permission(Some(&project_id), &tool.id, &req.level)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let extension_name = ext_repo
+        .get_extension_by_id(&tool.extension_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map(|extension| extension.name)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(Json(ToolPermissionStatus {
+        extension_tool_id: tool.id,
+        extension_name,
+        tool_name: tool.tool_name,
+        is_read_only: tool.is_read_only == 1,
+        level: Some(permission.level),
+    }))
+}
+
 async fn list_extensions(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Extension>>, (StatusCode, String)> {
@@ -511,6 +752,62 @@ async fn list_extensions(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(exts))
+}
+
+async fn extensions_inventory(
+    State(state): State<AppState>,
+) -> Result<Json<ExtensionsInventoryResponse>, (StatusCode, String)> {
+    let repo = ExtensionRepository::new(state.pool.clone());
+
+    let extensions = repo
+        .list_all_extensions()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let active_tool_count = repo
+        .count_active_tools()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut items = Vec::with_capacity(extensions.len());
+    for extension in extensions {
+        let tools = repo
+            .list_tools_for_extension(&extension.id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        items.push(ExtensionInventoryItem {
+            tool_count: tools.len() as i64,
+            tools: tools
+                .into_iter()
+                .map(|tool| ExtensionToolSummary {
+                    tool_name: tool.tool_name,
+                    is_read_only: tool.is_read_only == 1,
+                })
+                .collect(),
+            extension,
+        });
+    }
+
+    Ok(Json(ExtensionsInventoryResponse {
+        recommended_max_active_tools: RECOMMENDED_MAX_ACTIVE_TOOLS,
+        active_tool_count,
+        exceeds_recommended_tool_limit: ExtensionRegistry::exceeds_recommended_tool_limit(
+            active_tool_count as usize,
+        ),
+        extensions: items,
+    }))
+}
+
+async fn update_extension(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateExtensionRequest>,
+) -> Result<Json<Extension>, (StatusCode, String)> {
+    let repo = ExtensionRepository::new(state.pool);
+    let updated = repo
+        .set_enabled(&id, req.enabled)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(updated))
 }
 
 async fn list_providers(
@@ -544,20 +841,34 @@ async fn create_provider(
     Json(req): Json<CreateProviderRequest>,
 ) -> Result<(StatusCode, Json<ProviderStatusResponse>), (StatusCode, String)> {
     let validated_url = match &req.base_url {
-        Some(url) => Some(
+        Some(url) if !url.trim().is_empty() => Some(
             validate_provider_base_url(url)
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
         ),
-        None => None,
+        _ => None,
     };
 
-    if let (Some(secret_ref), Some(raw_key)) = (&req.secret_ref, &req.api_key) {
+    // A provider credential is stored exclusively in the CredentialStore. SQLite only
+    // ever receives the generated `secret_ref` identifier, never the raw key.
+    let secret_ref = req.secret_ref.clone().or_else(|| {
+        req.api_key
+            .as_ref()
+            .map(|_| format!("provider:{}", new_id()))
+    });
+
+    if let Some(raw_key) = &req.api_key {
+        let secret_ref = secret_ref.as_deref().ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "A secret_ref is required when an api_key is supplied".to_string(),
+            )
+        })?;
         let secret =
             SecretString::new(raw_key).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
         state
             .credential_store
             .set_secret(secret_ref, secret)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     }
 
     let repo = ProviderRepository::new(state.pool);
@@ -567,7 +878,7 @@ async fn create_provider(
             &req.name,
             validated_url.as_deref(),
             &req.auth_kind,
-            req.secret_ref.as_deref(),
+            secret_ref.as_deref(),
         )
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -628,7 +939,18 @@ async fn submit_chat_message(
 ) -> Result<Json<AgentLoopOutcome>, (StatusCode, String)> {
     let runtime = AgentRuntime::new(state.pool.clone(), DEFAULT_MAX_AGENT_STEPS);
     let executor = BuiltinToolExecutor::new(state.pool.clone());
-    let model_key = req.model_key.as_deref().unwrap_or("local-mock");
+    let model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
+    if model_key.len() > 200 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "model_key must be at most 200 characters".to_string(),
+        ));
+    }
+    let model_key = if model_key.is_empty() {
+        "local-mock"
+    } else {
+        model_key
+    };
 
     // Default local fallback provider when no external provider is bound to the chat
     let provider = MockProviderAdapter::with_response(
