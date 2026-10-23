@@ -7,7 +7,7 @@ use axum::{
         Html,
         sse::{Event, Sse},
     },
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use futures::stream::Stream;
 use gaggle_core::{
@@ -123,6 +123,11 @@ pub struct RunEventsQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateChatRequest {
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorktreeActionRequest {
     pub confirm: bool,
     pub decided_by_device: Option<String>,
@@ -153,6 +158,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
+        .route("/api/chats/{id}", patch(update_chat))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
@@ -372,6 +378,25 @@ async fn export_chat(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat {id} not found")))?;
     Ok(Json(bundle))
+}
+
+async fn update_chat(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateChatRequest>,
+) -> Result<Json<Chat>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let updated = if let Some(title) = req.title {
+        repo.update_title(&id, &title)
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+    } else {
+        repo.get_by_id(&id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat {id} not found")))?
+    };
+    Ok(Json(updated))
 }
 
 async fn resolve_project_policy(

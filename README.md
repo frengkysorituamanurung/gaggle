@@ -1,5 +1,20 @@
 # Gaggle
 
+<p align="center">
+  <svg xmlns="http://www.w3.org/2000/svg" width="184" height="50" viewBox="24 28 184 50" role="img" aria-label="gaggle" xmlns:c2pa="http://c2pa.org/manifest">
+    <title>gaggle</title>
+    <style>
+      .ink { fill: #20201d; }
+      @media (prefers-color-scheme: dark) { .ink { fill: #f4f4ee; } }
+    </style>
+    <g class="ink">
+      <circle cx="41.28" cy="52.71" r="9.16"/>
+      <circle cx="66.72" cy="47.29" r="9.16"/>
+      <path d="M110.77 42.91V45.78C109.33 43.6 107.74 42.6 105.64 42.6C103.87 42.6 101.91 43.43 100.55 44.78C98.56 46.71 97.53 49.41 97.53 52.69C97.53 58.43 100.77 62.37 105.53 62.37C107.67 62.37 108.96 61.72 110.77 59.68V62.2C110.77 64.45 109.07 66 106.64 66C104.79 66 103.65 65.24 103.24 63.83H97.93C97.97 65.28 98.52 66.28 99.89 67.32C101.47 68.53 103.65 69.11 106.45 69.11C112.21 69.11 115.67 66.52 115.67 62.2V42.91ZM106.6 46.64C109.03 46.64 110.84 49.17 110.84 52.62C110.84 56.01 109.11 58.33 106.53 58.33C104.28 58.33 102.69 56.01 102.69 52.62C102.69 49.1 104.28 46.64 106.6 46.64Z M134.6 61.2C133.76 60.4 133.48 59.85 133.48 58.92V48.57C133.48 44.77 130.85 42.84 125.74 42.84C120.63 42.84 117.97 44.98 117.65 49.29H122.38C122.62 47.36 123.43 46.74 125.84 46.74C127.73 46.74 128.68 47.36 128.68 48.6C128.68 49.22 128.36 49.74 127.84 50.05C127.17 50.39 127.17 50.39 124.76 50.77L122.8 51.12C119.05 51.74 117.23 53.64 117.23 56.99C117.23 60.34 119.51 62.58 122.97 62.58C125.07 62.58 126.96 61.72 128.71 59.92C128.71 60.89 128.82 61.23 129.27 61.79H134.6ZM128.68 54.3C128.68 57.09 127.28 58.68 124.79 58.68C123.15 58.68 122.13 57.82 122.13 56.44C122.13 54.99 122.9 54.3 124.93 53.88L126.61 53.57C127.91 53.33 128.12 53.26 128.68 52.98Z M148.51 42.93V45.79C147.08 43.62 145.49 42.62 143.4 42.62C141.63 42.62 139.68 43.45 138.31 44.79C136.33 46.73 135.3 49.42 135.3 52.7C135.3 58.44 138.54 62.37 143.29 62.37C145.42 62.37 146.71 61.72 148.51 59.68V62.2C148.51 64.45 146.82 66 144.39 66C142.55 66 141.41 65.24 141 63.82H135.7C135.74 65.27 136.29 66.28 137.65 67.31C139.24 68.52 141.41 69.11 144.21 69.11C149.95 69.11 153.41 66.52 153.41 62.2V42.93ZM144.35 46.66C146.78 46.66 148.59 49.18 148.59 52.63C148.59 56.02 146.86 58.33 144.28 58.33C142.03 58.33 140.45 56.02 140.45 52.63C140.45 49.11 142.03 46.66 144.35 46.66Z M168.28 42.91V45.78C166.84 43.6 165.26 42.6 163.16 42.6C161.39 42.6 159.44 43.43 158.08 44.78C156.09 46.71 155.06 49.41 155.06 52.69C155.06 58.43 158.3 62.37 163.05 62.37C165.18 62.37 166.47 61.72 168.28 59.68V62.2C168.28 64.45 166.58 66 164.15 66C162.31 66 161.17 65.24 160.76 63.83H155.46C155.5 65.28 156.05 66.28 157.41 67.32C159 68.53 161.17 69.11 163.97 69.11C169.71 69.11 173.17 66.52 173.17 62.2V42.91ZM164.12 46.64C166.55 46.64 168.35 49.17 168.35 52.62C168.35 56.01 166.62 58.33 164.04 58.33C161.8 58.33 160.21 56.01 160.21 52.62C160.21 49.1 161.8 46.64 164.12 46.64Z M180.76 36.22H175.85V62H180.76Z M199.79 53.98C199.82 53.58 199.82 53.41 199.82 53.17C199.82 51.35 199.55 49.65 199.1 48.37C197.87 45.06 194.88 43.06 191.14 43.06C185.83 43.06 182.57 46.85 182.57 52.97C182.57 58.82 185.79 62.4 191.04 62.4C195.19 62.4 198.55 60.1 199.62 56.48H194.88C194.3 57.94 192.96 58.78 191.21 58.78C189.84 58.78 188.74 58.21 188.06 57.19C187.61 56.52 187.44 55.71 187.37 53.98ZM187.44 50.84C187.75 48.03 188.95 46.68 191.08 46.68C193.27 46.68 194.57 48.13 194.81 50.84Z"/>
+    </g>
+  </svg>
+</p>
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Rust Edition](https://img.shields.io/badge/Rust-2024_Edition-orange.svg)](https://www.rust-lang.org/)
 [![Database: SQLite](https://img.shields.io/badge/Database-SQLite_WAL_%2B_FTS5-003B57.svg)](https://www.sqlite.org/)
@@ -148,6 +163,8 @@ On startup, Gaggle automatically:
 - `POST /api/chats` — Creates a new chat session within a project (automatically provisioning an isolated Git worktree when `mode = "worktree"`).
 - `POST /api/chats/{id}/messages` — Submits a user message and executes a bounded agent runtime turn.
 - `GET /api/chats/{id}/export` — Exports a complete chat session (`chat`, `messages`, and `message_parts`) as a portable JSON bundle.
+- `GET /api/chats/{id}/messages` — Returns ordered `messages` + nested `message_parts` for chat history hydration.
+- `PATCH /api/chats/{id}` — Updates chat `title` and sets `title_user_set = 1`.
 - `GET /api/worktrees/{id}/git-status` — Inspects the Git status of an isolated chat worktree.
 - `GET /api/worktrees/{id}/diff` — Generates a bounded unified diff for an isolated chat worktree.
 - `POST /api/worktrees/{id}/merge` — Merges an active worktree branch back into the project repository (`git merge --no-ff`) after explicit user confirmation (`confirm = true`).

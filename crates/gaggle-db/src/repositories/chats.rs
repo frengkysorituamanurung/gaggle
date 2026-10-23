@@ -74,6 +74,20 @@ impl ChatRepository {
         Ok(chats)
     }
 
+    pub async fn update_title(&self, chat_id: &str, title: &str) -> Result<Chat> {
+        let now = now_ms();
+        sqlx::query("UPDATE chats SET title = ?, title_user_set = 1, updated_at = ? WHERE id = ?")
+            .bind(title)
+            .bind(now)
+            .bind(chat_id)
+            .execute(&self.pool)
+            .await?;
+
+        self.get_by_id(chat_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after title update"))
+    }
+
     pub async fn append_message(
         &self,
         chat_id: &str,
