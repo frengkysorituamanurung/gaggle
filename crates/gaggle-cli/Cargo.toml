@@ -8,6 +8,10 @@ license.workspace = true
 name = "gaggle"
 path = "src/main.rs"
 
+[[bin]]
+name = "gaggle-desktop"
+path = "src/bin/gaggle-desktop.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true

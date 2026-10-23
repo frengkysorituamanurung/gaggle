@@ -41,7 +41,10 @@ By participating in this project, you agree to abide by our [Code of Conduct](./
    git clone https://github.com/frengky/gaggle.git
    cd gaggle
    cargo build --workspace
-   cargo test --workspace
+   cargo fmt --all -- --check
+   cargo clippy --workspace --all-targets --locked -- -D warnings
+   cargo check --workspace --all-targets --locked
+   cargo test --workspace --locked
    ```
 
 ---
@@ -96,15 +99,23 @@ Every new feature or bug fix should include automated tests:
 - Run the full verification checks before submitting a pull request:
   ```bash
   cargo fmt --all -- --check
-  cargo clippy --workspace --all-targets
-  cargo test --workspace
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+  cargo check --workspace --all-targets --locked
+  cargo test --workspace --locked
+  .github/scripts/check-ui-embedded.sh
+  bash -n .github/scripts/*.sh
   ```
+- CI runs the same checks on Ubuntu and macOS for pulls targeting
+  `development` or `main`. The `Gaggle.app` and Linux package builds are
+  described in [Building and Packaging Gaggle](./docs/development/packaging.md).
+- Do not add a workflow that publishes a stable release from a branch push.
+  Stable releases are tag-driven and validated against `main`.
 
 ---
 
 ## 7. Pull Request Workflow & Commit Conventions
 
-1. Create a descriptive feature or bugfix branch from `main` (e.g., `feat/worktree-manager` or `fix/permission-deny-rule`).
+1. Create a descriptive feature or bugfix branch from `development` (e.g., `feat/worktree-manager` or `fix/permission-deny-rule`). Open the pull request against `development`; maintainers promote `development` to `main` after integration.
 2. Follow **Conventional Commits** for commit messages:
    - `feat(core): add smart permission LLM risk cache lookup`
    - `fix(db): enforce json_valid check on project_settings.env`

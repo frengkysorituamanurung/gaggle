@@ -39,13 +39,20 @@ Gaggle is organized as a multi-crate Cargo workspace with clear domain boundarie
 ```text
 gaggle/
 ├─ Cargo.toml                # Cargo workspace manifest
+├─ rust-toolchain.toml       # Stable toolchain, rustfmt, and Clippy
 ├─ LICENSE                   # Apache-2.0 License
 ├─ README.md                 # Project overview and usage guide
 ├─ CONTRIBUTING.md           # Contribution guidelines
 ├─ CODE_OF_CONDUCT.md        # Community Code of Conduct
 ├─ SECURITY.md               # Security policy and vulnerability reporting
+├─ assets/
+│  └─ Gaggle.icns            # macOS application icon
 ├─ docs/
-│  └─ ERD.md                 # Database schema and ERD documentation
+│  ├─ ERD.md                 # Database schema and ERD documentation
+│  └─ development/           # CI/CD audit and packaging documentation
+├─ .github/
+│  ├─ workflows/             # CI, package, release, and security workflows
+│  └─ scripts/               # Reproducible packaging and validation scripts
 └─ crates/
    ├─ gaggle-core/           # Agent loop, durable run recovery, compaction, 7-step permission engine, Code Mode
    ├─ gaggle-db/             # SQLite connection (WAL, FK), sqlx migrations, 37 ERD models, domain repositories
@@ -53,7 +60,7 @@ gaggle/
    ├─ gaggle-mcp/            # MCP client integration, extension registry, active tool limit guard (~25 tools)
    ├─ gaggle-recipes/        # Recipe parser, required/optional parameter validation, minijinja templates, scheduler
    ├─ gaggle-server/         # Axum HTTP/SSE server, REST API, chat JSON export/import, embedded Web UI serving
-   ├─ gaggle-cli/            # `gaggle` CLI binary (`serve`, `project add/list`, `db-path`)
+   ├─ gaggle-cli/            # `gaggle` CLI and `gaggle-desktop` local launcher
    └─ gaggle-ui/             # Web UI shell served by gaggle-server
 ```
 
@@ -103,6 +110,31 @@ See [`docs/ERD.md`](./docs/ERD.md) for the complete Entity-Relationship Diagram 
    cargo test --workspace
    ```
 
+### Desktop Launcher and Installable Packages
+
+Gaggle's UI is served by the local Axum server. The `gaggle-desktop` binary
+starts that server and opens the default browser:
+
+```bash
+cargo run -p gaggle-cli --bin gaggle-desktop
+```
+
+The CI/CD pipeline builds native packages on `development` and `main`:
+
+```text
+Gaggle-macOS-arm64.zip
+Gaggle-macOS-x64.zip
+Gaggle-linux-x86_64.tar.gz
+Gaggle-linux-aarch64.tar.gz
+```
+
+Each workflow artifact includes the package plus a SHA-256 file and JSON
+metadata. Stable releases are published only from `v*` tags. See
+[Building and Packaging Gaggle](./docs/development/packaging.md) for
+installation steps, runtime requirements, signing status, and the release
+procedure. The macOS artifact is a ZIP containing `Gaggle.app`; no `.dmg`
+installer is produced.
+
 ---
 
 ## CLI Usage (`gaggle`)
@@ -133,6 +165,14 @@ cargo run -p gaggle-cli -- project list
 ```bash
 cargo run -p gaggle-cli -- serve --addr 127.0.0.1:4321
 ```
+
+### 6. Launch the Desktop Entry Point
+```bash
+cargo run -p gaggle-cli --bin gaggle-desktop -- --no-browser
+```
+The desktop launcher starts the same server and, unless `--no-browser` is used,
+opens `http://127.0.0.1:4321` in the default browser.
+
 On startup, Gaggle automatically:
 1. Opens the global SQLite pool in WAL mode and applies any pending `sqlx` migrations.
 2. Registers all bundled built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`).
