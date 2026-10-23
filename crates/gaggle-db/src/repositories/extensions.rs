@@ -98,4 +98,13 @@ impl ExtensionRepository {
         .await?;
         Ok(tool)
     }
+
+    pub async fn list_enabled_extensions(&self) -> Result<Vec<Extension>> {
+        let exts = sqlx::query_as::<_, Extension>(
+            "SELECT * FROM extensions WHERE enabled = 1 ORDER BY name ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(exts)
+    }
 }

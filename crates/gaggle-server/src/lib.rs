@@ -18,9 +18,10 @@ use gaggle_core::{
 };
 use gaggle_db::{
     default_db_path,
-    models::{AppSetting, Approval, Chat, Model, Project, Provider, Run, Worktree},
+    models::{AppSetting, Approval, Chat, Extension, Model, Project, Provider, Run, Worktree},
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
+        extensions::ExtensionRepository,
         projects::ProjectRepository,
         providers::ProviderRepository,
         runs::RunRepository,
@@ -156,6 +157,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/providers/{id}/models",
             get(list_provider_models).post(create_provider_model),
         )
+        .route("/api/extensions", get(list_extensions))
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
         .route("/api/chats/{id}", patch(update_chat))
@@ -498,6 +500,17 @@ async fn decide_approval(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     Ok(Json(updated))
+}
+
+async fn list_extensions(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Extension>>, (StatusCode, String)> {
+    let repo = ExtensionRepository::new(state.pool);
+    let exts = repo
+        .list_enabled_extensions()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(exts))
 }
 
 async fn list_providers(
