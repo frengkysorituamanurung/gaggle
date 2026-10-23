@@ -1034,6 +1034,7 @@ pub fn render_index_html() -> String {
           <button class="settings-tab" id="tab-providers" type="button" role="tab" data-settings-tab="providers" aria-selected="true" aria-controls="panel-providers">Providers &amp; Models</button>
           <button class="settings-tab" id="tab-permissions" type="button" role="tab" data-settings-tab="permissions" aria-selected="false" aria-controls="panel-permissions">Permissions &amp; Rules</button>
           <button class="settings-tab" id="tab-extensions" type="button" role="tab" data-settings-tab="extensions" aria-selected="false" aria-controls="panel-extensions">Extensions</button>
+          <button class="settings-tab" id="tab-memory" type="button" role="tab" data-settings-tab="memory" aria-selected="false" aria-controls="panel-memory">Memory</button>
           <button class="settings-tab" id="tab-appearance" type="button" role="tab" data-settings-tab="appearance" aria-selected="false" aria-controls="panel-appearance">Appearance</button>
           <button class="settings-tab" id="tab-diagnostics" type="button" role="tab" data-settings-tab="diagnostics" aria-selected="false" aria-controls="panel-diagnostics">Diagnostics</button>
         </div>
@@ -1047,6 +1048,7 @@ pub fn render_index_html() -> String {
                   <select id="input-provider-kind" class="select-control">
                     <option value="openai">openai</option>
                     <option value="anthropic">anthropic</option>
+                    <option value="chatgpt">chatgpt</option>
                     <option value="openrouter">openrouter</option>
                     <option value="deepseek">deepseek</option>
                     <option value="ollama">ollama</option>
@@ -1127,6 +1129,20 @@ pub fn render_index_html() -> String {
               <select id="settings-active-model" class="select-control" aria-label="Active chat model"></select>
               <p class="settings-note">The composer uses this model key. If no remote model is configured, Gaggle falls back to <span class="mono">local-mock</span>.</p>
             </div>
+            <div class="settings-section">
+              <h3>ChatGPT OAuth sign-in</h3>
+              <p class="settings-note">Create a provider of kind <span class="mono">chatgpt</span> first, then authorize it with OAuth + PKCE. Tokens are stored only in the server credential store and referenced by <span class="mono">secret_ref</span>.</p>
+              <div class="form-row">
+                <div>
+                  <label class="field-label" for="input-chatgpt-client-id">OAuth client ID</label>
+                  <input id="input-chatgpt-client-id" class="text-input" type="text" placeholder="OAuth client ID" autocomplete="off" spellcheck="false" />
+                </div>
+                <div>
+                  <button id="btn-chatgpt-oauth" class="btn" type="button" style="width:100%;">Sign in with ChatGPT</button>
+                </div>
+              </div>
+              <div id="chatgpt-oauth-status" class="settings-note" role="status"></div>
+            </div>
           </section>
 
           <section class="settings-panel" id="panel-permissions" role="tabpanel" aria-labelledby="tab-permissions">
@@ -1198,6 +1214,65 @@ pub fn render_index_html() -> String {
                 Disabling a bundled extension removes its tools from future runs until re-enabled.
               </p>
               <div id="extension-list"><div class="empty-state">Loading extensions…</div></div>
+            </div>
+          </section>
+
+          <section class="settings-panel" id="panel-memory" role="tabpanel" aria-labelledby="tab-memory">
+            <div class="settings-section">
+              <h3>Project &amp; global memory</h3>
+              <p class="settings-note">
+                Memories are scoped to the active project plus global entries. Pinned memories are prioritized during context assembly.
+                Memory content is treated as untrusted data by the agent, and obvious credentials are redacted before storage.
+              </p>
+              <form id="form-add-memory" class="form-row" autocomplete="off">
+                <div>
+                  <label class="field-label" for="input-memory-kind">Kind</label>
+                  <select id="input-memory-kind" class="select-control">
+                    <option value="fact">fact</option>
+                    <option value="preference">preference</option>
+                    <option value="decision">decision</option>
+                    <option value="todo">todo</option>
+                    <option value="summary">summary</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="input-memory-title">Title</label>
+                  <input id="input-memory-title" class="text-input" type="text" placeholder="Short descriptive title" required />
+                </div>
+                <div>
+                  <label class="field-label" for="input-memory-content">Content</label>
+                  <textarea id="input-memory-content" class="text-input" rows="3" placeholder="What should the agent remember?" required></textarea>
+                </div>
+                <div>
+                  <label class="field-label" for="input-memory-tags">Tags (comma separated)</label>
+                  <input id="input-memory-tags" class="text-input" type="text" placeholder="architecture, security" />
+                </div>
+                <div>
+                  <label class="toggle-label" for="input-memory-pinned">
+                    <input id="input-memory-pinned" type="checkbox" /> Pin to context
+                  </label>
+                </div>
+                <div>
+                  <button id="btn-add-memory" class="btn" type="submit" style="width:100%;">Save memory</button>
+                </div>
+              </form>
+              <div id="memory-form-status" class="error-banner" role="alert"></div>
+            </div>
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Saved memories</h3>
+                <button id="btn-refresh-memories" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="field-label" for="input-memory-search">Search</label>
+                  <input id="input-memory-search" class="text-input" type="search" placeholder="FTS5 query, e.g. auth token" />
+                </div>
+                <div>
+                  <button id="btn-search-memories" class="btn btn-secondary" type="button" style="width:100%;">Search</button>
+                </div>
+              </div>
+              <div id="memory-list"><div class="empty-state">Loading memories…</div></div>
             </div>
           </section>
 
@@ -1322,6 +1397,20 @@ pub fn render_index_html() -> String {
       const btnCopyDiagnostics = document.getElementById('btn-copy-diagnostics');
       const diagnosticsStatusEl = document.getElementById('diagnostics-status');
       const diagnosticsOutputEl = document.getElementById('diagnostics-output');
+      const memoryForm = document.getElementById('form-add-memory');
+      const inputMemoryKind = document.getElementById('input-memory-kind');
+      const inputMemoryTitle = document.getElementById('input-memory-title');
+      const inputMemoryContent = document.getElementById('input-memory-content');
+      const inputMemoryTags = document.getElementById('input-memory-tags');
+      const inputMemoryPinned = document.getElementById('input-memory-pinned');
+      const memoryFormStatus = document.getElementById('memory-form-status');
+      const inputMemorySearch = document.getElementById('input-memory-search');
+      const btnRefreshMemories = document.getElementById('btn-refresh-memories');
+      const btnSearchMemories = document.getElementById('btn-search-memories');
+      const memoryListEl = document.getElementById('memory-list');
+      const inputChatGptClientId = document.getElementById('input-chatgpt-client-id');
+      const btnChatGptOAuth = document.getElementById('btn-chatgpt-oauth');
+      const chatGptOAuthStatus = document.getElementById('chatgpt-oauth-status');
       const appToastEl = document.getElementById('app-toast');
 
       let projectsById = {};
@@ -1345,7 +1434,7 @@ pub fn render_index_html() -> String {
       let diagnosticsReport = null;
       let lastFocusedBeforeSettings = null;
 
-      const PROVIDER_KINDS = ['openai', 'anthropic', 'openrouter', 'deepseek', 'ollama', 'openai_compat'];
+      const PROVIDER_KINDS = ['openai', 'anthropic', 'chatgpt', 'openrouter', 'deepseek', 'ollama', 'openai_compat'];
 
       // XSS-safe DOM element builder: never interprets strings as raw HTML
       function createEl(tag, attrs, children) {
@@ -1505,6 +1594,7 @@ pub fn render_index_html() -> String {
         loadExtensions();
         loadDiagnostics();
         loadPermissionsForProject();
+        loadMemories();
         window.setTimeout(function() {
           const target = document.getElementById('tab-' + (tab || currentSettingsTab));
           if (target) target.focus();
@@ -1532,6 +1622,7 @@ pub fn render_index_html() -> String {
         });
         if (currentSettingsTab === 'permissions') loadPermissionsForProject();
         if (currentSettingsTab === 'extensions') loadExtensions();
+        if (currentSettingsTab === 'memory') loadMemories();
         if (currentSettingsTab === 'diagnostics') loadDiagnostics();
         if (currentSettingsTab === 'appearance' && settingsThemeSelect) {
           settingsThemeSelect.value = document.documentElement.getAttribute('data-theme') || 'system';
@@ -1812,6 +1903,104 @@ pub fn render_index_html() -> String {
           extensionListEl.textContent = '';
           extensionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load extensions: ' + e.message }));
         }
+      }
+
+      function parseMemoryTags(raw) {
+        return String(raw || '')
+          .split(',')
+          .map(function(tag) { return tag.trim(); })
+          .filter(function(tag) { return tag.length > 0; });
+      }
+
+      async function loadMemories(search) {
+        if (!memoryListEl) return;
+        if (!currentProjectId) {
+          memoryListEl.textContent = '';
+          memoryListEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'Select a project to view and manage its memories.'
+          }));
+          return;
+        }
+        const query = typeof search === 'string' ? search.trim() : (inputMemorySearch ? inputMemorySearch.value.trim() : '');
+        let path = '/api/memories?project_id=' + encodeURIComponent(currentProjectId) + '&limit=50';
+        if (query) path += '&query=' + encodeURIComponent(query);
+        memoryListEl.textContent = '';
+        memoryListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading memories…' }));
+        try {
+          const memories = await apiRequest(path);
+          renderMemoryList(memories || [], query);
+        } catch (e) {
+          memoryListEl.textContent = '';
+          memoryListEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'Unable to load memories: ' + e.message
+          }));
+        }
+      }
+
+      function renderMemoryList(memories, query) {
+        if (!memoryListEl) return;
+        memoryListEl.textContent = '';
+        if (!memories.length) {
+          memoryListEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: query ? 'No memories matched this search.' : 'No memories saved for this project yet.'
+          }));
+          return;
+        }
+        memories.forEach(function(entry) {
+          const memory = entry.memory || entry;
+          const tags = entry.tags || [];
+          const pinButton = createEl('button', {
+            className: 'btn btn-secondary',
+            type: 'button',
+            textContent: memory.pinned ? 'Unpin' : 'Pin'
+          });
+          pinButton.addEventListener('click', async function() {
+            try {
+              await apiRequest('/api/memories/' + encodeURIComponent(memory.id), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pinned: !memory.pinned })
+              });
+              await loadMemories(query);
+            } catch (e) {
+              showToast('Failed to update memory: ' + e.message, true);
+            }
+          });
+          const deleteButton = createEl('button', {
+            className: 'btn btn-secondary',
+            type: 'button',
+            textContent: 'Delete'
+          });
+          deleteButton.addEventListener('click', async function() {
+            if (!window.confirm('Delete this memory? It will be soft-deleted and excluded from context.')) return;
+            try {
+              await apiRequest('/api/memories/' + encodeURIComponent(memory.id), { method: 'DELETE' });
+              showToast('Memory deleted');
+              await loadMemories(query);
+            } catch (e) {
+              showToast('Failed to delete memory: ' + e.message, true);
+            }
+          });
+          memoryListEl.appendChild(createEl('div', { className: 'provider-card' }, [
+            createEl('div', { className: 'provider-card-head' }, [
+              createEl('strong', { textContent: memory.title }),
+              createEl('div', { className: 'inline-actions' }, [
+                createEl('span', { className: 'badge', textContent: memory.kind }),
+                memory.pinned ? createEl('span', { className: 'badge status-ok', textContent: 'pinned' }) : null,
+                pinButton,
+                deleteButton
+              ].filter(Boolean))
+            ]),
+            createEl('div', { className: 'settings-note', textContent: memory.content }),
+            tags.length ? createEl('div', {
+              className: 'settings-note mono',
+              textContent: 'tags: ' + tags.join(', ')
+            }) : null
+          ].filter(Boolean)));
+        });
       }
 
       async function loadDiagnostics() {
@@ -2317,6 +2506,107 @@ pub fn render_index_html() -> String {
           switchSettingsTab(button.getAttribute('data-settings-tab'));
         });
       });
+
+      if (memoryForm) {
+        memoryForm.addEventListener('submit', async function(event) {
+          event.preventDefault();
+          setRequestStatus(memoryFormStatus, '');
+          if (!currentProjectId) {
+            setRequestStatus(memoryFormStatus, 'Select a project before saving a memory.', true);
+            return;
+          }
+          const payload = {
+            project_id: currentProjectId,
+            kind: inputMemoryKind.value,
+            title: inputMemoryTitle.value.trim(),
+            content: inputMemoryContent.value.trim(),
+            tags: parseMemoryTags(inputMemoryTags.value),
+            pinned: inputMemoryPinned.checked
+          };
+          if (!payload.title || !payload.content) {
+            setRequestStatus(memoryFormStatus, 'Title and content are required.', true);
+            return;
+          }
+          try {
+            await apiRequest('/api/memories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            inputMemoryTitle.value = '';
+            inputMemoryContent.value = '';
+            inputMemoryTags.value = '';
+            inputMemoryPinned.checked = false;
+            showToast('Memory saved');
+            await loadMemories('');
+          } catch (e) {
+            setRequestStatus(memoryFormStatus, 'Failed to save memory: ' + e.message, true);
+          }
+        });
+      }
+      if (btnRefreshMemories) {
+        btnRefreshMemories.addEventListener('click', function() {
+          if (inputMemorySearch) inputMemorySearch.value = '';
+          loadMemories('');
+        });
+      }
+      if (btnSearchMemories) {
+        btnSearchMemories.addEventListener('click', function() {
+          loadMemories();
+        });
+      }
+      if (inputMemorySearch) {
+        inputMemorySearch.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            loadMemories();
+          }
+        });
+      }
+      if (btnChatGptOAuth) {
+        btnChatGptOAuth.addEventListener('click', async function() {
+          if (chatGptOAuthStatus) chatGptOAuthStatus.textContent = '';
+          const clientId = inputChatGptClientId ? inputChatGptClientId.value.trim() : '';
+          if (!clientId) {
+            if (chatGptOAuthStatus) chatGptOAuthStatus.textContent = 'Enter an OAuth client ID first.';
+            return;
+          }
+          const match = providers.find(function(item) {
+            return (item.provider || item).kind === 'chatgpt';
+          });
+          if (!match) {
+            if (chatGptOAuthStatus) chatGptOAuthStatus.textContent = 'Add a provider of kind chatgpt first.';
+            return;
+          }
+          const provider = match.provider || match;
+          const popup = window.open('', 'gaggle-chatgpt-oauth', 'width=520,height=720');
+          try {
+            const started = await apiRequest(
+              '/api/providers/' + encodeURIComponent(provider.id) + '/oauth/chatgpt/start',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  client_id: clientId,
+                  redirect_uri: API_BASE + '/api/oauth/chatgpt/callback'
+                })
+              }
+            );
+            if (popup) {
+              popup.location.href = started.authorization_url;
+            }
+            if (chatGptOAuthStatus) {
+              chatGptOAuthStatus.textContent = popup
+                ? 'Complete sign-in in the popup window.'
+                : 'Popup blocked. Open the authorization URL manually: ' + started.authorization_url;
+            }
+            await loadProviders();
+          } catch (e) {
+            if (popup) popup.close();
+            if (chatGptOAuthStatus) chatGptOAuthStatus.textContent = 'OAuth start failed: ' + e.message;
+          }
+        });
+      }
       document.addEventListener('keydown', function(event) {
         if ((event.metaKey || event.ctrlKey) && event.key === ',') {
           event.preventDefault();
@@ -2854,15 +3144,17 @@ mod tests {
         assert!(html.contains("id=\"btn-open-settings\""));
         assert!(html.contains("event.key === ','"));
 
-        // Five settings tabs and their panels
+        // Six settings tabs and their panels
         assert!(html.contains("data-settings-tab=\"providers\""));
         assert!(html.contains("data-settings-tab=\"permissions\""));
         assert!(html.contains("data-settings-tab=\"extensions\""));
+        assert!(html.contains("data-settings-tab=\"memory\""));
         assert!(html.contains("data-settings-tab=\"appearance\""));
         assert!(html.contains("data-settings-tab=\"diagnostics\""));
         assert!(html.contains("id=\"panel-providers\""));
         assert!(html.contains("id=\"panel-permissions\""));
         assert!(html.contains("id=\"panel-extensions\""));
+        assert!(html.contains("id=\"panel-memory\""));
         assert!(html.contains("id=\"panel-appearance\""));
         assert!(html.contains("id=\"panel-diagnostics\""));
 
@@ -2881,6 +3173,10 @@ mod tests {
         assert!(html.contains("id=\"extension-warning\""));
         assert!(html.contains("exceeds_recommended_tool_limit"));
         assert!(html.contains("id=\"btn-copy-diagnostics\""));
+        assert!(html.contains("id=\"form-add-memory\""));
+        assert!(html.contains("id=\"memory-list\""));
+        assert!(html.contains("id=\"btn-chatgpt-oauth\""));
+        assert!(html.contains("<option value=\"chatgpt\">chatgpt</option>"));
 
         // Composer model selector replaces the hardcoded model key
         assert!(html.contains("id=\"select-model\""));

@@ -27,6 +27,7 @@ gaggle-server = { path = "crates/gaggle-server" }
 gaggle-ui = { path = "crates/gaggle-ui" }
 
 anyhow = "1"
+async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
 clap = { version = "4", features = ["derive"] }
@@ -49,4 +50,4 @@ tower = "0.5"
 tower-http = { version = "0.7", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v7", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }

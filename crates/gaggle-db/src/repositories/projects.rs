@@ -87,6 +87,16 @@ impl ProjectRepository {
             .ok_or_else(|| anyhow::anyhow!("Project {id} not found after update"))
     }
 
+    pub async fn get_settings(&self, project_id: &str) -> Result<Option<ProjectSettings>> {
+        let settings = sqlx::query_as::<_, ProjectSettings>(
+            "SELECT * FROM project_settings WHERE project_id = ?",
+        )
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(settings)
+    }
+
     pub async fn upsert_settings(&self, settings: &ProjectSettings) -> Result<()> {
         sqlx::query(
             r#"

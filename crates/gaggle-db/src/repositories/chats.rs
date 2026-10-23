@@ -5,6 +5,11 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
+
+/// Hard upper bound for [`ChatRepository::list_messages_with_parts`] to keep context
+/// assembly reads bounded even if a caller passes an unbounded limit.
+const MAX_HISTORY_MESSAGES_PER_QUERY: i64 = 500;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatExportBundle {
@@ -147,6 +152,64 @@ impl ChatRepository {
             .fetch_one(&self.pool)
             .await?;
         Ok(msg)
+    }
+
+    /// Loads the most recent `limit` messages for a chat (ascending `seq` order) together
+    /// with their ordered parts.
+    ///
+    /// Two queries are used (messages, then parts for the fetched message ids) to avoid an
+    /// N+1 pattern. Messages without any parts are preserved with an empty `Vec`.
+    pub async fn list_messages_with_parts(
+        &self,
+        chat_id: &str,
+        limit: i64,
+    ) -> Result<Vec<(Message, Vec<MessagePart>)>> {
+        let capped_limit = limit.clamp(1, MAX_HISTORY_MESSAGES_PER_QUERY);
+
+        let mut messages = sqlx::query_as::<_, Message>(
+            "SELECT * FROM messages WHERE chat_id = ? ORDER BY seq DESC LIMIT ?",
+        )
+        .bind(chat_id)
+        .bind(capped_limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Query newest-first so the LIMIT keeps the most recent rows, then restore
+        // chronological order for callers and model context.
+        messages.reverse();
+
+        if messages.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = std::iter::repeat_n("?", messages.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let parts_sql = format!(
+            "SELECT * FROM message_parts WHERE message_id IN ({placeholders}) ORDER BY message_id ASC, idx ASC"
+        );
+
+        let mut query = sqlx::query_as::<_, MessagePart>(sqlx::AssertSqlSafe(parts_sql));
+        for message in &messages {
+            query = query.bind(&message.id);
+        }
+        let parts = query.fetch_all(&self.pool).await?;
+
+        let mut parts_by_message: HashMap<String, Vec<MessagePart>> = HashMap::new();
+        for part in parts {
+            parts_by_message
+                .entry(part.message_id.clone())
+                .or_default()
+                .push(part);
+        }
+
+        Ok(messages
+            .into_iter()
+            .map(|message| {
+                let message_parts = parts_by_message.remove(&message.id).unwrap_or_default();
+                (message, message_parts)
+            })
+            .collect())
     }
 
     pub async fn export_chat(&self, chat_id: &str) -> Result<Option<ChatExportBundle>> {

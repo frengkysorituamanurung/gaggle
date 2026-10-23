@@ -115,4 +115,50 @@ impl ProviderRepository {
         .await?;
         Ok(models)
     }
+
+    pub async fn set_secret_ref(&self, id: &str, secret_ref: &str) -> Result<Provider> {
+        sqlx::query("UPDATE providers SET secret_ref = ? WHERE id = ?")
+            .bind(secret_ref)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.get_provider_by_id(id)
+            .await?
+            .context("Provider not found after secret_ref update")
+    }
+
+    pub async fn get_model_by_id(&self, id: &str) -> Result<Option<Model>> {
+        let model = sqlx::query_as::<_, Model>("SELECT * FROM models WHERE id = ? AND enabled = 1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(model)
+    }
+
+    /// Resolves the provider that owns an enabled model key. When several providers expose the
+    /// same key, the most recently created enabled provider wins.
+    pub async fn find_model_by_key(&self, model_key: &str) -> Result<Option<(Model, Provider)>> {
+        let row = sqlx::query_as::<_, Model>(
+            r#"
+            SELECT m.* FROM models m
+            INNER JOIN providers p ON p.id = m.provider_id
+            WHERE m.model_key = ? AND m.enabled = 1 AND p.enabled = 1
+            ORDER BY p.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(model_key)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(model) = row else {
+            return Ok(None);
+        };
+        let provider = self
+            .get_provider_by_id(&model.provider_id)
+            .await?
+            .filter(|provider| provider.enabled == 1)
+            .ok_or_else(|| anyhow::anyhow!("Provider for model '{}' is disabled", model.id))?;
+        Ok(Some((model, provider)))
+    }
 }
