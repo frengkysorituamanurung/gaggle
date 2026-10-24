@@ -49,7 +49,7 @@ gaggle/
 │  └─ Gaggle.icns            # macOS application icon
 ├─ docs/
 │  ├─ ERD.md                 # Database schema and ERD documentation
-│  └─ development/           # CI/CD audit and packaging documentation
+│  └─ development/           # Data portability, CI/CD audit, and packaging documentation
 ├─ .github/
 │  ├─ workflows/             # CI, package, release, and security workflows
 │  └─ scripts/               # Reproducible packaging and validation scripts
@@ -74,6 +74,10 @@ Default database locations (resolved via the `directories` crate):
 - **macOS**: `~/Library/Application Support/gaggle/gaggle.db`
 - **Linux**: `~/.local/share/gaggle/gaggle.db`
 - **Windows**: `%APPDATA%\gaggle\data\gaggle.db`
+
+Attachments live beside the database in `<data directory>/attachments/`. See
+[Data Portability](./docs/development/data-portability.md) for export, import,
+memory sharing, checksummed backups, and safe restore procedures.
 
 Core SQLite conventions enforced in `gaggle-db`:
 - **Primary Keys**: Time-ordered UUIDv7 stored as `TEXT`.
@@ -174,6 +178,50 @@ cargo run -p gaggle-cli --bin gaggle-desktop -- --no-browser
 ```
 The desktop launcher starts the same server and, unless `--no-browser` is used,
 opens `http://127.0.0.1:4321` in the default browser.
+
+### 7. Export a Chat Bundle
+```bash
+cargo run -p gaggle-cli -- export chat <chat-id> --output chat.json
+```
+Writes a versioned `gaggle.chat-bundle` JSON file containing `chat`, `messages`,
+and `message_parts`, plus `format`, `version`, and `exported_at` metadata.
+
+### 8. Import a Chat Bundle
+```bash
+cargo run -p gaggle-cli -- import chat chat.json --project <project-id>
+```
+Validates the bundle and creates a **new** chat in the target project. Existing
+chats are never overwritten; run-tool-attachment references that are not part of
+the bundle are dropped.
+
+### 9. Export Project Memories
+```bash
+cargo run -p gaggle-cli -- export memory --project <project-id>
+# Optional directory inside the project workspace:
+cargo run -p gaggle-cli -- export memory --project <project-id> --output .pal/memory
+```
+Writes one redacted Markdown file per active memory to `<project>/.pal/memory/`
+so project knowledge can be shared through Git.
+
+### 10. Create a Checksummed Backup
+```bash
+cargo run -p gaggle-cli -- backup --output backup.tar.gz
+```
+Creates a `.tar.gz` containing a WAL-safe `VACUUM INTO` snapshot of `gaggle.db`,
+the `attachments/` directory when present, and a `manifest.json` with SHA-256
+checksums. The command prints the archive SHA-256 and refuses to overwrite an
+existing file without `--force`.
+
+### 11. Verify and Restore a Backup
+```bash
+cargo run -p gaggle-cli -- restore backup.tar.gz --dry-run
+cargo run -p gaggle-cli -- restore backup.tar.gz --force
+```
+Restore verifies archive path safety, every SHA-256 checksum, and SQLite
+integrity before touching existing data. Existing databases and attachment
+directories are moved aside to `gaggle-restore-previous-<timestamp>/` and only
+replaced after verification; without `--force` the command refuses to replace
+anything. Stop the server before restoring.
 
 On startup, Gaggle automatically:
 1. Opens the global SQLite pool in WAL mode and applies any pending `sqlx` migrations.
