@@ -118,9 +118,7 @@ pub fn redact_log_text(input: &str) -> String {
     // `redact_context_secrets` reconstructs text with `lines()`, which drops trailing newlines.
     // Preserve the exact trailing line terminator so the tracing writer never concatenates
     // adjacent log records.
-    let trailing_start = input
-        .trim_end_matches(['\n', '\r'])
-        .len();
+    let trailing_start = input.trim_end_matches(['\n', '\r']).len();
     let (body, suffix) = input.split_at(trailing_start);
     let context_redacted = redact_context_secrets(body);
     let redacted = redact_json_like_values(&context_redacted);
