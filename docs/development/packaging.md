@@ -25,7 +25,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 .github/scripts/check-ui-embedded.sh
-bash -n .github/scripts/*.sh
+bash -n .github/scripts/*.sh scripts/*.sh
 ```
 
 The job names and matrix are intentionally unchanged because `main` branch
@@ -95,8 +95,26 @@ binary directory.
 
 ### macOS
 
-The target-specific release directory is used because package-macos.sh expects
-the exact target output:
+The checked-in wrapper builds, signs, packages, checksums, and validates the
+bundle in one step:
+
+```bash
+./scripts/package_macos_zip.sh
+```
+
+It uses the same `.github/scripts/package-macos.sh` and
+`.github/scripts/validate-macos-bundle.sh` code as CI, defaults to ad-hoc
+signing, and writes `dist/Gaggle-macOS-<arch>.zip` plus its `.sha256` file. To
+use an existing release binary directory or a Developer ID identity:
+
+```bash
+./scripts/package_macos_zip.sh \
+  --binary-dir "$PWD/target/aarch64-apple-darwin/release" \
+  --sign-identity "Developer ID Application: Example (TEAMID)"
+```
+
+The longer manual equivalent uses the target-specific release directory because
+`package-macos.sh` expects the exact target output:
 
 ```bash
 MACOSX_DEPLOYMENT_TARGET=12.0 cargo build --release --locked \
