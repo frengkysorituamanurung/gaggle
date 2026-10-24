@@ -3,7 +3,6 @@ use clap::Parser;
 use gaggle_db::{connect_db, default_db_path};
 use std::{net::SocketAddr, path::PathBuf, process::Command, time::Duration};
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
 
 /// Desktop entry point for Gaggle.
 ///
@@ -32,9 +31,7 @@ struct DesktopCli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse()?))
-        .init();
+    gaggle_core::init_tracing()?;
 
     let cli = DesktopCli::parse();
     let db_path = match cli.db {

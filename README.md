@@ -281,8 +281,13 @@ cargo run -p gaggle-cli -- db-path
 
 ### 2. Run Diagnostics & Database Health Check
 ```bash
-cargo run -p gaggle-cli -- doctor
+cargo run -p gaggle-cli -- doctor          # human-readable summary
+cargo run -p gaggle-cli -- doctor --json   # full machine-readable report
 ```
+The report includes build identity (version, commit, profile, target), core health checks, optional
+capability availability with reasons and next actions, and an explicit privacy statement. It never
+contains prompts, source files, secrets, or raw tool output. See
+[`docs/development/observability.md`](docs/development/observability.md).
 
 ### 3. Register a Project Workspace
 ```bash
@@ -314,7 +319,8 @@ On startup, Gaggle automatically:
 ### Core HTTP Endpoints
 - `GET /` — Serves the Gaggle Web UI.
 - `GET /api/health` — Health check endpoint (`{"status": "ok", "service": "gaggle"}`).
-- `GET /api/diagnostics` — Returns a redacted diagnostic report of OS, SQLite PRAGMAs, migrations, and active counts.
+- `GET /api/diagnostics` — Returns a redacted diagnostic report with build identity, core health checks, optional capability availability and reasons, and active counts.
+- `GET /api/diagnostics/export` — Explicit, user-initiated redacted diagnostics export with up to ten recent failure summaries; contains no prompts, source files, tool arguments, or raw tool output.
 - `GET /api/settings` — Lists persisted application settings (`app_settings`, including UI theme).
 - `PUT /api/settings` — Upserts a JSON-validated application setting by key.
 - `GET /api/projects` — Lists all active projects along with `path_exists: bool` workspace accessibility status.
@@ -365,6 +371,7 @@ On startup, Gaggle automatically:
 - API keys are submitted once, cleared from the form immediately, stored in the server `CredentialStore`, and surfaced only as `has_configured_secret: bool`.
 - ChatGPT providers can complete an OAuth + PKCE sign-in from Settings; access and refresh tokens remain in the credential store.
 - The Memory tab creates, searches, pins, and soft-deletes project-scoped and global memories.
+- The Diagnostics tab refreshes, copies, and downloads a redacted export on explicit user action; failed chat turns show a problem notice with failure category, retry guidance, and a diagnostics copy action. No telemetry is sent automatically.
 
 ### Context assembly, memory & providers
 - `ContextAssembler` loads `project_settings.instructions`, bounded `AGENTS.md` files from the project root and nested directories, recent chat history, pinned and FTS-matched memories, and enabled extension tool definitions before each model turn.

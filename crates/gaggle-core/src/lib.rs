@@ -4,6 +4,8 @@ pub mod compaction;
 pub mod context_assembler;
 pub mod credentials;
 pub mod diagnostics;
+pub mod errors;
+pub mod observability;
 pub mod permission_engine;
 pub mod provider;
 pub mod provider_oauth;
@@ -23,7 +25,17 @@ pub use context_assembler::{
 pub use credentials::{
     CredentialError, CredentialStore, InMemoryCredentialStore, SecretString, redact_sensitive_text,
 };
-pub use diagnostics::{DiagnosticReport, collect_diagnostics};
+pub use diagnostics::{
+    BuildIdentity, CapabilityState, CapabilityStatus, CoreHealth, DiagnosticReport,
+    DiagnosticsExport, FailureSummary, HealthCheck, HealthStatus, collect_diagnostics,
+    export_diagnostics,
+};
+pub use errors::{ActionableError, DataPreservation, FailureCategory};
+pub use gaggle_db::CorrelationIds;
+pub use observability::{
+    MAX_ARG_VALUE_CHARS, MAX_ARGS_SUMMARY_CHARS, MAX_ERROR_MESSAGE_CHARS, RedactingMakeWriter,
+    RedactingWriter, fingerprint_text, init_tracing, redact_log_text, summarize_tool_arguments,
+};
 pub use permission_engine::{PermissionDecision, PermissionEngine, ToolCallContext};
 pub use provider::{
     AnthropicAdapter, MockProviderAdapter, ModelCompletionRequest, ModelCompletionResponse,

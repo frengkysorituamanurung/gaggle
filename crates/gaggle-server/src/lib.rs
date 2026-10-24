@@ -11,11 +11,13 @@ use axum::{
 };
 use futures::stream::Stream;
 use gaggle_core::{
-    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter, ChatGptAdapter,
-    ChatGptOAuthClient, ChatGptOAuthConfig, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
-    DiagnosticReport, InMemoryCredentialStore, MockProviderAdapter, ModelCompletionResponse,
-    ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString,
-    TokenUsage, WorkspacePathPolicy, collect_diagnostics, validate_provider_base_url,
+    ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
+    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CorrelationIds,
+    CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
+    DiagnosticsExport, FailureCategory, InMemoryCredentialStore, MockProviderAdapter,
+    ModelCompletionResponse, ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter,
+    RunEngine, SecretString, TokenUsage, WorkspacePathPolicy, collect_diagnostics,
+    export_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
     connection::{new_id, now_ms},
@@ -294,6 +296,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(index_handler))
         .route("/api/health", get(health_handler))
         .route("/api/diagnostics", get(diagnostics_handler))
+        .route("/api/diagnostics/export", get(diagnostics_export_handler))
         .route("/api/settings", get(list_settings).put(upsert_setting))
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/{id}", patch(update_project))
@@ -354,11 +357,24 @@ pub fn build_router(state: AppState) -> Router {
 
 pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     register_builtin_extensions(&pool).await?;
+    let build = BuildIdentity::current();
     let engine = RunEngine::new(pool.clone());
     let recovered = engine.recover_unfinished_runs().await?;
     if !recovered.is_empty() {
-        info!(count = recovered.len(), "Recovered durable runs on startup");
+        info!(
+            count = recovered.len(),
+            version = %build.version,
+            target = %build.target,
+            "Recovered durable runs on startup"
+        );
     }
+    info!(
+        version = %build.version,
+        commit = %build.commit,
+        profile = %build.profile,
+        target = %build.target,
+        "Gaggle core initialized"
+    );
     let db_path = pool.connect_options().get_filename().to_path_buf();
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
@@ -426,6 +442,31 @@ async fn diagnostics_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(report))
+}
+
+/// Explicit user-initiated export. Produces a redacted bundle with recent failure summaries and
+/// never includes prompts, source files, tool arguments, or raw tool output.
+async fn diagnostics_export_handler(
+    State(state): State<AppState>,
+) -> Result<Json<DiagnosticsExport>, (StatusCode, String)> {
+    let export = export_diagnostics(&state.pool, &state.db_path)
+        .await
+        .map_err(|e| {
+            let failure = ActionableError::new(
+                FailureCategory::Database,
+                "diagnostics.export",
+                e.to_string(),
+            )
+            .with_data_preservation(DataPreservation::Preserved);
+            (StatusCode::INTERNAL_SERVER_ERROR, failure.to_string())
+        })?;
+    tracing::info!(
+        target: "gaggle.diagnostics",
+        failure_count = export.recent_failures.len(),
+        telemetry_enabled = export.privacy.telemetry_enabled,
+        "Redacted diagnostics export generated on explicit request"
+    );
+    Ok(Json(export))
 }
 
 async fn list_projects(
@@ -1596,10 +1637,40 @@ async fn submit_chat_message(
         .get_by_id(&chat_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+        .ok_or_else(|| {
+            let failure = ActionableError::new(
+                FailureCategory::Configuration,
+                "chat.load",
+                format!("Chat '{chat_id}' not found"),
+            )
+            .with_data_preservation(DataPreservation::Preserved)
+            .with_retry_guidance("Select or create an existing chat, then retry the message.");
+            (StatusCode::NOT_FOUND, failure.to_string())
+        })?;
 
     let (provider, model_key) =
-        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt).await?;
+        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt)
+            .await
+            .map_err(|(status, message)| {
+                let failure = ActionableError::new(
+                    FailureCategory::Configuration,
+                    "provider.resolve",
+                    message,
+                )
+                .with_data_preservation(DataPreservation::Preserved)
+                .with_retry_guidance(
+                    "Open Settings → Providers & Models, verify the selected model, then retry.",
+                );
+                (status, failure.to_string())
+            })?;
+
+    tracing::info!(
+        target: "gaggle.server",
+        chat_id = %chat_id,
+        model_key = %model_key,
+        prompt_chars = req.prompt.chars().count(),
+        "Chat turn submitted"
+    );
 
     let cancel_token = gaggle_core::CancellationToken::new();
     let outcome = runtime
@@ -1612,15 +1683,60 @@ async fn submit_chat_message(
             &cancel_token,
         )
         .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| {
+            let failure =
+                ActionableError::new(FailureCategory::Internal, "agent.turn", e.to_string())
+                    .with_data_preservation(DataPreservation::Unknown)
+                    .with_correlation(&CorrelationIds::for_chat(&chat_id));
+            tracing::error!(
+                target: "gaggle.server",
+                chat_id = %chat_id,
+                failure_category = failure.category.as_str(),
+                operation = %failure.operation,
+                data_preservation = failure.data_preservation.as_str(),
+                error = %failure.message,
+                "Chat turn failed before producing a durable outcome"
+            );
+            (StatusCode::BAD_REQUEST, failure.to_string())
+        })?;
+
+    let correlation = match &outcome {
+        AgentLoopOutcome::Completed { run, .. }
+        | AgentLoopOutcome::WaitingApproval { run, .. }
+        | AgentLoopOutcome::Cancelled { run }
+        | AgentLoopOutcome::Failed { run, .. } => {
+            CorrelationIds::for_chat(&chat_id).with_run(&run.id)
+        }
+    };
+    tracing::info!(
+        target: "gaggle.server",
+        chat_id = %correlation.chat_id_field(),
+        run_id = %correlation.run_id_field(),
+        outcome = outcome_kind(&outcome),
+        "Chat turn finished"
+    );
 
     Ok(Json(outcome))
+}
+
+fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
+    match outcome {
+        AgentLoopOutcome::Completed { .. } => "completed",
+        AgentLoopOutcome::WaitingApproval { .. } => "waiting_approval",
+        AgentLoopOutcome::Cancelled { .. } => "cancelled",
+        AgentLoopOutcome::Failed { .. } => "failed",
+    }
 }
 
 async fn cancel_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
 ) -> Result<Json<Run>, (StatusCode, String)> {
+    tracing::info!(
+        target: "gaggle.server",
+        run_id = %run_id,
+        "Cancellation requested for durable run"
+    );
     state.active_runs.cancel(&run_id);
     let repo = RunRepository::new(state.pool);
     repo.emit_event(

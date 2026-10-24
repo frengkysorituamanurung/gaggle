@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use gaggle_db::{
+    CorrelationIds,
     models::{Approval, CommandRule, ExtensionTool, ToolCall},
     repositories::permissions::PermissionRepository,
 };
@@ -11,6 +12,17 @@ pub enum PermissionDecision {
     Allow,
     Deny { reason: String },
     NeedsApproval { kind: String, summary: String },
+}
+
+impl PermissionDecision {
+    /// Stable label for structured logs and audit output.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Deny { .. } => "deny",
+            Self::NeedsApproval { .. } => "needs_approval",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -32,13 +44,21 @@ pub struct ToolCallContext {
 /// 7. Otherwise, require approval (`pending` row in `approvals`).
 pub struct PermissionEngine {
     repo: PermissionRepository,
+    correlation: CorrelationIds,
 }
 
 impl PermissionEngine {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             repo: PermissionRepository::new(pool),
+            correlation: CorrelationIds::default(),
         }
+    }
+
+    /// Attaches chat/run/tool correlation identifiers for structured permission logs.
+    pub fn with_correlation(mut self, correlation: CorrelationIds) -> Self {
+        self.correlation = correlation;
+        self
     }
 
     pub fn fingerprint_args(args_json: &str) -> String {
@@ -63,6 +83,37 @@ impl PermissionEngine {
     }
 
     pub async fn evaluate(&self, ctx: &ToolCallContext) -> Result<PermissionDecision> {
+        let fingerprint = Self::fingerprint_args(&ctx.args_json);
+        tracing::debug!(
+            target: "gaggle.permissions",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %self.correlation.run_id_field(),
+            tool_call_id = %self.correlation.tool_call_id_field(),
+            tool_name = %ctx.extension_tool.tool_name,
+            permission_mode = %ctx.permission_mode,
+            args_fingerprint = %fingerprint,
+            has_shell_command = ctx.shell_command.is_some(),
+            "Evaluating tool permission"
+        );
+
+        let decision = self.evaluate_inner(ctx).await?;
+
+        tracing::info!(
+            target: "gaggle.permissions",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %self.correlation.run_id_field(),
+            tool_call_id = %self.correlation.tool_call_id_field(),
+            tool_name = %ctx.extension_tool.tool_name,
+            permission_mode = %ctx.permission_mode,
+            decision = %decision.kind(),
+            args_fingerprint = %fingerprint,
+            "Tool permission decided"
+        );
+
+        Ok(decision)
+    }
+
+    async fn evaluate_inner(&self, ctx: &ToolCallContext) -> Result<PermissionDecision> {
         // 1. chat_only: all tools rejected
         if ctx.permission_mode == "chat_only" {
             return Ok(PermissionDecision::Deny {
