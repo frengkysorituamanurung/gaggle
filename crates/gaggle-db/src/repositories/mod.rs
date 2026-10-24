@@ -1,3 +1,5 @@
+pub mod attachments;
+pub mod browsers;
 pub mod chats;
 pub mod extensions;
 pub mod memories;

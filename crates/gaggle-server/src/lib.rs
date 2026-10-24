@@ -1832,8 +1832,6 @@ async fn compact_chat(
         None => Err((StatusCode::BAD_REQUEST, "Nothing to compact".to_string())),
     }
 }
-    }
-}
 
 async fn cancel_run(
     State(state): State<AppState>,

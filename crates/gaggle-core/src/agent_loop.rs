@@ -1,6 +1,6 @@
 use crate::{
-    ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation, FailureCategory,
-    PermissionDecision, PermissionEngine, ToolCallContext,
+    ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation,
+    FailureCategory, PermissionDecision, PermissionEngine, ToolCallContext,
     context_assembler::DEFAULT_CONTEXT_WINDOW,
     observability::{redact_log_text, summarize_tool_arguments},
     provider::{
