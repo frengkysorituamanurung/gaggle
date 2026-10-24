@@ -14,12 +14,32 @@ pub struct ColorTokens {
     pub bg_app: &'static str,
     pub bg_panel: &'static str,
     pub bg_surface: &'static str,
+    pub bg_sidebar: &'static str,
+    pub sidebar_bg: &'static str,
+    pub sidebar_background: &'static str,
+    pub bg_elevated: &'static str,
+    pub elevated_bg: &'static str,
+    pub elevated_surface: &'static str,
+    pub bg_overlay: &'static str,
+    pub overlay_backdrop: &'static str,
     pub text_primary: &'static str,
     pub text_muted: &'static str,
+    pub text_secondary: &'static str,
+    pub secondary_text: &'static str,
     pub accent: &'static str,
     pub danger: &'static str,
     pub success: &'static str,
+    pub warning: &'static str,
+    pub warning_color: &'static str,
+    pub info: &'static str,
+    pub info_color: &'static str,
+    pub information: &'static str,
+    pub focus_ring: &'static str,
+    pub focus: &'static str,
+    pub focus_color: &'static str,
     pub border: &'static str,
+    pub divider: &'static str,
+    pub divider_color: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +93,26 @@ pub fn light_theme_tokens() -> DesignTokens {
             danger: "#e03131",
             success: "#2f9e44",
             border: "#dee2e6",
+            divider: "#dee2e6",
+            divider_color: "#dee2e6",
+            bg_sidebar: "#f1f3f5",
+            sidebar_bg: "#f1f3f5",
+            sidebar_background: "#f1f3f5",
+            bg_elevated: "#ffffff",
+            elevated_bg: "#ffffff",
+            elevated_surface: "#ffffff",
+            bg_overlay: "rgba(0, 0, 0, 0.55)",
+            overlay_backdrop: "rgba(0, 0, 0, 0.55)",
+            text_secondary: "#495057",
+            secondary_text: "#495057",
+            warning: "#f08c00",
+            warning_color: "#f08c00",
+            info: "#1c7ed6",
+            info_color: "#1c7ed6",
+            information: "#1c7ed6",
+            focus_ring: "#1c7ed6",
+            focus: "#1c7ed6",
+            focus_color: "#1c7ed6",
         },
         typography: TypographyTokens {
             font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -120,6 +160,26 @@ pub fn dark_theme_tokens() -> DesignTokens {
             danger: "#ff6b6b",
             success: "#51cf66",
             border: "#373a40",
+            divider: "#373a40",
+            divider_color: "#373a40",
+            bg_sidebar: "#1f2024",
+            sidebar_bg: "#1f2024",
+            sidebar_background: "#1f2024",
+            bg_elevated: "#2c2e33",
+            elevated_bg: "#2c2e33",
+            elevated_surface: "#2c2e33",
+            bg_overlay: "rgba(0, 0, 0, 0.65)",
+            overlay_backdrop: "rgba(0, 0, 0, 0.65)",
+            text_secondary: "#adb5bd",
+            secondary_text: "#adb5bd",
+            warning: "#f08c00",
+            warning_color: "#f08c00",
+            info: "#4dabf7",
+            info_color: "#4dabf7",
+            information: "#4dabf7",
+            focus_ring: "#4dabf7",
+            focus: "#4dabf7",
+            focus_color: "#4dabf7",
         },
         typography: TypographyTokens {
             font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -166,6 +226,27 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
          --danger: {danger};\n      \
          --success: {success};\n      \
          --border: {border};\n      \
+         --divider: {divider};\n      \
+         --divider-color: {divider_color};\n      \
+         --border-divider: {divider};\n      \
+         --bg-sidebar: {bg_sidebar};\n      \
+         --sidebar-bg: {sidebar_bg};\n      \
+         --sidebar-background: {sidebar_background};\n      \
+         --bg-elevated: {bg_elevated};\n      \
+         --elevated-bg: {elevated_bg};\n      \
+         --elevated-surface: {elevated_surface};\n      \
+         --bg-overlay: {bg_overlay};\n      \
+         --overlay-backdrop: {overlay_backdrop};\n      \
+         --text-secondary: {text_secondary};\n      \
+         --secondary-text: {secondary_text};\n      \
+         --warning: {warning};\n      \
+         --warning-color: {warning_color};\n      \
+         --info: {info};\n      \
+         --info-color: {info_color};\n      \
+         --information: {information};\n      \
+         --focus-ring: {focus_ring};\n      \
+         --focus: {focus};\n      \
+         --focus-color: {focus_color};\n      \
          --font-ui: {font_ui};\n      \
          --font-mono: {font_mono};\n      \
          --size-xs: {size_xs};\n      \
@@ -198,6 +279,26 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         danger = tokens.colors.danger,
         success = tokens.colors.success,
         border = tokens.colors.border,
+        divider = tokens.colors.divider,
+        divider_color = tokens.colors.divider_color,
+        bg_sidebar = tokens.colors.bg_sidebar,
+        sidebar_bg = tokens.colors.sidebar_bg,
+        sidebar_background = tokens.colors.sidebar_background,
+        bg_elevated = tokens.colors.bg_elevated,
+        elevated_bg = tokens.colors.elevated_bg,
+        elevated_surface = tokens.colors.elevated_surface,
+        bg_overlay = tokens.colors.bg_overlay,
+        overlay_backdrop = tokens.colors.overlay_backdrop,
+        text_secondary = tokens.colors.text_secondary,
+        secondary_text = tokens.colors.secondary_text,
+        warning = tokens.colors.warning,
+        warning_color = tokens.colors.warning_color,
+        info = tokens.colors.info,
+        info_color = tokens.colors.info_color,
+        information = tokens.colors.information,
+        focus_ring = tokens.colors.focus_ring,
+        focus = tokens.colors.focus,
+        focus_color = tokens.colors.focus_color,
         font_ui = tokens.typography.font_ui,
         font_mono = tokens.typography.font_mono,
         size_xs = tokens.typography.size_xs,
@@ -271,8 +372,22 @@ pub fn render_index_html() -> String {
       overflow: hidden;
     }
     :focus-visible {
-      outline: 2px solid var(--accent);
+      outline: 2px solid var(--focus-ring);
       outline-offset: 2px;
+    }
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: var(--space-sm);
+      z-index: 1200;
+      padding: var(--space-sm) var(--space-md);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--focus-ring);
+      border-radius: var(--radius-md);
+    }
+    .skip-link:focus {
+      left: var(--space-sm);
     }
     #app-shell {
       display: grid;
@@ -292,8 +407,8 @@ pub fn render_index_html() -> String {
       grid-template-columns: 0 minmax(0, 1fr) 0;
     }
     #sidebar {
-      background: var(--bg-panel);
-      border-right: var(--border-width) solid var(--border);
+      background: var(--bg-sidebar);
+      border-right: var(--border-width) solid var(--divider);
       padding: var(--space-md);
       overflow-y: auto;
       display: flex;
@@ -361,6 +476,11 @@ pub fn render_index_html() -> String {
       background: rgba(224, 49, 49, 0.12);
       color: var(--danger);
       display: none;
+    }
+    .warning-banner {
+      border-color: var(--warning);
+      background: rgba(240, 140, 0, 0.12);
+      color: var(--warning);
     }
     .error-banner.visible, .warning-banner.visible {
       display: block;
@@ -529,6 +649,146 @@ pub fn render_index_html() -> String {
       border-radius: var(--radius-md);
       padding: 0.75rem;
     }
+    .surface {
+      background: var(--bg-surface);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+    }
+    .surface-elevated {
+      background: var(--bg-elevated);
+      border: var(--border-width) solid var(--divider);
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+    .divider {
+      height: var(--border-width);
+      background: var(--divider);
+      border: none;
+      margin: var(--space-sm) 0;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .btn-danger {
+      background: var(--danger);
+      color: #ffffff;
+    }
+    .btn-warning {
+      background: var(--warning);
+      color: #1a1b1e;
+    }
+    .btn-info {
+      background: var(--info);
+      color: #ffffff;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-primary);
+      border: var(--border-width) solid transparent;
+    }
+    .btn-ghost:hover {
+      background: var(--bg-surface);
+    }
+    .input, .text-input {
+      font-family: var(--font-ui);
+      font-size: var(--size-sm);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.45rem 0.6rem;
+      width: 100%;
+    }
+    .input:focus-visible, .text-input:focus-visible, .select-control:focus-visible, .composer-input:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 1px;
+      border-color: var(--focus-ring);
+    }
+    .select, .select-control {
+      font-family: var(--font-ui);
+      font-size: var(--size-sm);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.45rem 0.6rem;
+    }
+    .textarea, .composer-input {
+      font-family: var(--font-ui);
+      font-size: var(--size-sm);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.75rem;
+      resize: vertical;
+    }
+    .dialog {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--divider);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+    }
+    .dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: var(--space-md);
+      border-bottom: var(--border-width) solid var(--divider);
+    }
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      background: var(--bg-elevated);
+      border: var(--border-width) solid var(--divider);
+      border-radius: var(--radius-md);
+      padding: var(--space-xs);
+    }
+    .menu-item {
+      text-align: left;
+      background: transparent;
+      color: var(--text-primary);
+      border: var(--border-width) solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 0.4rem 0.6rem;
+      cursor: pointer;
+      font-size: var(--size-sm);
+    }
+    .menu-item:hover, .menu-item[aria-selected="true"], .menu-item.is-active {
+      background: var(--bg-surface);
+      border-color: var(--accent);
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: var(--size-xs);
+      font-weight: var(--weight-bold);
+      border: var(--border-width) solid var(--border);
+    }
+    .status-neutral { background: var(--bg-surface); color: var(--text-primary); }
+    .status-info { background: var(--info); color: #ffffff; border-color: var(--info); }
+    .status-success { background: var(--success); color: #ffffff; border-color: var(--success); }
+    .status-warning { background: var(--warning); color: #1a1b1e; border-color: var(--warning); }
+    .status-danger { background: var(--danger); color: #ffffff; border-color: var(--danger); }
+    .is-active { font-weight: var(--weight-bold); }
+    .is-disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
+    .is-loading { opacity: 0.7; pointer-events: none; }
+    .is-collapsed { display: none; }
+    .text-secondary { color: var(--text-secondary); }
+    .text-muted { color: var(--text-muted); }
+    .app-shell { display: grid; }
+    .sidebar { background: var(--bg-sidebar); }
+    .content, .content-container, .main-content { min-width: 0; }
+    .nav-list { display: flex; flex-direction: column; gap: 0.25rem; }
+    .nav-item { cursor: pointer; }
+    .button { border: none; border-radius: var(--radius-md); padding: 0.45rem 0.85rem; font-weight: var(--weight-medium); font-size: var(--size-sm); cursor: pointer; background: var(--accent); color: #ffffff; }
     .badge, .status-badge {
       display: inline-flex;
       align-items: center;
@@ -749,9 +1009,9 @@ pub fn render_index_html() -> String {
       max-height: 88vh;
       display: flex;
       flex-direction: column;
-      background: var(--bg-panel);
+      background: var(--bg-elevated);
       color: var(--text-primary);
-      border: var(--border-width) solid var(--border);
+      border: var(--border-width) solid var(--divider);
       border-radius: var(--radius-lg);
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
       overflow: hidden;
@@ -962,8 +1222,9 @@ pub fn render_index_html() -> String {
   </style>
 </head>
 <body>
-  <div id="app-shell">
-    <aside id="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
+  <a class="skip-link" href='#main-workspace'>Skip to main content</a>
+  <div id="app-shell" class="app-shell">
+    <aside id="sidebar" class="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
       <div class="sidebar-top-row">
         <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true" aria-controls="sidebar" title="Toggle sidebar (Cmd/Ctrl + B)">☰</button>
         <div class="panel-header" style="margin-bottom:0;">Gaggle</div>
@@ -1026,12 +1287,12 @@ pub fn render_index_html() -> String {
       </div>
 
       <div class="panel-header" style="margin-bottom:0.25rem;">Conversations</div>
-      <div id="recent-chats" class="chat-list">
+      <div id="recent-chats" class="chat-list sidebar-nav nav-list">
         <div class="empty-state">No recent conversations yet. Register a project to get started.</div>
       </div>
     </aside>
 
-    <main id="main-workspace" role="main" aria-label="Main Workspace">
+    <main id="main-workspace" class="content content-container main-content" role="main" aria-label="Main Workspace">
       <div id="reconnect-banner" class="warning-banner" role="alert" aria-live="assertive" style="display:none;">
         Reconnecting to local Gaggle server...
       </div>
@@ -1100,7 +1361,7 @@ pub fn render_index_html() -> String {
       </div>
     </main>
 
-    <aside id="details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
+    <aside id="details-panel" class="inspector details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
       <div class="workspace-header-row">
         <div class="panel-header" style="margin-bottom:0;">Inspector</div>
         <button id="btn-toggle-inspector" class="icon-btn" type="button" aria-label="Toggle contextual details panel" aria-expanded="true" aria-controls="details-panel" title="Toggle inspector (Cmd/Ctrl + I)">⚙</button>
@@ -3935,13 +4196,13 @@ mod tests {
         let html = render_index_html();
 
         // Structural landmarks and live regions.
-        assert!(html.contains("<aside id=\"sidebar\" role=\"navigation\" aria-label=\"Sidebar\" aria-hidden=\"false\">"));
+        assert!(html.contains("<aside id=\"sidebar\" class=\"sidebar\" role=\"navigation\" aria-label=\"Sidebar\" aria-hidden=\"false\">"));
         assert!(
             html.contains(
-                "<main id=\"main-workspace\" role=\"main\" aria-label=\"Main Workspace\">"
+                "<main id=\"main-workspace\" class=\"content content-container main-content\" role=\"main\" aria-label=\"Main Workspace\">"
             )
         );
-        assert!(html.contains("<aside id=\"details-panel\" role=\"complementary\" aria-label=\"Contextual Details\" aria-hidden=\"false\">"));
+        assert!(html.contains("<aside id=\"details-panel\" class=\"inspector details-panel\" role=\"complementary\" aria-label=\"Contextual Details\" aria-hidden=\"false\">"));
         assert!(html.contains("id=\"messages\" role=\"log\" aria-live=\"polite\""));
         assert!(html.contains("id=\"reconnect-banner\" class=\"warning-banner\" role=\"alert\" aria-live=\"assertive\""));
 
@@ -3986,8 +4247,16 @@ mod tests {
             "--bg-app:",
             "--bg-panel:",
             "--bg-surface:",
+            "--bg-sidebar:",
+            "--bg-elevated:",
+            "--bg-overlay:",
             "--text-primary:",
             "--text-muted:",
+            "--text-secondary:",
+            "--warning:",
+            "--info:",
+            "--focus-ring:",
+            "--divider:",
             "--accent:",
             "--danger:",
             "--success:",
