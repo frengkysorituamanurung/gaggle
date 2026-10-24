@@ -23,8 +23,8 @@ use gaggle_core::{
 use gaggle_db::{
     connection::{new_id, now_ms},
     models::{
-        AppSetting, Approval, Chat, ChatSummary, CommandRule, Extension, ExtensionTool, Memory,
-        Model, Project, Provider, Recipe, Run, Schedule, Worktree,
+        AppSetting, Approval, Chat, ChatSummary, CommandRule, Extension, ExtensionPermission,
+        ExtensionTool, Memory, Model, Project, Provider, Recipe, Run, Schedule, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
@@ -39,7 +39,7 @@ use gaggle_db::{
         worktrees::WorktreeRepository,
     },
 };
-use gaggle_mcp::{ExtensionRegistry, RECOMMENDED_MAX_ACTIVE_TOOLS};
+use gaggle_mcp::{ExtensionRegistry, InstallExtensionRequest, RECOMMENDED_MAX_ACTIVE_TOOLS};
 use gaggle_recipes::{
     compute_next_run, render_recipe_template, resolve_recipe_parameters, validate_recipe_parameters,
 };
@@ -254,6 +254,29 @@ pub struct UpdateExtensionRequest {
     pub enabled: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateExtensionRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub kind: String,
+    pub version: Option<String>,
+    pub source: Option<String>,
+    pub command: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub url: Option<String>,
+    pub env_secret_refs: Option<serde_json::Value>,
+    pub timeout_secs: Option<i64>,
+    pub manifest: Option<serde_json::Value>,
+    pub bundled: Option<bool>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GrantExtensionPermissionRequest {
+    pub permission: String,
+    pub scope: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ExtensionToolSummary {
     pub tool_name: String,
@@ -410,9 +433,23 @@ pub fn build_router(state: AppState) -> Router {
                 .put(update_memory)
                 .delete(delete_memory),
         )
-        .route("/api/extensions", get(list_extensions))
+        .route(
+            "/api/extensions",
+            get(list_extensions).post(create_extension),
+        )
         .route("/api/extensions/inventory", get(extensions_inventory))
-        .route("/api/extensions/{id}", patch(update_extension))
+        .route(
+            "/api/extensions/{id}",
+            patch(update_extension).delete(delete_extension),
+        )
+        .route(
+            "/api/extensions/{id}/discover",
+            post(discover_extension_tools),
+        )
+        .route(
+            "/api/extensions/{id}/permissions",
+            get(list_extension_permissions).post(grant_extension_permission),
+        )
         .route("/api/recipes", get(list_recipes).post(create_recipe))
         .route("/api/recipes/{id}", get(get_recipe))
         .route("/api/recipes/{id}/execute", post(execute_recipe))
@@ -1439,6 +1476,82 @@ async fn update_extension(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(updated))
+}
+
+async fn create_extension(
+    State(state): State<AppState>,
+    Json(req): Json<CreateExtensionRequest>,
+) -> Result<Json<Extension>, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool.clone());
+    let install_req = InstallExtensionRequest {
+        name: req.name,
+        description: req.description,
+        kind: req.kind,
+        version: req.version.unwrap_or_else(|| "0.1.0".to_string()),
+        source: req.source.unwrap_or_else(|| "local".to_string()),
+        command: req.command,
+        args: req.args.unwrap_or_default(),
+        url: req.url,
+        env_secret_refs: req.env_secret_refs,
+        timeout_secs: req.timeout_secs.unwrap_or(120),
+        manifest: req.manifest,
+        bundled: req.bundled.unwrap_or(false),
+        enabled: req.enabled.unwrap_or(true),
+    };
+    let ext = registry
+        .install_extension(install_req)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(ext))
+}
+
+async fn delete_extension(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool);
+    registry
+        .uninstall_extension(&id)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn discover_extension_tools(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<ExtensionTool>>, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool);
+    let tools = registry
+        .discover_tools(&id)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(tools))
+}
+
+async fn list_extension_permissions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<ExtensionPermission>>, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool);
+    let perms = registry
+        .list_permissions(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(perms))
+}
+
+async fn grant_extension_permission(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<GrantExtensionPermissionRequest>,
+) -> Result<Json<ExtensionPermission>, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool);
+    let perm = registry
+        .grant_permission(&id, &req.permission, req.scope.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(perm))
 }
 
 async fn list_providers(
