@@ -33,6 +33,7 @@ axum = { version = "0.8", features = ["ws", "macros"] }
 clap = { version = "4", features = ["derive"] }
 croner = "4"
 directories = "6"
+flate2 = "1"
 futures = "0.3"
 minijinja = "3"
 notify = "8"
@@ -43,6 +44,8 @@ serde_yaml_ng = "0.10"
 sha2 = "0.11"
 similar = "3"
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+tar = "0.4"
+tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"

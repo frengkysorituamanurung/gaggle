@@ -3,6 +3,7 @@ use crate::{
     models::Memory,
 };
 use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 use std::collections::HashMap;
 
@@ -38,6 +39,13 @@ const SENSITIVE_KEYS: [&str; 14] = [
     "private_key",
     "private-key",
 ];
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryMarkdownFile {
+    /// Cross-platform-safe file name derived from the memory kind, title, and id.
+    pub file_name: String,
+    pub markdown: String,
+}
 
 pub struct MemoryRepository {
     pool: SqlitePool,
@@ -423,6 +431,51 @@ impl MemoryRepository {
     /// Content is escaped so stored Markdown cannot break the document
     /// structure, and obvious credentials are redacted before writing.
     pub async fn export_markdown(&self, project_id: &str) -> Result<String> {
+        let (memories, tags_by_memory) = self.load_export_memories(project_id).await?;
+
+        if memories.is_empty() {
+            return Ok(
+                "# Gaggle Memory\n\n_No memories stored for this project yet._\n".to_string(),
+            );
+        }
+
+        let mut markdown = String::from("# Gaggle Memory\n");
+
+        for memory in memories {
+            markdown.push('\n');
+            markdown.push_str(&render_memory_markdown(
+                &memory,
+                tags_by_memory.get(&memory.id),
+                "##",
+            ));
+        }
+
+        Ok(markdown)
+    }
+
+    /// Renders one Markdown file per active project plus global memory.
+    ///
+    /// File names are deterministic, URL-safe, and limited to
+    /// `[a-z0-9-]` plus an id suffix, so the exports can be committed to
+    /// `.pal/memory/` and shared through Git on macOS and Linux.
+    pub async fn export_markdown_files(&self, project_id: &str) -> Result<Vec<MemoryMarkdownFile>> {
+        let (memories, tags_by_memory) = self.load_export_memories(project_id).await?;
+
+        let mut files = Vec::with_capacity(memories.len());
+        for memory in memories {
+            files.push(MemoryMarkdownFile {
+                file_name: memory_file_name(&memory),
+                markdown: render_memory_markdown(&memory, tags_by_memory.get(&memory.id), "#"),
+            });
+        }
+        files.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+        Ok(files)
+    }
+
+    async fn load_export_memories(
+        &self,
+        project_id: &str,
+    ) -> Result<(Vec<Memory>, HashMap<String, Vec<String>>)> {
         let memories = sqlx::query_as::<_, Memory>(
             r#"
             SELECT * FROM memories
@@ -434,12 +487,6 @@ impl MemoryRepository {
         .bind(project_id)
         .fetch_all(&self.pool)
         .await?;
-
-        if memories.is_empty() {
-            return Ok(
-                "# Gaggle Memory\n\n_No memories stored for this project yet._\n".to_string(),
-            );
-        }
 
         let mut tags_by_memory: HashMap<String, Vec<String>> = HashMap::new();
         let tag_rows = sqlx::query_as::<_, (String, String)>(
@@ -458,41 +505,78 @@ impl MemoryRepository {
             tags_by_memory.entry(memory_id).or_default().push(tag);
         }
 
-        let mut markdown = String::from("# Gaggle Memory\n");
+        Ok((memories, tags_by_memory))
+    }
+}
 
-        for memory in memories {
-            let title = inline_text(&memory.title);
-            markdown.push_str(&format!("\n## {title}\n\n"));
-            markdown.push_str(&format!("- **Kind:** `{}`\n", memory.kind));
-            let scope = if memory.project_id.is_some() {
-                "project"
-            } else {
-                "global"
-            };
-            markdown.push_str(&format!("- **Scope:** {scope}\n"));
-            markdown.push_str(&format!(
-                "- **Pinned:** {}\n",
-                if memory.pinned == 1 { "yes" } else { "no" }
-            ));
-            let tags = tags_by_memory
-                .get(&memory.id)
-                .map(|tags| {
-                    tags.iter()
-                        .map(|tag| format!("`{}`", inline_text(tag)))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .filter(|tags| !tags.is_empty())
-                .unwrap_or_else(|| "(none)".to_string());
-            markdown.push_str(&format!("- **Tags:** {tags}\n"));
-            markdown.push_str(&format!("- **ID:** `{}`\n", memory.id));
-            markdown.push_str(&format!("- **Updated:** {} (unix ms)\n", memory.updated_at));
-            markdown.push('\n');
-            markdown.push_str(&escape_markdown_content(&redact_secrets(&memory.content)));
-            markdown.push('\n');
+/// Renders a single memory as a Markdown section using the supplied heading level.
+fn render_memory_markdown(memory: &Memory, tags: Option<&Vec<String>>, heading: &str) -> String {
+    let title = inline_text(&memory.title);
+    let mut markdown = format!("{heading} {title}\n\n");
+    markdown.push_str(&format!("- **Kind:** `{}`\n", memory.kind));
+    let scope = if memory.project_id.is_some() {
+        "project"
+    } else {
+        "global"
+    };
+    markdown.push_str(&format!("- **Scope:** {scope}\n"));
+    markdown.push_str(&format!(
+        "- **Pinned:** {}\n",
+        if memory.pinned == 1 { "yes" } else { "no" }
+    ));
+    let tags = tags
+        .map(|tags| {
+            tags.iter()
+                .map(|tag| format!("`{}`", inline_text(tag)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|tags| !tags.is_empty())
+        .unwrap_or_else(|| "(none)".to_string());
+    markdown.push_str(&format!("- **Tags:** {tags}\n"));
+    markdown.push_str(&format!("- **ID:** `{}`\n", memory.id));
+    markdown.push_str(&format!("- **Updated:** {} (unix ms)\n", memory.updated_at));
+    markdown.push('\n');
+    markdown.push_str(&escape_markdown_content(&redact_secrets(&memory.content)));
+    markdown.push('\n');
+    markdown
+}
+
+/// Builds a cross-platform-safe, unique file name for an exported memory.
+fn memory_file_name(memory: &Memory) -> String {
+    let slug = slugify(&memory.title);
+    let mut short_id: String = memory
+        .id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(8)
+        .collect();
+    if short_id.is_empty() {
+        short_id.push_str("00000000");
+    }
+    format!("{}-{slug}-{short_id}.md", memory.kind)
+}
+
+fn slugify(title: &str) -> String {
+    let mut slug = String::with_capacity(title.len());
+    let mut last_was_separator = true;
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !last_was_separator {
+            slug.push('-');
+            last_was_separator = true;
         }
-
-        Ok(markdown)
+        if slug.len() >= 48 {
+            break;
+        }
+    }
+    let trimmed = slug.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "memory".to_string()
+    } else {
+        trimmed
     }
 }
 
