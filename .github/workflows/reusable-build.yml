@@ -1,0 +1,233 @@
+name: Reusable Package Build
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: "Package platform: macos or linux"
+        required: true
+        type: string
+      runner:
+        description: "GitHub-hosted runner label"
+        required: true
+        type: string
+      target:
+        description: "Rust target triple"
+        required: true
+        type: string
+      artifact_name:
+        description: "Base artifact name, for example Gaggle-macOS-arm64"
+        required: true
+        type: string
+      version:
+        description: "Package version; empty means read Cargo.toml"
+        required: false
+        type: string
+        default: ""
+      ref:
+        description: "Git ref to build; defaults to the triggering commit"
+        required: false
+        type: string
+        default: ""
+      signing:
+        description: "Sign and notarize the macOS bundle"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      APPLE_CERTIFICATE_BASE64:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_ID_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+jobs:
+  package:
+    name: ${{ inputs.artifact_name }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          target: ${{ inputs.target }}
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ inputs.target }}-macos12
+
+      - name: Resolve package version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          fi
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binaries
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          cargo build --release --locked \
+            -p gaggle-cli \
+            --bin gaggle \
+            --bin gaggle-desktop \
+            --target "$TARGET"
+
+      - name: Package macOS application bundle
+        if: ${{ inputs.platform == 'macos' }}
+        env:
+          TARGET: ${{ inputs.target }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p dist
+          .github/scripts/package-macos.sh \
+            --target "$TARGET" \
+            --version "$PACKAGE_VERSION" \
+            --binary-dir "$PWD/target/$TARGET/release" \
+            --output-dir "$PWD/dist" \
+            --commit "$PACKAGE_COMMIT"
+
+      - name: Package Linux portable archive
+        if: ${{ inputs.platform == 'linux' }}
+        env:
+          TARGET: ${{ inputs.target }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_COMMIT: ${{ github.sha }}
+          PACKAGE_REF: ${{ github.ref }}
+        run: |
+          mkdir -p dist
+          .github/scripts/package-linux.sh \
+            --target "$TARGET" \
+            --version "$PACKAGE_VERSION" \
+            --binary-dir "$PWD/target/$TARGET/release" \
+            --output-dir "$PWD/dist" \
+            --commit "$PACKAGE_COMMIT" \
+            --ref "$PACKAGE_REF"
+
+      - name: Sign and notarize macOS bundle
+        if: ${{ inputs.platform == 'macos' && inputs.signing }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          .github/scripts/sign-and-notarize-macos.sh \
+            "$PWD/dist/Gaggle.app" \
+            "$PWD/dist/${{ inputs.artifact_name }}.zip"
+
+      - name: Validate macOS bundle
+        if: ${{ inputs.platform == 'macos' }}
+        env:
+          TARGET: ${{ inputs.target }}
+          SIGNING: ${{ inputs.signing }}
+        run: |
+          ARGS=(
+            --archive "$PWD/dist/${{ inputs.artifact_name }}.zip"
+            --target "$TARGET"
+          )
+          if [ "$SIGNING" = "true" ]; then
+            ARGS+=(--require-signature)
+          fi
+          .github/scripts/validate-macos-bundle.sh "${ARGS[@]}"
+
+      - name: Validate Linux package
+        if: ${{ inputs.platform == 'linux' }}
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          .github/scripts/validate-linux-package.sh \
+            --archive "$PWD/dist/${{ inputs.artifact_name }}.tar.gz" \
+            --target "$TARGET"
+
+      - name: Write checksums and package metadata
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_PLATFORM: ${{ inputs.platform }}
+          PACKAGE_TARGET: ${{ inputs.target }}
+          PACKAGE_SIGNED: ${{ inputs.signing && inputs.platform == 'macos' }}
+          PACKAGE_NOTARIZED: ${{ inputs.signing && inputs.platform == 'macos' }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$PACKAGE_PLATFORM" in
+            macos)
+              PACKAGE="$PWD/dist/$ARTIFACT_NAME.zip"
+              PACKAGE_FORMAT="zip"
+              PACKAGE_OS="macOS"
+              case "$PACKAGE_TARGET" in
+                aarch64-apple-darwin) PACKAGE_ARCH="arm64" ;;
+                x86_64-apple-darwin) PACKAGE_ARCH="x64" ;;
+                *) echo "Unsupported macOS target: $PACKAGE_TARGET" >&2; exit 2 ;;
+              esac
+              ;;
+            linux)
+              PACKAGE="$PWD/dist/$ARTIFACT_NAME.tar.gz"
+              PACKAGE_FORMAT="tar.gz"
+              PACKAGE_OS="Linux"
+              case "$PACKAGE_TARGET" in
+                x86_64-unknown-linux-gnu) PACKAGE_ARCH="x86_64" ;;
+                aarch64-unknown-linux-gnu) PACKAGE_ARCH="aarch64" ;;
+                *) echo "Unsupported Linux target: $PACKAGE_TARGET" >&2; exit 2 ;;
+              esac
+              ;;
+            *)
+              echo "Unsupported platform: $PACKAGE_PLATFORM" >&2
+              exit 2
+              ;;
+          esac
+
+          .github/scripts/write-artifact-metadata.sh \
+            --package "$PACKAGE" \
+            --artifact-name "$ARTIFACT_NAME" \
+            --version "$PACKAGE_VERSION" \
+            --commit "$GITHUB_SHA" \
+            --git-ref "$GITHUB_REF" \
+            --source-ref "$GITHUB_REF_NAME" \
+            --os "$PACKAGE_OS" \
+            --arch "$PACKAGE_ARCH" \
+            --target "$PACKAGE_TARGET" \
+            --format "$PACKAGE_FORMAT" \
+            --signed "$PACKAGE_SIGNED" \
+            --notarized "$PACKAGE_NOTARIZED" \
+            --workflow-run-url "$WORKFLOW_RUN_URL"
+
+      - name: Upload package and metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_name }}-${{ github.sha }}
+          path: dist/${{ inputs.artifact_name }}.*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14

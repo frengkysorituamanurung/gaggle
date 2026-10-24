@@ -9,9 +9,18 @@ on:
     branches:
       - main
       - development
+  merge_group:
+    branches:
+      - main
+      - development
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,6 +30,7 @@ jobs:
   quality-gates:
     name: Format, Clippy & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -30,15 +40,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install stable Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Rust cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Verify Rust and Cargo versions
         run: |
@@ -49,7 +62,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Lint workspace (cargo clippy)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check compilation (cargo check)
+        run: cargo check --workspace --all-targets --locked
 
       - name: Run workspace test suite (cargo test)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+      - name: Validate embedded UI scripts
+        run: .github/scripts/check-ui-embedded.sh
+
+      - name: Validate shell script syntax
+        run: bash -n .github/scripts/*.sh
