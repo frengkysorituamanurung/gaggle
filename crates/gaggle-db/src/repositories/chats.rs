@@ -1,6 +1,6 @@
 use crate::{
     connection::{new_id, now_ms},
-    models::{Chat, Message, MessagePart},
+    models::{Chat, ChatSummary, Message, MessagePart},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -241,5 +241,158 @@ impl ChatRepository {
             messages,
             message_parts,
         }))
+    }
+}
+
+impl ChatRepository {
+    pub async fn create_summary(
+        &self,
+        chat_id: &str,
+        summary: &str,
+        covers_until_seq: i64,
+        tokens_before: i64,
+        tokens_after: i64,
+        trigger: &str,
+    ) -> Result<ChatSummary> {
+        ChatSummaryRepository::new(self.pool.clone())
+            .create(
+                chat_id,
+                summary,
+                covers_until_seq,
+                tokens_before,
+                tokens_after,
+                trigger,
+            )
+            .await
+    }
+
+    pub async fn get_latest_summary(&self, chat_id: &str) -> Result<Option<ChatSummary>> {
+        ChatSummaryRepository::new(self.pool.clone())
+            .get_latest_for_chat(chat_id)
+            .await
+    }
+
+    pub async fn list_summaries(&self, chat_id: &str) -> Result<Vec<ChatSummary>> {
+        ChatSummaryRepository::new(self.pool.clone())
+            .list_for_chat(chat_id)
+            .await
+    }
+
+    pub async fn adjust_token_totals(
+        &self,
+        chat_id: &str,
+        input_delta: i64,
+        output_delta: i64,
+    ) -> Result<Chat> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            UPDATE chats
+            SET total_input_tokens = CASE WHEN total_input_tokens + ? < 0 THEN 0 ELSE total_input_tokens + ? END,
+                total_output_tokens = CASE WHEN total_output_tokens + ? < 0 THEN 0 ELSE total_output_tokens + ? END,
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(input_delta)
+        .bind(input_delta)
+        .bind(output_delta)
+        .bind(output_delta)
+        .bind(now)
+        .bind(chat_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_by_id(chat_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after token update"))
+    }
+
+    pub async fn set_token_totals(
+        &self,
+        chat_id: &str,
+        total_input_tokens: i64,
+        total_output_tokens: i64,
+    ) -> Result<Chat> {
+        let now = now_ms();
+        sqlx::query(
+            "UPDATE chats SET total_input_tokens = ?, total_output_tokens = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(total_input_tokens.max(0))
+        .bind(total_output_tokens.max(0))
+        .bind(now)
+        .bind(chat_id)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_by_id(chat_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after token update"))
+    }
+}
+
+pub struct ChatSummaryRepository {
+    pool: SqlitePool,
+}
+
+impl ChatSummaryRepository {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn create(
+        &self,
+        chat_id: &str,
+        summary: &str,
+        covers_until_seq: i64,
+        tokens_before: i64,
+        tokens_after: i64,
+        trigger: &str,
+    ) -> Result<ChatSummary> {
+        let id = new_id();
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            INSERT INTO chat_summaries (
+                id, chat_id, summary, covers_until_seq, tokens_before, tokens_after, trigger, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(chat_id)
+        .bind(summary)
+        .bind(covers_until_seq)
+        .bind(tokens_before)
+        .bind(tokens_after)
+        .bind(trigger)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        let stored = sqlx::query_as::<_, ChatSummary>("SELECT * FROM chat_summaries WHERE id = ?")
+            .bind(&id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(stored)
+    }
+
+    pub async fn get_latest_for_chat(&self, chat_id: &str) -> Result<Option<ChatSummary>> {
+        let row = sqlx::query_as::<_, ChatSummary>(
+            "SELECT * FROM chat_summaries WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        )
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn list_for_chat(&self, chat_id: &str) -> Result<Vec<ChatSummary>> {
+        let rows = sqlx::query_as::<_, ChatSummary>(
+            "SELECT * FROM chat_summaries WHERE chat_id = ? ORDER BY created_at ASC, id ASC",
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 }

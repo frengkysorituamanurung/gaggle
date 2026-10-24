@@ -10,6 +10,7 @@ use axum::{
     routing::{get, patch, post},
 };
 use futures::stream::Stream;
+use gaggle_core::CompactionEngine;
 use gaggle_core::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter, ChatGptAdapter,
     ChatGptOAuthClient, ChatGptOAuthConfig, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
@@ -20,8 +21,8 @@ use gaggle_core::{
 use gaggle_db::{
     connection::{new_id, now_ms},
     models::{
-        AppSetting, Approval, Chat, CommandRule, Extension, ExtensionTool, Memory, Model, Project,
-        Provider, Run, Worktree,
+        AppSetting, Approval, Chat, ChatSummary, CommandRule, Extension, ExtensionTool, Memory,
+        Model, Project, Provider, Run, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
@@ -141,6 +142,11 @@ pub struct CreateModelRequest {
 pub struct SubmitChatMessageRequest {
     pub prompt: String,
     pub model_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CompactChatRequest {
+    pub trigger: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,6 +344,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/extensions/{id}", patch(update_extension))
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
+        .route("/api/chats/{id}/compact", post(compact_chat))
         .route("/api/chats/{id}", patch(update_chat))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
@@ -1615,6 +1622,83 @@ async fn submit_chat_message(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     Ok(Json(outcome))
+}
+
+async fn compact_chat(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    req: Result<Option<Json<CompactChatRequest>>, axum::extract::rejection::JsonRejection>,
+) -> Result<Json<ChatSummary>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+
+    let trigger = match req {
+        Ok(Some(Json(r))) => r.trigger.clone().unwrap_or_else(|| "manual".to_string()),
+        _ => "manual".to_string(),
+    };
+    if !matches!(trigger.as_str(), "auto" | "manual") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "trigger must be 'auto' or 'manual'".to_string(),
+        ));
+    }
+
+    let requested_model_key = "local-mock";
+    let (provider, _model_key) =
+        resolve_chat_provider(&state, &chat, requested_model_key, "compact").await?;
+
+    // Resolve context window.
+    let context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
+        let repo = ProviderRepository::new(state.pool.clone());
+        if let Some(model) = repo
+            .get_model_by_id(model_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        {
+            if model.context_window > 0 {
+                model.context_window
+            } else {
+                8192
+            }
+        } else {
+            8192
+        }
+    } else {
+        8192
+    };
+
+    let result = CompactionEngine::compact_chat(
+        state.pool.clone(),
+        &chat_id,
+        context_window,
+        provider.as_ref(),
+        &trigger,
+        true,
+    )
+    .await
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    match result {
+        Some(_cr) => {
+            // Fetch the stored summary row.
+            let summary = chat_repo
+                .get_latest_summary(&chat_id)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .ok_or_else(|| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Compaction did not store a summary".to_string(),
+                    )
+                })?;
+            Ok(Json(summary))
+        }
+        None => Err((StatusCode::BAD_REQUEST, "Nothing to compact".to_string())),
+    }
 }
 
 async fn cancel_run(
