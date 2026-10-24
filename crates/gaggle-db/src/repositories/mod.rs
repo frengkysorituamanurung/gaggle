@@ -8,6 +8,7 @@ pub mod projects;
 pub mod providers;
 pub mod recipes;
 pub mod runs;
+pub mod schedules;
 pub mod settings;
 pub mod terminal_sessions;
 pub mod worktrees;

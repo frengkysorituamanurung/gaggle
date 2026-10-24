@@ -144,7 +144,7 @@ impl ChatRepository {
             .ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
     }
 
-    /// Creates a child chat for a subagent, recording parent linkage and `chat_type`.
+    /// Creates a child chat (used by subagents/sub-recipes) with parent linkage.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_child_chat(
         &self,
@@ -205,6 +205,54 @@ impl ChatRepository {
             parent_tool_call_id,
         )
         .await
+    }
+
+    /// Creates a chat carrying recipe/schedule context.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_recipe_chat(
+        &self,
+        project_id: &str,
+        title: &str,
+        chat_type: &str,
+        mode: &str,
+        permission_mode: &str,
+        recipe_id: Option<&str>,
+        recipe_values: Option<&str>,
+        schedule_id: Option<&str>,
+        parent_chat_id: Option<&str>,
+        parent_tool_call_id: Option<&str>,
+    ) -> Result<Chat> {
+        let id = new_id();
+        let now = now_ms();
+
+        sqlx::query(
+            r#"
+            INSERT INTO chats (
+                id, project_id, chat_type, title, mode, permission_mode,
+                recipe_id, recipe_values, schedule_id,
+                parent_chat_id, parent_tool_call_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(project_id)
+        .bind(chat_type)
+        .bind(title)
+        .bind(mode)
+        .bind(permission_mode)
+        .bind(recipe_id)
+        .bind(recipe_values)
+        .bind(schedule_id)
+        .bind(parent_chat_id)
+        .bind(parent_tool_call_id)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_by_id(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Option<Chat>> {

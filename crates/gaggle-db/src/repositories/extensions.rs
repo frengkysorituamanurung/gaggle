@@ -1,6 +1,6 @@
 use crate::{
     connection::{new_id, now_ms},
-    models::{Extension, ExtensionTool},
+    models::{ChatExtension, Extension, ExtensionTool},
 };
 use anyhow::Result;
 use sqlx::SqlitePool;
@@ -172,6 +172,33 @@ impl ExtensionRepository {
         Ok(tools)
     }
 
+    pub async fn enable_extension_for_chat(&self, chat_id: &str, extension_id: &str) -> Result<()> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            INSERT INTO chat_extensions (chat_id, extension_id, enabled, enabled_at)
+            VALUES (?, ?, 1, ?)
+            ON CONFLICT(chat_id, extension_id) DO UPDATE SET enabled = 1, enabled_at = excluded.enabled_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(extension_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_chat_extensions(&self, chat_id: &str) -> Result<Vec<ChatExtension>> {
+        let rows = sqlx::query_as::<_, ChatExtension>(
+            "SELECT * FROM chat_extensions WHERE chat_id = ? ORDER BY enabled_at ASC",
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<Extension> {
         sqlx::query("UPDATE extensions SET enabled = ? WHERE id = ?")
             .bind(if enabled { 1 } else { 0 })
@@ -184,3 +211,6 @@ impl ExtensionRepository {
             .ok_or_else(|| anyhow::anyhow!("Extension {id} not found after update"))
     }
 }
+
+/// Alias for callers that prefer a chat-extension-focused repository name.
+pub type ChatExtensionRepository = ExtensionRepository;
