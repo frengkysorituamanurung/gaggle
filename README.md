@@ -137,6 +137,137 @@ installation steps, runtime requirements, signing status, and the release
 procedure. The macOS artifact is a ZIP containing `Gaggle.app`; no `.dmg`
 installer is produced.
 
+### Install on macOS (ZIP)
+
+1. Download `Gaggle-macOS-arm64.zip` on Apple Silicon or
+   `Gaggle-macOS-x64.zip` on Intel.
+2. Verify the checksum next to the downloaded artifact:
+
+   ```bash
+   shasum -a 256 -c Gaggle-macOS-arm64.zip.sha256
+   ```
+
+3. Extract the bundle and move it into `/Applications`:
+
+   ```bash
+   ditto -x -k Gaggle-macOS-arm64.zip /Applications
+   open /Applications/Gaggle.app
+   ```
+
+   `ditto` preserves the app bundle structure and executable permissions. Do
+   not move the raw `Gaggle` executable out of the bundle.
+
+4. Gaggle starts a local server on `127.0.0.1:4321` and opens the default
+   browser. If the browser does not open, visit <http://127.0.0.1:4321>.
+
+The database is stored outside the app bundle at
+`~/Library/Application Support/gaggle/gaggle.db`. Replacing `Gaggle.app` does
+not delete chats, settings, or memories.
+
+### macOS Gatekeeper behavior
+
+Release artifacts are not notarized unless the release workflow had access to
+the Apple signing secrets. An unsigned or ad-hoc-signed build may show a
+Gatekeeper warning such as "Gaggle.app cannot be opened because the developer
+cannot be verified".
+
+Use the standard confirmation flow instead of disabling Gatekeeper:
+
+1. Open the app once from Finder, dismiss the warning, then open **System
+   Settings → Privacy & Security**.
+2. Click **Open Anyway** for Gaggle and confirm.
+3. Alternatively, right-click `Gaggle.app` in Finder, choose **Open**, and
+   confirm.
+
+Do not run `spctl --master-disable`. If you manage downloads yourself and
+accept the security trade-off, macOS may attach a quarantine attribute; the
+standard Finder confirmation is still preferred over removing it manually.
+
+### Reproducible macOS ZIP locally
+
+The checked-in packaging script builds the release binaries, assembles
+`Gaggle.app`, validates `Info.plist`, signs the bundle (ad-hoc by default),
+recreates the ZIP with `ditto`, prints the SHA-256 checksum, and runs an
+extraction plus `/api/health` smoke test:
+
+```bash
+./scripts/package_macos_zip.sh
+```
+
+Common options:
+
+```bash
+# Use a Developer ID identity instead of ad-hoc signing
+./scripts/package_macos_zip.sh --sign-identity "Developer ID Application: Example (TEAMID)"
+
+# Reuse prebuilt release binaries and skip the smoke test
+./scripts/package_macos_zip.sh --binary-dir target/aarch64-apple-darwin/release --skip-smoke-test
+
+# Build the other architecture
+./scripts/package_macos_zip.sh --arch x64
+```
+
+Outputs are written to `dist/`:
+
+```text
+dist/Gaggle.app
+dist/Gaggle-macOS-arm64.zip
+dist/Gaggle-macOS-arm64.zip.sha256
+dist/Gaggle-macOS-arm64.json
+```
+
+Passing `--skip-smoke-test` is only appropriate for local iteration; CI and
+release validation always launch the extracted bundle and call `/api/health`.
+
+### Build and run on Linux
+
+```bash
+cargo build --release --locked -p gaggle-cli --bin gaggle --bin gaggle-desktop
+./target/release/gaggle-desktop
+```
+
+The launcher starts the local server and opens the default browser with
+`xdg-open`. Use `--no-browser` on headless sessions and open
+<http://127.0.0.1:4321> manually. The CLI is available as
+`./target/release/gaggle` (`gaggle --help`).
+
+Portable Linux archives can also be built locally:
+
+```bash
+./.github/scripts/package-linux.sh \
+  --target x86_64-unknown-linux-gnu \
+  --version 0.1.0 \
+  --binary-dir "$PWD/target/x86_64-unknown-linux-gnu/release" \
+  --output-dir "$PWD/dist" \
+  --commit "$(git rev-parse HEAD)" \
+  --ref "$(git rev-parse HEAD)"
+
+tar -xzf dist/Gaggle-linux-x86_64.tar.gz
+cd Gaggle-linux-x86_64
+./install.sh
+```
+
+`install.sh` installs into the current user's `~/.local` directories without
+`sudo`, including a desktop entry. Linux data lives at
+`${XDG_DATA_HOME:-$HOME/.local/share}/gaggle/gaggle.db`.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Cmd/Ctrl + K` | Open the quick switcher for projects and conversations. |
+| `Cmd/Ctrl + N` | Create a new chat in the active project. |
+| `Cmd/Ctrl + B` | Toggle the sidebar. |
+| `Cmd/Ctrl + I` | Toggle the contextual details inspector. |
+| `Cmd/Ctrl + ,` | Open Settings & Diagnostics. |
+| `Cmd/Ctrl + /` | Open the in-app keyboard shortcut cheatsheet. |
+| `Cmd/Ctrl + Enter` | Send the current composer message. |
+| `Esc` | Close the open dialog and restore focus to its opener. |
+
+Native editing shortcuts (`Cmd/Ctrl + C`, `V`, `X`, `A`, `Z`) are never
+intercepted while focus is inside an input or textarea. Dialogs trap `Tab` and
+`Shift + Tab` focus until they close.
+
 ---
 
 ## CLI Usage (`gaggle`)

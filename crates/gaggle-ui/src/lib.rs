@@ -276,9 +276,20 @@ pub fn render_index_html() -> String {
     }
     #app-shell {
       display: grid;
-      grid-template-columns: 260px 1fr 340px;
+      grid-template-columns: 260px minmax(0, 1fr) 340px;
       height: 100vh;
       gap: 0;
+    }
+    #app-shell.sidebar-collapsed {
+      grid-template-columns: 0 minmax(0, 1fr) 340px;
+    }
+    #app-shell.sidebar-collapsed #sidebar { display: none; }
+    #app-shell.inspector-collapsed {
+      grid-template-columns: 260px minmax(0, 1fr) 0;
+    }
+    #app-shell.inspector-collapsed #details-panel { display: none; }
+    #app-shell.sidebar-collapsed.inspector-collapsed {
+      grid-template-columns: 0 minmax(0, 1fr) 0;
     }
     #sidebar {
       background: var(--bg-panel);
@@ -667,6 +678,72 @@ pub fn render_index_html() -> String {
       background: rgba(0, 0, 0, 0.55);
     }
     .modal-overlay.open { display: flex; }
+    .quick-switcher-dialog {
+      width: min(640px, 100%);
+    }
+    .quick-switcher-input {
+      width: 100%;
+      font-family: var(--font-ui);
+      font-size: var(--size-md);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.55rem 0.7rem;
+    }
+    .quick-switcher-results {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 52vh;
+      overflow-y: auto;
+      padding: var(--space-sm);
+    }
+    .quick-switcher-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--text-primary);
+      border: var(--border-width) solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 0.45rem 0.6rem;
+      cursor: pointer;
+    }
+    .quick-switcher-item:hover,
+    .quick-switcher-item[aria-selected="true"] {
+      background: var(--bg-surface);
+      border-color: var(--accent);
+    }
+    .quick-switcher-item-kind {
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .quick-switcher-item-meta {
+      font-family: var(--font-mono);
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+    kbd {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 0.1rem 0.35rem;
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      border: var(--border-width) solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+    }
+    .shortcut-table td:first-child {
+      width: 36%;
+      white-space: nowrap;
+    }
     .modal-dialog {
       width: min(940px, 100%);
       max-height: 88vh;
@@ -861,14 +938,34 @@ pub fn render_index_html() -> String {
       #sidebar, #details-panel {
         display: none;
       }
+      #app-shell:not(.sidebar-collapsed) #sidebar {
+        display: flex;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(300px, 86vw);
+        z-index: 900;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      }
+      #app-shell:not(.inspector-collapsed) #details-panel {
+        display: flex;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: min(340px, 90vw);
+        z-index: 900;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      }
     }
   </style>
 </head>
 <body>
   <div id="app-shell">
-    <aside id="sidebar" role="navigation" aria-label="Sidebar">
+    <aside id="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
       <div class="sidebar-top-row">
-        <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true">☰</button>
+        <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true" aria-controls="sidebar" title="Toggle sidebar (Cmd/Ctrl + B)">☰</button>
         <div class="panel-header" style="margin-bottom:0;">Gaggle</div>
         <select id="theme-switcher" class="theme-select" aria-label="Color theme">
           <option value="system">System</option>
@@ -948,6 +1045,8 @@ pub fn render_index_html() -> String {
           </div>
         </div>
         <div class="workspace-header-badges">
+          <button id="btn-show-sidebar" class="icon-btn hidden" type="button" aria-label="Show sidebar panel" aria-controls="sidebar" aria-expanded="false" title="Show sidebar (Cmd/Ctrl + B)">☰</button>
+          <button id="btn-show-inspector" class="icon-btn hidden" type="button" aria-label="Show contextual details panel" aria-controls="details-panel" aria-expanded="false" title="Show inspector (Cmd/Ctrl + I)">⚙</button>
           <button id="btn-rename-chat" class="btn btn-secondary" type="button" aria-label="Rename conversation" title="Rename conversation">✏</button>
           <span id="badge-vcs-kind" class="badge">vcs: —</span>
           <span id="badge-exec-mode" class="badge">mode: local</span>
@@ -1004,7 +1103,7 @@ pub fn render_index_html() -> String {
     <aside id="details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
       <div class="workspace-header-row">
         <div class="panel-header" style="margin-bottom:0;">Inspector</div>
-        <button id="btn-toggle-inspector" class="icon-btn" type="button" aria-label="Toggle contextual details panel" aria-expanded="true">⚙</button>
+        <button id="btn-toggle-inspector" class="icon-btn" type="button" aria-label="Toggle contextual details panel" aria-expanded="true" aria-controls="details-panel" title="Toggle inspector (Cmd/Ctrl + I)">⚙</button>
       </div>
       <div class="panel-header">Workspace Files</div>
       <div id="workspace-files" class="file-list">
@@ -1020,7 +1119,21 @@ pub fn render_index_html() -> String {
     </aside>
   </div>
 
-  <div id="settings-modal" class="modal-overlay">
+  <div id="quick-switcher-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-dialog quick-switcher-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-switcher-title">
+      <div class="modal-header">
+        <div style="flex:1;min-width:0;">
+          <div id="quick-switcher-title" class="panel-header" style="margin:0 0 0.35rem;">Quick switcher</div>
+          <label class="field-label" for="quick-switcher-input" style="position:absolute;left:-9999px;">Search projects and conversations</label>
+          <input id="quick-switcher-input" class="quick-switcher-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quick-switcher-results" placeholder="Search projects and conversations…" autocomplete="off" spellcheck="false" />
+        </div>
+        <button id="btn-close-quick-switcher" class="icon-btn" type="button" aria-label="Close quick switcher">✕</button>
+      </div>
+      <div id="quick-switcher-results" class="quick-switcher-results" role="listbox" aria-label="Projects and conversations"></div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-overlay" aria-hidden="true">
     <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-header">
         <div>
@@ -1036,6 +1149,7 @@ pub fn render_index_html() -> String {
           <button class="settings-tab" id="tab-extensions" type="button" role="tab" data-settings-tab="extensions" aria-selected="false" aria-controls="panel-extensions">Extensions</button>
           <button class="settings-tab" id="tab-memory" type="button" role="tab" data-settings-tab="memory" aria-selected="false" aria-controls="panel-memory">Memory</button>
           <button class="settings-tab" id="tab-appearance" type="button" role="tab" data-settings-tab="appearance" aria-selected="false" aria-controls="panel-appearance">Appearance</button>
+          <button class="settings-tab" id="tab-keyboard" type="button" role="tab" data-settings-tab="keyboard" aria-selected="false" aria-controls="panel-keyboard">Keyboard</button>
           <button class="settings-tab" id="tab-diagnostics" type="button" role="tab" data-settings-tab="diagnostics" aria-selected="false" aria-controls="panel-diagnostics">Diagnostics</button>
         </div>
         <div class="settings-panels">
@@ -1289,6 +1403,38 @@ pub fn render_index_html() -> String {
             </div>
           </section>
 
+          <section class="settings-panel" id="panel-keyboard" role="tabpanel" aria-labelledby="tab-keyboard">
+            <div class="settings-section">
+              <h3>Keyboard shortcuts</h3>
+              <p class="settings-note">
+                Use <kbd>Cmd</kbd> on macOS and <kbd>Ctrl</kbd> on Linux. Global shortcuts work from the composer and the main workspace.
+                Native text-editing shortcuts are never intercepted in inputs or textareas.
+              </p>
+              <table id="keyboard-shortcuts-table" class="data-table shortcut-table" aria-label="Keyboard shortcut cheatsheet">
+                <thead>
+                  <tr>
+                    <th scope="col">Shortcut</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>K</kbd></td><td>Open the quick switcher for projects and conversations.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>N</kbd></td><td>Create a new chat in the active project.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>B</kbd></td><td>Toggle the sidebar.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>I</kbd></td><td>Toggle the contextual details inspector.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>,</kbd></td><td>Open Settings &amp; Diagnostics.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>/</kbd></td><td>Open this keyboard shortcut cheatsheet.</td></tr>
+                  <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Enter</kbd></td><td>Send the current composer message.</td></tr>
+                  <tr><td><kbd>Esc</kbd></td><td>Close the open dialog and restore focus to the control that opened it.</td></tr>
+                  <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd></td><td>Move focus within an open dialog; focus is trapped until it closes.</td></tr>
+                </tbody>
+              </table>
+              <p class="settings-note">
+                Reserved for native editing and never handled globally: <kbd>Cmd/Ctrl</kbd> + <kbd>C</kbd>, <kbd>V</kbd>, <kbd>X</kbd>, <kbd>A</kbd>, <kbd>Z</kbd>, and <kbd>Shift</kbd> + <kbd>Z</kbd>.
+              </p>
+            </div>
+          </section>
+
           <section class="settings-panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics">
             <div class="settings-section">
               <div class="settings-toolbar">
@@ -1313,6 +1459,7 @@ pub fn render_index_html() -> String {
   <script>
     (function() {
       const API_BASE = window.location.origin;
+      const appShell = document.getElementById('app-shell');
       const messagesEl = document.getElementById('messages');
       const composerText = document.getElementById('composer-text');
       const btnSend = document.getElementById('btn-send');
@@ -1345,6 +1492,8 @@ pub fn render_index_html() -> String {
       const gitChangesEl = document.getElementById('git-changes');
       const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
       const btnToggleInspector = document.getElementById('btn-toggle-inspector');
+      const btnShowSidebar = document.getElementById('btn-show-sidebar');
+      const btnShowInspector = document.getElementById('btn-show-inspector');
       const connectionStatusEl = document.getElementById('connection-status');
       const reconnectBannerEl = document.getElementById('reconnect-banner');
 
@@ -1357,6 +1506,10 @@ pub fn render_index_html() -> String {
       const btnOpenSettings = document.getElementById('btn-open-settings');
       const settingsModalEl = document.getElementById('settings-modal');
       const btnCloseSettings = document.getElementById('btn-close-settings');
+      const quickSwitcherModalEl = document.getElementById('quick-switcher-modal');
+      const quickSwitcherInput = document.getElementById('quick-switcher-input');
+      const quickSwitcherResultsEl = document.getElementById('quick-switcher-results');
+      const btnCloseQuickSwitcher = document.getElementById('btn-close-quick-switcher');
       const settingsTabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-settings-tab]'));
       const tabProviders = document.getElementById('tab-providers');
       const providerForm = document.getElementById('form-add-provider');
@@ -1433,6 +1586,11 @@ pub fn render_index_html() -> String {
       let currentSettingsTab = 'providers';
       let diagnosticsReport = null;
       let lastFocusedBeforeSettings = null;
+      let lastFocusedBeforeAddProject = null;
+      let lastFocusedBeforeQuickSwitcher = null;
+      let quickSwitcherEntries = [];
+      let quickSwitcherActiveIndex = 0;
+      const NATIVE_EDITING_SHORTCUTS = ['a', 'c', 'v', 'x', 'y', 'z'];
 
       const PROVIDER_KINDS = ['openai', 'anthropic', 'chatgpt', 'openrouter', 'deepseek', 'ollama', 'openai_compat'];
 
@@ -1584,10 +1742,100 @@ pub fn render_index_html() -> String {
         onboardingCardEl.classList.toggle('hidden', !shouldShow);
       }
 
+      function focusElement(element) {
+        if (element && element.isConnected && typeof element.focus === 'function') {
+          element.focus();
+        }
+      }
+
+      function getFocusableElements(container) {
+        if (!container) return [];
+        const nodes = container.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        return Array.prototype.filter.call(nodes, function(node) {
+          return node.offsetParent !== null &&
+            node.getAttribute('aria-hidden') !== 'true' &&
+            node.getAttribute('tabindex') !== '-1';
+        });
+      }
+
+      function trapFocusWithin(container, event) {
+        if (event.key !== 'Tab' || !container) return;
+        const focusable = getFocusableElements(container);
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (!container.contains(active)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && active === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      function setSidebarCollapsed(collapsed) {
+        if (!appShell) return;
+        appShell.classList.toggle('sidebar-collapsed', collapsed);
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) sidebar.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+        if (btnToggleSidebar) btnToggleSidebar.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if (btnShowSidebar) {
+          btnShowSidebar.classList.toggle('hidden', !collapsed);
+          btnShowSidebar.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+        if (collapsed && sidebar && sidebar.contains(document.activeElement) && btnShowSidebar) {
+          btnShowSidebar.focus();
+        }
+      }
+
+      function setInspectorCollapsed(collapsed) {
+        if (!appShell) return;
+        appShell.classList.toggle('inspector-collapsed', collapsed);
+        const details = document.getElementById('details-panel');
+        if (details) details.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+        if (btnToggleInspector) btnToggleInspector.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if (btnShowInspector) {
+          btnShowInspector.classList.toggle('hidden', !collapsed);
+          btnShowInspector.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+        if (collapsed && details && details.contains(document.activeElement) && btnShowInspector) {
+          btnShowInspector.focus();
+        }
+      }
+
+      function toggleSidebar() {
+        setSidebarCollapsed(!appShell.classList.contains('sidebar-collapsed'));
+      }
+
+      function toggleInspector() {
+        setInspectorCollapsed(!appShell.classList.contains('inspector-collapsed'));
+      }
+
       function openSettings(tab) {
         if (!settingsModalEl) return;
-        lastFocusedBeforeSettings = document.activeElement;
+        const opener = document.activeElement;
+        const quickSwitcherOpen = quickSwitcherModalEl && quickSwitcherModalEl.classList.contains('open');
+        const quickSwitcherOpener = lastFocusedBeforeQuickSwitcher;
+        if (quickSwitcherOpen) {
+          closeQuickSwitcher(false);
+        }
+        if (addProjectModal && addProjectModal.classList.contains('open')) {
+          closeAddProject(false);
+        }
+        lastFocusedBeforeSettings = (quickSwitcherOpen && quickSwitcherOpener && quickSwitcherOpener.isConnected)
+          ? quickSwitcherOpener
+          : opener;
         settingsModalEl.classList.add('open');
+        settingsModalEl.setAttribute('aria-hidden', 'false');
         btnOpenSettings.setAttribute('aria-expanded', 'true');
         switchSettingsTab(tab || currentSettingsTab);
         loadProviders();
@@ -1597,16 +1845,194 @@ pub fn render_index_html() -> String {
         loadMemories();
         window.setTimeout(function() {
           const target = document.getElementById('tab-' + (tab || currentSettingsTab));
-          if (target) target.focus();
+          focusElement(target);
         }, 0);
       }
 
-      function closeSettings() {
+      function closeSettings(restoreFocus) {
         if (!settingsModalEl) return;
         settingsModalEl.classList.remove('open');
+        settingsModalEl.setAttribute('aria-hidden', 'true');
         btnOpenSettings.setAttribute('aria-expanded', 'false');
-        if (lastFocusedBeforeSettings && typeof lastFocusedBeforeSettings.focus === 'function') {
-          lastFocusedBeforeSettings.focus();
+        if (restoreFocus !== false) {
+          focusElement(lastFocusedBeforeSettings);
+        }
+      }
+
+      function openAddProject(opener) {
+        if (!addProjectModal) return;
+        lastFocusedBeforeAddProject = opener || document.activeElement;
+        addProjectError.textContent = '';
+        addProjectError.classList.remove('visible');
+        addProjectModal.classList.add('open');
+        focusElement(inputProjectName);
+      }
+
+      function closeAddProject(restoreFocus) {
+        if (!addProjectModal) return;
+        addProjectModal.classList.remove('open');
+        addProjectError.textContent = '';
+        addProjectError.classList.remove('visible');
+        if (restoreFocus !== false) {
+          focusElement(lastFocusedBeforeAddProject);
+        }
+      }
+
+      function createQuickSwitcherEntry(kind, id, label, meta, action) {
+        return { kind: kind, id: id, label: label, meta: meta, action: action };
+      }
+
+      function buildQuickSwitcherEntries() {
+        const entries = [];
+        Object.keys(projectsById).forEach(function(projectId) {
+          const project = projectsById[projectId];
+          entries.push(createQuickSwitcherEntry(
+            'project',
+            project.id,
+            project.name,
+            project.root_path,
+            function() { return selectProject(project.id); }
+          ));
+        });
+        Object.keys(chatsById).forEach(function(chatId) {
+          const chat = chatsById[chatId];
+          entries.push(createQuickSwitcherEntry(
+            'chat',
+            chat.id,
+            chat.title,
+            chat.mode + ' · ' + chat.permission_mode,
+            function() { selectChat(chat.id); }
+          ));
+        });
+        return entries;
+      }
+
+      async function loadAllQuickSwitcherEntries() {
+        const entries = buildQuickSwitcherEntries();
+        const seenChatIds = {};
+        Object.keys(chatsById).forEach(function(chatId) { seenChatIds[chatId] = true; });
+        const projects = Object.keys(projectsById).map(function(projectId) { return projectsById[projectId]; });
+        const chatGroups = await Promise.all(projects.map(async function(project) {
+          try {
+            const chats = await apiRequest('/api/projects/' + encodeURIComponent(project.id) + '/chats');
+            return (chats || []).map(function(chat) { return { project: project, chat: chat }; });
+          } catch (e) {
+            return [];
+          }
+        }));
+        chatGroups.forEach(function(group) {
+          group.forEach(function(item) {
+            if (seenChatIds[item.chat.id]) return;
+            seenChatIds[item.chat.id] = true;
+            entries.push(createQuickSwitcherEntry(
+              'chat',
+              item.chat.id,
+              item.chat.title,
+              item.project.name + ' · ' + item.chat.mode + ' · ' + item.chat.permission_mode,
+              async function() {
+                if (currentProjectId !== item.project.id) {
+                  await selectProject(item.project.id);
+                }
+                selectChat(item.chat.id);
+              }
+            ));
+          });
+        });
+        return entries;
+      }
+
+      function renderQuickSwitcherResults() {
+        if (!quickSwitcherResultsEl) return;
+        const query = (quickSwitcherInput.value || '').trim().toLowerCase();
+        const filtered = quickSwitcherEntries.filter(function(entry) {
+          return !query ||
+            entry.label.toLowerCase().indexOf(query) !== -1 ||
+            String(entry.meta || '').toLowerCase().indexOf(query) !== -1;
+        });
+        if (quickSwitcherActiveIndex >= filtered.length) {
+          quickSwitcherActiveIndex = 0;
+        }
+        quickSwitcherResultsEl.textContent = '';
+        if (!filtered.length) {
+          quickSwitcherResultsEl.appendChild(createEl('div', {
+            className: 'empty-state',
+            textContent: 'No matching projects or conversations.'
+          }));
+          quickSwitcherInput.removeAttribute('aria-activedescendant');
+          return;
+        }
+        filtered.forEach(function(entry, index) {
+          const option = createEl('button', {
+            type: 'button',
+            className: 'quick-switcher-item',
+            role: 'option',
+            id: 'quick-switcher-option-' + index,
+            'aria-selected': index === quickSwitcherActiveIndex ? 'true' : 'false'
+          }, [
+            createEl('span', { className: 'quick-switcher-item-kind', textContent: entry.kind }),
+            createEl('span', { textContent: entry.label }),
+            createEl('span', { className: 'quick-switcher-item-meta', textContent: entry.meta })
+          ]);
+          option.addEventListener('click', function() {
+            chooseQuickSwitcherEntry(entry);
+          });
+          quickSwitcherResultsEl.appendChild(option);
+        });
+        quickSwitcherInput.setAttribute(
+          'aria-activedescendant',
+          'quick-switcher-option-' + quickSwitcherActiveIndex
+        );
+      }
+
+      function chooseQuickSwitcherEntry(entry) {
+        closeQuickSwitcher();
+        if (entry && typeof entry.action === 'function') {
+          Promise.resolve(entry.action()).catch(function(e) {
+            showToast('Could not switch context: ' + e.message, true);
+          });
+        }
+      }
+
+      function openQuickSwitcher() {
+        if (!quickSwitcherModalEl) return;
+        const settingsOpen = settingsModalEl && settingsModalEl.classList.contains('open');
+        const opener = settingsOpen
+          ? (lastFocusedBeforeSettings || document.activeElement)
+          : document.activeElement;
+        if (settingsOpen) {
+          closeSettings(false);
+        }
+        if (addProjectModal && addProjectModal.classList.contains('open')) {
+          closeAddProject(false);
+        }
+        lastFocusedBeforeQuickSwitcher = opener;
+        quickSwitcherModalEl.classList.add('open');
+        quickSwitcherModalEl.setAttribute('aria-hidden', 'false');
+        if (quickSwitcherInput) {
+          quickSwitcherInput.value = '';
+          quickSwitcherInput.setAttribute('aria-expanded', 'true');
+        }
+        quickSwitcherEntries = buildQuickSwitcherEntries();
+        quickSwitcherActiveIndex = 0;
+        renderQuickSwitcherResults();
+        window.setTimeout(function() { focusElement(quickSwitcherInput); }, 0);
+        loadAllQuickSwitcherEntries().then(function(entries) {
+          if (!quickSwitcherModalEl.classList.contains('open')) return;
+          quickSwitcherEntries = entries;
+          quickSwitcherActiveIndex = 0;
+          renderQuickSwitcherResults();
+        }).catch(function(e) {
+          console.error('Failed to load quick switcher entries:', e);
+        });
+      }
+
+      function closeQuickSwitcher(restoreFocus) {
+        if (!quickSwitcherModalEl || !quickSwitcherModalEl.classList.contains('open')) return;
+        quickSwitcherModalEl.classList.remove('open');
+        quickSwitcherModalEl.setAttribute('aria-hidden', 'true');
+        if (quickSwitcherInput) quickSwitcherInput.setAttribute('aria-expanded', 'false');
+        if (restoreFocus !== false) {
+          focusElement(lastFocusedBeforeQuickSwitcher);
         }
       }
 
@@ -1630,21 +2056,8 @@ pub fn render_index_html() -> String {
       }
 
       function trapSettingsFocus(event) {
-        if (event.key !== 'Tab' || !settingsModalEl.classList.contains('open')) return;
-        const focusable = Array.prototype.filter.call(
-          settingsModalEl.querySelectorAll('button, input, select, textarea, [href]'),
-          function(node) { return !node.disabled && node.offsetParent !== null; }
-        );
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
+        if (!settingsModalEl.classList.contains('open')) return;
+        trapFocusWithin(settingsModalEl, event);
       }
 
       function escapeHtml(value) {
@@ -2408,18 +2821,15 @@ pub fn render_index_html() -> String {
       });
 
       btnOpenAddProject.addEventListener('click', function() {
-        addProjectError.textContent = '';
-        addProjectError.classList.remove('visible');
-        addProjectModal.classList.toggle('open');
         if (addProjectModal.classList.contains('open')) {
-          inputProjectName.focus();
+          closeAddProject();
+        } else {
+          openAddProject(btnOpenAddProject);
         }
       });
 
       btnCancelProject.addEventListener('click', function() {
-        addProjectModal.classList.remove('open');
-        addProjectError.textContent = '';
-        addProjectError.classList.remove('visible');
+        closeAddProject();
       });
 
       addProjectModal.addEventListener('submit', async function(e) {
@@ -2448,7 +2858,7 @@ pub fn render_index_html() -> String {
           const created = await res.json();
           inputProjectName.value = '';
           inputProjectPath.value = '';
-          addProjectModal.classList.remove('open');
+          closeAddProject(false);
           await loadProjects(created.id);
         } catch (err) {
           addProjectError.textContent = err.message;
@@ -2458,7 +2868,7 @@ pub fn render_index_html() -> String {
 
       btnNewChat.addEventListener('click', async function() {
         if (!currentProjectId) {
-          addProjectModal.classList.add('open');
+          openAddProject(btnNewChat);
           addProjectError.textContent = 'Register or select a project first before creating a chat.';
           addProjectError.classList.add('visible');
           return;
@@ -2490,20 +2900,88 @@ pub fn render_index_html() -> String {
       selectChatMode.addEventListener('change', updateWorkspaceHeader);
       selectPermissionMode.addEventListener('change', updateWorkspaceHeader);
 
+      if (btnToggleSidebar) btnToggleSidebar.addEventListener('click', toggleSidebar);
+      if (btnShowSidebar) btnShowSidebar.addEventListener('click', toggleSidebar);
+      if (btnToggleInspector) btnToggleInspector.addEventListener('click', toggleInspector);
+      if (btnShowInspector) btnShowInspector.addEventListener('click', toggleInspector);
+
       if (btnOpenSettings) {
         btnOpenSettings.addEventListener('click', function() {
           openSettings('providers');
         });
       }
-      if (btnCloseSettings) btnCloseSettings.addEventListener('click', closeSettings);
+      if (btnCloseSettings) {
+        btnCloseSettings.addEventListener('click', function() {
+          closeSettings();
+        });
+      }
       if (settingsModalEl) {
         settingsModalEl.addEventListener('click', function(event) {
           if (event.target === settingsModalEl) closeSettings();
         });
       }
+      if (btnCloseQuickSwitcher) {
+        btnCloseQuickSwitcher.addEventListener('click', function() {
+          closeQuickSwitcher();
+        });
+      }
+      if (quickSwitcherModalEl) {
+        quickSwitcherModalEl.addEventListener('click', function(event) {
+          if (event.target === quickSwitcherModalEl) closeQuickSwitcher();
+        });
+      }
+      if (quickSwitcherInput) {
+        quickSwitcherInput.addEventListener('input', function() {
+          quickSwitcherActiveIndex = 0;
+          renderQuickSwitcherResults();
+        });
+        quickSwitcherInput.addEventListener('keydown', function(event) {
+          const visibleCount = quickSwitcherResultsEl
+            ? quickSwitcherResultsEl.querySelectorAll('[role="option"]').length
+            : 0;
+          if (event.key === 'ArrowDown' && visibleCount) {
+            event.preventDefault();
+            quickSwitcherActiveIndex = (quickSwitcherActiveIndex + 1) % visibleCount;
+            renderQuickSwitcherResults();
+          } else if (event.key === 'ArrowUp' && visibleCount) {
+            event.preventDefault();
+            quickSwitcherActiveIndex = (quickSwitcherActiveIndex - 1 + visibleCount) % visibleCount;
+            renderQuickSwitcherResults();
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            const query = (quickSwitcherInput.value || '').trim().toLowerCase();
+            const filtered = quickSwitcherEntries.filter(function(entry) {
+              return !query ||
+                entry.label.toLowerCase().indexOf(query) !== -1 ||
+                String(entry.meta || '').toLowerCase().indexOf(query) !== -1;
+            });
+            if (filtered.length) {
+              chooseQuickSwitcherEntry(filtered[Math.min(quickSwitcherActiveIndex, filtered.length - 1)]);
+            }
+          }
+        });
+      }
       settingsTabButtons.forEach(function(button) {
         button.addEventListener('click', function() {
           switchSettingsTab(button.getAttribute('data-settings-tab'));
+        });
+        button.addEventListener('keydown', function(event) {
+          const currentIndex = settingsTabButtons.indexOf(button);
+          let nextIndex = null;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+            nextIndex = (currentIndex + 1) % settingsTabButtons.length;
+          } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+            nextIndex = (currentIndex - 1 + settingsTabButtons.length) % settingsTabButtons.length;
+          } else if (event.key === 'Home') {
+            nextIndex = 0;
+          } else if (event.key === 'End') {
+            nextIndex = settingsTabButtons.length - 1;
+          }
+          if (nextIndex === null) return;
+          event.preventDefault();
+          const nextTab = settingsTabButtons[nextIndex];
+          switchSettingsTab(nextTab.getAttribute('data-settings-tab'));
+          nextTab.focus();
         });
       });
 
@@ -2607,18 +3085,95 @@ pub fn render_index_html() -> String {
           }
         });
       }
+      function isEditableTarget(target) {
+        if (!target || !target.tagName) return false;
+        return target.isContentEditable === true ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT';
+      }
+
       document.addEventListener('keydown', function(event) {
-        if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+        if (event.defaultPrevented) return;
+
+        if (event.key === 'Tab') {
+          if (quickSwitcherModalEl && quickSwitcherModalEl.classList.contains('open')) {
+            trapFocusWithin(quickSwitcherModalEl, event);
+          } else if (settingsModalEl && settingsModalEl.classList.contains('open')) {
+            trapSettingsFocus(event);
+          }
+          return;
+        }
+
+        if (event.key === 'Escape') {
+          if (quickSwitcherModalEl && quickSwitcherModalEl.classList.contains('open')) {
+            event.preventDefault();
+            closeQuickSwitcher();
+            return;
+          }
+          if (settingsModalEl && settingsModalEl.classList.contains('open')) {
+            event.preventDefault();
+            closeSettings();
+            return;
+          }
+          if (addProjectModal && addProjectModal.classList.contains('open')) {
+            event.preventDefault();
+            closeAddProject();
+            return;
+          }
+          return;
+        }
+
+        if (!(event.metaKey || event.ctrlKey) || event.altKey || event.repeat) return;
+        const shortcutKey = event.key.toLowerCase();
+
+        // Cmd/Ctrl + C, V, X, A, Z, and Shift + Z stay owned by the focused
+        // input, textarea, or contenteditable element.
+        if (NATIVE_EDITING_SHORTCUTS.indexOf(shortcutKey) !== -1) return;
+        if (event.shiftKey && shortcutKey !== ',') return;
+
+        if (shortcutKey === 'k') {
+          event.preventDefault();
+          if (quickSwitcherModalEl && quickSwitcherModalEl.classList.contains('open')) {
+            closeQuickSwitcher();
+          } else {
+            openQuickSwitcher();
+          }
+          return;
+        }
+        if (shortcutKey === ',') {
           event.preventDefault();
           openSettings(currentSettingsTab);
           return;
         }
-        if (event.key === 'Escape' && settingsModalEl && settingsModalEl.classList.contains('open')) {
+        if (shortcutKey === '/') {
+          // Keep editor-specific comment shortcuts in editable fields.
+          if (isEditableTarget(event.target)) return;
           event.preventDefault();
-          closeSettings();
+          openSettings('keyboard');
           return;
         }
-        trapSettingsFocus(event);
+
+        const dialogOpen =
+          (settingsModalEl && settingsModalEl.classList.contains('open')) ||
+          (quickSwitcherModalEl && quickSwitcherModalEl.classList.contains('open')) ||
+          (addProjectModal && addProjectModal.classList.contains('open'));
+        if (dialogOpen) return;
+
+        if (shortcutKey === 'n') {
+          event.preventDefault();
+          btnNewChat.click();
+          return;
+        }
+        if (shortcutKey === 'b') {
+          event.preventDefault();
+          toggleSidebar();
+          return;
+        }
+        if (shortcutKey === 'i') {
+          event.preventDefault();
+          toggleInspector();
+        }
       });
 
       if (btnSkipOnboarding) {
@@ -2634,7 +3189,7 @@ pub fn render_index_html() -> String {
       }
       if (btnOnboardingAddProject) {
         btnOnboardingAddProject.addEventListener('click', function() {
-          btnOpenAddProject.click();
+          openAddProject(btnOnboardingAddProject);
         });
       }
       if (btnOnboardingProvider) {
@@ -2799,6 +3354,15 @@ pub fn render_index_html() -> String {
           showToast('Copy failed: ' + e.message, true);
         }
       });
+
+      function initializeResponsivePanels() {
+        if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) {
+          setSidebarCollapsed(true);
+          setInspectorCollapsed(true);
+        }
+      }
+
+      initializeResponsivePanels();
 
       (async function initializeUi() {
         await loadAppPreferences();
@@ -3142,7 +3706,7 @@ mod tests {
         // Settings modal, entry point and keyboard shortcut
         assert!(html.contains("id=\"settings-modal\""));
         assert!(html.contains("id=\"btn-open-settings\""));
-        assert!(html.contains("event.key === ','"));
+        assert!(html.contains("shortcutKey === ','"));
 
         // Six settings tabs and their panels
         assert!(html.contains("data-settings-tab=\"providers\""));
@@ -3207,5 +3771,165 @@ mod tests {
         // Chat rename and retry
         assert!(html.contains("btn-rename-chat"));
         assert!(html.contains("btn-retry"));
+    }
+
+    #[test]
+    fn test_keyboard_shortcuts_quick_switcher_focus_trap_and_cheatsheet() {
+        let html = render_index_html();
+
+        // Global shortcuts use the platform primary modifier and are documented
+        // in the in-app cheatsheet.
+        assert!(html.contains("event.metaKey || event.ctrlKey"));
+        assert!(html.contains("shortcutKey === 'k'"));
+        assert!(html.contains("shortcutKey === 'n'"));
+        assert!(html.contains("shortcutKey === 'b'"));
+        assert!(html.contains("shortcutKey === 'i'"));
+        assert!(html.contains("shortcutKey === ','"));
+        assert!(html.contains("event.key === 'Escape'"));
+        assert!(html.contains("e.key === 'Enter' && (e.metaKey || e.ctrlKey)"));
+        assert!(html.contains("id=\"quick-switcher-modal\""));
+        assert!(html.contains("id=\"quick-switcher-input\""));
+        assert!(html.contains("id=\"quick-switcher-results\""));
+        assert!(html.contains("role=\"listbox\""));
+        assert!(html.contains("id=\"tab-keyboard\""));
+        assert!(html.contains("id=\"panel-keyboard\""));
+        assert!(html.contains("id=\"keyboard-shortcuts-table\""));
+        assert!(html.contains("<kbd>Cmd/Ctrl</kbd> + <kbd>N</kbd>"));
+        assert!(html.contains("<kbd>Cmd/Ctrl</kbd> + <kbd>B</kbd>"));
+        assert!(html.contains("<kbd>Cmd/Ctrl</kbd> + <kbd>I</kbd>"));
+        assert!(html.contains("<kbd>Cmd/Ctrl</kbd> + <kbd>K</kbd>"));
+        assert!(html.contains("<kbd>Esc</kbd>"));
+
+        // Text-editing shortcuts stay with the focused field.
+        assert!(html.contains("const NATIVE_EDITING_SHORTCUTS = ['a', 'c', 'v', 'x', 'y', 'z'];"));
+        assert!(html.contains("if (NATIVE_EDITING_SHORTCUTS.indexOf(shortcutKey) !== -1) return;"));
+        assert!(html.contains("function isEditableTarget("));
+
+        // Focus trapping and restoration are wired for every dialog/opener.
+        assert!(html.contains("function trapFocusWithin("));
+        assert!(html.contains("trapFocusWithin(quickSwitcherModalEl, event)"));
+        assert!(html.contains("trapSettingsFocus(event)"));
+        assert!(html.contains("focusElement(lastFocusedBeforeSettings)"));
+        assert!(html.contains("focusElement(lastFocusedBeforeQuickSwitcher)"));
+        assert!(html.contains("focusElement(lastFocusedBeforeAddProject)"));
+        assert!(html.contains("function openAddProject("));
+        assert!(html.contains("function closeAddProject("));
+
+        // Sidebar and inspector can be toggled and restored from the header.
+        assert!(html.contains("function setSidebarCollapsed("));
+        assert!(html.contains("function setInspectorCollapsed("));
+        assert!(html.contains("id=\"btn-show-sidebar\""));
+        assert!(html.contains("id=\"btn-show-inspector\""));
+        assert!(html.contains("#app-shell.sidebar-collapsed #sidebar { display: none; }"));
+        assert!(html.contains("#app-shell.inspector-collapsed #details-panel { display: none; }"));
+    }
+
+    #[test]
+    fn test_modal_landmarks_and_aria_attributes() {
+        let html = render_index_html();
+
+        // Structural landmarks and live regions.
+        assert!(html.contains("<aside id=\"sidebar\" role=\"navigation\" aria-label=\"Sidebar\" aria-hidden=\"false\">"));
+        assert!(
+            html.contains(
+                "<main id=\"main-workspace\" role=\"main\" aria-label=\"Main Workspace\">"
+            )
+        );
+        assert!(html.contains("<aside id=\"details-panel\" role=\"complementary\" aria-label=\"Contextual Details\" aria-hidden=\"false\">"));
+        assert!(html.contains("id=\"messages\" role=\"log\" aria-live=\"polite\""));
+        assert!(html.contains("id=\"reconnect-banner\" class=\"warning-banner\" role=\"alert\" aria-live=\"assertive\""));
+
+        // Dialogs are labelled modal dialogs and start hidden.
+        assert!(
+            html.contains("id=\"settings-modal\" class=\"modal-overlay\" aria-hidden=\"true\"")
+        );
+        assert!(
+            html.contains(
+                "id=\"quick-switcher-modal\" class=\"modal-overlay\" aria-hidden=\"true\""
+            )
+        );
+        assert!(
+            html.contains("role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"settings-title\"")
+        );
+        assert!(html.contains(
+            "role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"quick-switcher-title\""
+        ));
+        assert!(html.contains("aria-autocomplete=\"list\""));
+        assert!(html.contains("aria-controls=\"quick-switcher-results\""));
+
+        // Settings tabs expose tab/tabpanel semantics, including the keyboard tab.
+        assert!(html.contains(
+            "role=\"tablist\" aria-label=\"Settings sections\" aria-orientation=\"vertical\""
+        ));
+        assert!(html.contains("id=\"tab-keyboard\" type=\"button\" role=\"tab\" data-settings-tab=\"keyboard\" aria-selected=\"false\" aria-controls=\"panel-keyboard\""));
+        assert!(
+            html.contains(
+                "id=\"panel-keyboard\" role=\"tabpanel\" aria-labelledby=\"tab-keyboard\""
+            )
+        );
+    }
+
+    #[test]
+    fn test_design_token_css_variables_are_complete_for_both_themes() {
+        let light = light_theme_tokens();
+        let dark = dark_theme_tokens();
+        let light_css = format_css_variables(&light);
+        let dark_css = format_css_variables(&dark);
+
+        let variable_names = [
+            "--bg-app:",
+            "--bg-panel:",
+            "--bg-surface:",
+            "--text-primary:",
+            "--text-muted:",
+            "--accent:",
+            "--danger:",
+            "--success:",
+            "--border:",
+            "--font-ui:",
+            "--font-mono:",
+            "--size-xs:",
+            "--size-sm:",
+            "--size-md:",
+            "--size-lg:",
+            "--size-xl:",
+            "--weight-regular:",
+            "--weight-medium:",
+            "--weight-bold:",
+            "--space-xs:",
+            "--space-sm:",
+            "--space-md:",
+            "--space-lg:",
+            "--space-xl:",
+            "--radius-sm:",
+            "--radius-md:",
+            "--radius-lg:",
+            "--border-width:",
+            "--duration-fast:",
+            "--duration-normal:",
+            "--duration-slow:",
+            "--easing-standard:",
+        ];
+
+        for variable in variable_names {
+            assert!(
+                light_css.contains(variable),
+                "light theme is missing CSS variable {variable}"
+            );
+            assert!(
+                dark_css.contains(variable),
+                "dark theme is missing CSS variable {variable}"
+            );
+        }
+
+        assert!(light_css.contains(light.colors.bg_app));
+        assert!(dark_css.contains(dark.colors.bg_app));
+        assert_ne!(light.colors.bg_app, dark.colors.bg_app);
+        assert_ne!(light.colors.accent, dark.colors.accent);
+
+        let html = render_index_html();
+        assert!(html.contains("[data-theme=\"light\"]"));
+        assert!(html.contains("[data-theme=\"dark\"]"));
+        assert!(html.contains("@media (prefers-color-scheme: dark)"));
     }
 }
