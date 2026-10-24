@@ -23,10 +23,13 @@ impl RunEngine {
         for run in &recoverable {
             let updated = repo.recover_interrupted_run(&run.id).await?;
             info!(
+                target: "gaggle.recovery",
+                chat_id = %updated.chat_id,
                 run_id = %updated.id,
                 previous_status = %run.status,
                 new_status = %updated.status,
                 resume_count = updated.resume_count,
+                data_preservation = "preserved",
                 "Recovered interrupted durable run safely to paused state"
             );
             recovered_runs.push(updated);

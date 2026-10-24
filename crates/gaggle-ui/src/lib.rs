@@ -1295,10 +1295,11 @@ pub fn render_index_html() -> String {
                 <h3>Gaggle doctor</h3>
                 <div class="inline-actions">
                   <button id="btn-refresh-diagnostics" class="btn btn-secondary" type="button">Refresh</button>
-                  <button id="btn-copy-diagnostics" class="btn" type="button">Copy Redacted Diagnostics</button>
+                  <button id="btn-copy-diagnostics" class="btn btn-secondary" type="button">Copy Redacted Diagnostics</button>
+                  <button id="btn-export-diagnostics" class="btn" type="button">Export Redacted Diagnostics</button>
                 </div>
               </div>
-              <p class="settings-note">Live report from <span class="mono">GET /api/diagnostics</span>. It contains no API keys or prompts, but database paths can reveal local directory names.</p>
+              <p class="settings-note">Live report from <span class="mono">GET /api/diagnostics</span>. Export calls <span class="mono">GET /api/diagnostics/export</span> only when you click it. It contains no API keys, prompts, source files, or raw tool output, but database paths can reveal local directory names.</p>
               <div id="diagnostics-status" class="settings-note" role="status"></div>
               <div id="diagnostics-output"><div class="empty-state">Loading diagnostics…</div></div>
             </div>
@@ -1395,6 +1396,7 @@ pub fn render_index_html() -> String {
       const settingsThemeSelect = document.getElementById('settings-theme-select');
       const btnRefreshDiagnostics = document.getElementById('btn-refresh-diagnostics');
       const btnCopyDiagnostics = document.getElementById('btn-copy-diagnostics');
+      const btnExportDiagnostics = document.getElementById('btn-export-diagnostics');
       const diagnosticsStatusEl = document.getElementById('diagnostics-status');
       const diagnosticsOutputEl = document.getElementById('diagnostics-output');
       const memoryForm = document.getElementById('form-add-memory');
@@ -2010,13 +2012,21 @@ pub fn render_index_html() -> String {
         try {
           const report = await apiRequest('/api/diagnostics');
           diagnosticsReport = report;
+          const build = report.build || {};
+          const health = report.core_health || { status: 'unknown', checks: [] };
+          const capabilities = Array.isArray(report.capabilities) ? report.capabilities : [];
           const rows = [
             ['service', report.service],
             ['version', report.version],
+            ['build_commit', build.commit || 'unknown'],
+            ['build_profile', build.profile || 'unknown'],
+            ['build_target', build.target || 'unknown'],
+            ['rustc', build.rustc || 'unknown'],
             ['os', report.os],
             ['arch', report.arch],
             ['db_path', report.db_path],
             ['db_healthy', String(report.db_healthy)],
+            ['core_health', health.status],
             ['journal_mode', report.journal_mode],
             ['foreign_keys_enabled', String(report.foreign_keys_enabled)],
             ['applied_migrations', String(report.applied_migrations)],
@@ -2024,27 +2034,78 @@ pub fn render_index_html() -> String {
             ['enabled_extensions_count', String(report.enabled_extensions_count)],
             ['pending_approvals_count', String(report.pending_approvals_count)]
           ];
-          const tbody = createEl('tbody');
-          rows.forEach(function(row) {
-            tbody.appendChild(createEl('tr', {}, [
-              createEl('th', { textContent: row[0] }),
-              createEl('td', { className: 'mono', textContent: row[1] })
-            ]));
+          const diagnosticsTable = buildDataTable('Field', 'Value', rows.map(function(row) {
+            return [row[0], row[1]];
+          }));
+
+          const healthRows = (health.checks || []).map(function(check) {
+            return [check.name, check.status + ' — ' + check.detail];
           });
-          const table = createEl('table', { className: 'data-table' }, [
-            createEl('thead', {}, [createEl('tr', {}, [
-              createEl('th', { textContent: 'Field' }),
-              createEl('th', { textContent: 'Value' })
-            ])]),
-            tbody
-          ]);
+          const healthTable = buildDataTable('Core health check', 'Result', healthRows);
+
+          const capabilityItems = capabilities.map(function(capability) {
+            const item = createEl('div', { className: 'settings-section' }, [
+              createEl('div', { className: 'inline-actions' }, [
+                createEl('span', {
+                  className: 'badge ' + (capability.available ? 'status-ok' : ''),
+                  textContent: capability.state
+                }),
+                createEl('strong', { textContent: ' ' + capability.label + ' ' })
+              ]),
+              createEl('div', { className: 'settings-note', textContent: capability.reason }),
+              capability.available || !capability.action ? null : createEl('div', {
+                className: 'settings-note mono',
+                textContent: 'action: ' + capability.action
+              })
+            ].filter(Boolean));
+            return item;
+          });
+          const capabilitySection = createEl('div', { className: 'settings-section' }, [
+            createEl('h3', { textContent: 'Optional capabilities' })
+          ].concat(capabilityItems));
+
           diagnosticsOutputEl.textContent = '';
-          diagnosticsOutputEl.appendChild(table);
-          diagnosticsStatusEl.textContent = 'Fetched live from the local server. Redaction removes secrets; paths are shown as-is.';
+          diagnosticsOutputEl.appendChild(diagnosticsTable);
+          diagnosticsOutputEl.appendChild(healthTable);
+          diagnosticsOutputEl.appendChild(capabilitySection);
+          diagnosticsStatusEl.textContent = 'Fetched live from the local server. Redaction removes secrets; paths are shown as-is. No telemetry is sent.';
         } catch (e) {
           diagnosticsOutputEl.textContent = '';
           diagnosticsOutputEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load diagnostics: ' + e.message }));
         }
+      }
+
+      function buildDataTable(headingA, headingB, rows) {
+        const tbody = createEl('tbody');
+        rows.forEach(function(row) {
+          tbody.appendChild(createEl('tr', {}, [
+            createEl('th', { textContent: row[0] }),
+            createEl('td', { className: 'mono', textContent: String(row[1]) })
+          ]));
+        });
+        return createEl('table', { className: 'data-table' }, [
+          createEl('thead', {}, [createEl('tr', {}, [
+            createEl('th', { textContent: headingA }),
+            createEl('th', { textContent: headingB })
+          ])]),
+          tbody
+        ]);
+      }
+
+      async function exportDiagnostics() {
+        const bundle = await apiRequest('/api/diagnostics/export');
+        const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = createEl('a', {
+          href: url,
+          download: 'gaggle-diagnostics-' + Date.now() + '.json'
+        });
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(function() { URL.revokeObjectURL(url); }, 0);
+        diagnosticsStatusEl.textContent = 'Exported redacted diagnostics. Review the file before sharing it.';
+        showToast('Redacted diagnostics exported.');
       }
 
       async function loadPermissionsForProject() {
@@ -2799,6 +2860,14 @@ pub fn render_index_html() -> String {
           showToast('Copy failed: ' + e.message, true);
         }
       });
+      btnExportDiagnostics.addEventListener('click', async function() {
+        try {
+          await exportDiagnostics();
+        } catch (e) {
+          diagnosticsStatusEl.textContent = 'Export failed: ' + e.message;
+          showToast('Export failed: ' + e.message, true);
+        }
+      });
 
       (async function initializeUi() {
         await loadAppPreferences();
@@ -2828,6 +2897,38 @@ pub fn render_index_html() -> String {
         if (autoScroll) {
           scrollToBottomIfNeeded();
         }
+        return div;
+      }
+
+      function appendProblemNotice(errorText, retryGuidance, failureCategory) {
+        const detailParts = [];
+        if (failureCategory) detailParts.push('Category: ' + failureCategory);
+        if (retryGuidance) detailParts.push('Next step: ' + retryGuidance);
+        const exportButton = createEl('button', {
+          className: 'btn btn-secondary',
+          type: 'button',
+          textContent: 'Copy redacted diagnostics',
+          onclick: async function() {
+            try {
+              const bundle = await apiRequest('/api/diagnostics/export');
+              await copyToClipboard(JSON.stringify(bundle, null, 2));
+              showToast('Redacted diagnostics copied. Review before sharing.');
+            } catch (e) {
+              showToast('Could not copy diagnostics: ' + e.message, true);
+            }
+          }
+        });
+        const card = createEl('div', { className: 'action' }, [
+          createEl('div', { textContent: '⚠ ' + (errorText || 'Run failed') }),
+          detailParts.length ? createEl('div', {
+            className: 'detail',
+            textContent: detailParts.join(' · ')
+          }) : null,
+          createEl('div', { className: 'inline-actions' }, [exportButton])
+        ].filter(Boolean));
+        const div = createEl('div', { className: 'message assistant' }, [card]);
+        messagesEl.appendChild(div);
+        scrollToBottomIfNeeded();
         return div;
       }
 
@@ -2952,7 +3053,7 @@ pub fn render_index_html() -> String {
               activeAssistantMessageEl.classList.remove('streaming-cursor');
               activeAssistantMessageEl = null;
             }
-            appendMessage('assistant', '[Run failed: ' + (data.error || 'unknown') + ']');
+            appendProblemNotice(data.error, data.retry_guidance, data.failure_category);
             btnStop.disabled = true;
             break;
         }
@@ -3007,7 +3108,7 @@ pub fn render_index_html() -> String {
             eventSource.addEventListener('run.failed', handleSSEEvent);
           }
         } catch (e) {
-          appendMessage('assistant', 'Error: ' + e.message);
+          appendProblemNotice(e.message, 'Review the error, then retry the message. Your prompt was preserved in the composer.', 'request_failed');
           btnStop.disabled = true;
           // Preserve the user's prompt for retry on transient errors
           if (!composerText.value) {
@@ -3173,6 +3274,11 @@ mod tests {
         assert!(html.contains("id=\"extension-warning\""));
         assert!(html.contains("exceeds_recommended_tool_limit"));
         assert!(html.contains("id=\"btn-copy-diagnostics\""));
+        assert!(html.contains("id=\"btn-export-diagnostics\""));
+        assert!(html.contains("/api/diagnostics/export"));
+        assert!(html.contains("function exportDiagnostics("));
+        assert!(html.contains("Optional capabilities"));
+        assert!(html.contains("function appendProblemNotice("));
         assert!(html.contains("id=\"form-add-memory\""));
         assert!(html.contains("id=\"memory-list\""));
         assert!(html.contains("id=\"btn-chatgpt-oauth\""));

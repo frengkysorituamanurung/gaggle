@@ -1,5 +1,6 @@
 use crate::{
     connection::{new_id, now_ms},
+    correlation::CorrelationIds,
     models::{Approval, AuditLog, FileChange, Run, RunCheckpoint, RunEvent, ToolCall},
 };
 use anyhow::{Context, Result, bail};
@@ -7,11 +8,22 @@ use sqlx::SqlitePool;
 
 pub struct RunRepository {
     pool: SqlitePool,
+    correlation: CorrelationIds,
 }
 
 impl RunRepository {
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            correlation: CorrelationIds::default(),
+        }
+    }
+
+    /// Attaches chat/run/tool correlation identifiers so repository log entries carry the same
+    /// fields as the runtime that issued the call.
+    pub fn with_correlation(mut self, correlation: CorrelationIds) -> Self {
+        self.correlation = correlation;
+        self
     }
 
     pub async fn create(
@@ -42,6 +54,14 @@ impl RunRepository {
             .bind(&id)
             .fetch_one(&self.pool)
             .await?;
+        tracing::debug!(
+            target: "gaggle.db.runs",
+            chat_id = %chat_id,
+            run_id = %run.id,
+            tool_call_id = %self.correlation.tool_call_id_field(),
+            model_id = %model_id.unwrap_or("-"),
+            "Durable run row created"
+        );
         Ok(run)
     }
 
@@ -83,6 +103,16 @@ impl RunRepository {
             .bind(&id)
             .fetch_one(&self.pool)
             .await?;
+        // Event payloads can contain model deltas and tool results; only metadata is logged.
+        tracing::debug!(
+            target: "gaggle.db.runs",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %run_id,
+            tool_call_id = %self.correlation.tool_call_id_field(),
+            event_kind = %kind,
+            event_seq = ev.seq,
+            "Durable run event appended"
+        );
         Ok(ev)
     }
 
@@ -219,6 +249,15 @@ impl RunRepository {
             .bind(run_id)
             .fetch_one(&self.pool)
             .await?;
+        tracing::info!(
+            target: "gaggle.db.runs",
+            chat_id = %updated.chat_id,
+            run_id = %updated.id,
+            tool_call_id = %self.correlation.tool_call_id_field(),
+            new_status = %updated.status,
+            resume_count = updated.resume_count,
+            "Interrupted run recovered without replaying side effects"
+        );
         Ok(updated)
     }
 
@@ -255,6 +294,17 @@ impl RunRepository {
             .bind(&id)
             .fetch_one(&self.pool)
             .await?;
+        tracing::debug!(
+            target: "gaggle.db.runs",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %run_id,
+            tool_call_id = %tc.id,
+            tool_name = %tc.tool_name,
+            step_index,
+            args_bytes = args_json.len(),
+            status = %status,
+            "Tool call recorded"
+        );
         Ok(tc)
     }
 
@@ -289,6 +339,17 @@ impl RunRepository {
             .bind(&id)
             .fetch_one(&self.pool)
             .await?;
+        tracing::info!(
+            target: "gaggle.db.runs",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %self.correlation.run_id_field(),
+            tool_call_id = %tool_call_id,
+            approval_id = %approval.id,
+            approval_kind = %approval.kind,
+            has_command = command.is_some(),
+            has_working_directory = cwd.is_some(),
+            "Approval requested for tool call"
+        );
         Ok(approval)
     }
 
@@ -359,6 +420,17 @@ impl RunRepository {
         self.get_run_by_id(run_id)
             .await?
             .with_context(|| format!("Run '{run_id}' not found after update"))
+            .inspect(|run| {
+                tracing::info!(
+                    target: "gaggle.db.runs",
+                    chat_id = %run.chat_id,
+                    run_id = %run.id,
+                    tool_call_id = %self.correlation.tool_call_id_field(),
+                    status = %run.status,
+                    has_error = run.error.is_some(),
+                    "Durable run status updated"
+                );
+            })
     }
 
     pub async fn update_tool_call_result(
@@ -387,6 +459,18 @@ impl RunRepository {
         self.get_tool_call_by_id(tool_call_id)
             .await?
             .with_context(|| format!("ToolCall '{tool_call_id}' not found after update"))
+            .inspect(|tool_call| {
+                tracing::debug!(
+                    target: "gaggle.db.runs",
+                    chat_id = %self.correlation.chat_id_field(),
+                    run_id = %tool_call.run_id,
+                    tool_call_id = %tool_call.id,
+                    tool_name = %tool_call.tool_name,
+                    status = %status,
+                    duration_ms,
+                    "Tool call result recorded"
+                );
+            })
     }
 
     pub async fn list_run_events(&self, run_id: &str, after_seq: i64) -> Result<Vec<RunEvent>> {
@@ -565,6 +649,16 @@ impl RunRepository {
             .bind(approval_id)
             .fetch_one(&self.pool)
             .await?;
+        tracing::info!(
+            target: "gaggle.db.runs",
+            chat_id = %self.correlation.chat_id_field(),
+            run_id = %self.correlation.run_id_field(),
+            tool_call_id = %updated.tool_call_id,
+            approval_id = %updated.id,
+            status = %updated.status,
+            remembered_rule = remember_rule_id.is_some(),
+            "Approval decision recorded"
+        );
         Ok(updated)
     }
 
