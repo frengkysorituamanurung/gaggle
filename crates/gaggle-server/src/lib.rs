@@ -56,6 +56,9 @@ use std::{
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+mod terminal;
+use terminal::{TerminalManager, terminal_routes};
+
 /// Pending ChatGPT OAuth authorization keyed by the OAuth `state` value. The PKCE verifier is
 /// held only in memory for the short authorization window and is never written to SQLite.
 #[derive(Clone)]
@@ -74,6 +77,7 @@ pub struct AppState {
     pub credential_store: Arc<dyn CredentialStore>,
     pub active_runs: ActiveRunRegistry,
     pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
+    pub terminal_manager: Arc<TerminalManager>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -361,6 +365,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/runs/{id}/events", get(stream_run_events))
         .route("/api/approvals/pending", get(list_pending_approvals))
         .route("/api/approvals/{id}/decide", post(decide_approval))
+        .merge(terminal_routes())
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -388,21 +393,26 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     let db_path = pool.connect_options().get_filename().to_path_buf();
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
+    let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
     Ok(AppState {
         pool,
         db_path,
         credential_store,
         active_runs,
         oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
+        terminal_manager,
     })
 }
 
 pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     let state = initialize_server_state(pool).await?;
+    let tm = state.terminal_manager.clone();
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "Gaggle server listening");
-    axum::serve(listener, app).await?;
+    let res = axum::serve(listener, app).await;
+    tm.shutdown_all().await;
+    res?;
     Ok(())
 }
 

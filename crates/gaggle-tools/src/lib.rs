@@ -14,6 +14,7 @@ pub mod browser_tools;
 pub mod fs_tools;
 pub mod git_tools;
 pub mod shell_tools;
+pub mod terminal;
 
 pub use browser_tools::{
     BrowserToolError, chromium_available, chromium_executable, close_all_browsers, close_browser,
@@ -31,6 +32,7 @@ pub use shell_tools::{
     DEFAULT_MAX_SHELL_OUTPUT_BYTES, DEFAULT_SHELL_TIMEOUT_MS, ShellExecOutput, ShellToolError,
     shell_exec,
 };
+pub use terminal::{DEFAULT_SCROLLBACK_BYTES, TerminalPty, TerminalPtyConfig, TerminalPtyError};
 
 pub struct BuiltinToolSpec {
     pub extension_name: &'static str,
