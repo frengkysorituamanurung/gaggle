@@ -95,6 +95,9 @@ pub struct CreateChatRequest {
     pub title: String,
     pub mode: Option<String>,
     pub permission_mode: Option<String>,
+    pub chat_type: Option<String>,
+    pub parent_chat_id: Option<String>,
+    pub parent_tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -569,8 +572,26 @@ async fn create_chat(
     let chat_repo = ChatRepository::new(state.pool.clone());
     let mode = req.mode.as_deref().unwrap_or("local");
     let permission_mode = req.permission_mode.as_deref().unwrap_or("ask");
+    let chat_type = req.chat_type.as_deref().unwrap_or("user");
+    if !matches!(
+        chat_type,
+        "user" | "subagent" | "scheduled" | "hidden" | "terminal"
+    ) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "chat_type must be one of: user, subagent, scheduled, hidden, terminal".to_string(),
+        ));
+    }
     let chat = chat_repo
-        .create(&req.project_id, &req.title, "user", mode, permission_mode)
+        .create_child_chat(
+            &req.project_id,
+            &req.title,
+            chat_type,
+            mode,
+            permission_mode,
+            req.parent_chat_id.as_deref(),
+            req.parent_tool_call_id.as_deref(),
+        )
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 

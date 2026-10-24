@@ -10,6 +10,9 @@ pub mod permission_engine;
 pub mod provider;
 pub mod provider_oauth;
 pub mod run_engine;
+pub mod subagent;
+pub mod subagent_manager;
+pub mod subagents;
 pub mod workspace_policy;
 
 pub use agent_loop::{
@@ -47,4 +50,8 @@ pub use provider_oauth::{
     ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, OAuthTokenSet, PkceAuthorization,
 };
 pub use run_engine::RunEngine;
+pub use subagents::{
+    DEFAULT_MAX_PARALLEL_SUBAGENTS, DEFAULT_SUBAGENT_DEPTH, DEFAULT_SUBAGENT_MAX_STEPS,
+    SubagentConfig, SubagentManager, SubagentOutcome, SubagentSpawnRequest,
+};
 pub use workspace_policy::{WorkspacePathError, WorkspacePathPolicy};

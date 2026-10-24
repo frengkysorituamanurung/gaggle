@@ -144,6 +144,69 @@ impl ChatRepository {
             .ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
     }
 
+    /// Creates a child chat for a subagent, recording parent linkage and `chat_type`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_child_chat(
+        &self,
+        project_id: &str,
+        title: &str,
+        chat_type: &str,
+        mode: &str,
+        permission_mode: &str,
+        parent_chat_id: Option<&str>,
+        parent_tool_call_id: Option<&str>,
+    ) -> Result<Chat> {
+        let id = new_id();
+        let now = now_ms();
+
+        sqlx::query(
+            r#"
+            INSERT INTO chats (
+                id, project_id, chat_type, title, mode, permission_mode,
+                parent_chat_id, parent_tool_call_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(project_id)
+        .bind(chat_type)
+        .bind(title)
+        .bind(mode)
+        .bind(permission_mode)
+        .bind(parent_chat_id)
+        .bind(parent_tool_call_id)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_by_id(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after insert"))
+    }
+
+    /// Convenience for creating a `chat_type = 'subagent'` child chat.
+    pub async fn create_subagent_chat(
+        &self,
+        project_id: &str,
+        title: &str,
+        mode: &str,
+        permission_mode: &str,
+        parent_chat_id: &str,
+        parent_tool_call_id: Option<&str>,
+    ) -> Result<Chat> {
+        self.create_child_chat(
+            project_id,
+            title,
+            "subagent",
+            mode,
+            permission_mode,
+            Some(parent_chat_id),
+            parent_tool_call_id,
+        )
+        .await
+    }
+
     pub async fn get_by_id(&self, id: &str) -> Result<Option<Chat>> {
         let chat = sqlx::query_as::<_, Chat>("SELECT * FROM chats WHERE id = ?")
             .bind(id)
