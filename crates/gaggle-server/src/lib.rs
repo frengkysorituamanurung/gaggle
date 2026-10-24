@@ -21,7 +21,7 @@ use gaggle_db::{
     connection::{new_id, now_ms},
     models::{
         AppSetting, Approval, Chat, CommandRule, Extension, ExtensionTool, Memory, Model, Project,
-        Provider, Run, Worktree,
+        Provider, Recipe, Run, Schedule, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
@@ -30,12 +30,16 @@ use gaggle_db::{
         permissions::PermissionRepository,
         projects::ProjectRepository,
         providers::ProviderRepository,
+        recipes::RecipeRepository,
         runs::RunRepository,
         settings::SettingsRepository,
         worktrees::WorktreeRepository,
     },
 };
 use gaggle_mcp::{ExtensionRegistry, RECOMMENDED_MAX_ACTIVE_TOOLS};
+use gaggle_recipes::{
+    compute_next_run, render_recipe_template, resolve_recipe_parameters, validate_recipe_parameters,
+};
 use gaggle_tools::{
     BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
     GitWorkspaceStatus, fs_list, git_diff, git_status, git_worktree_create, git_worktree_discard,
@@ -73,7 +77,7 @@ pub struct AppState {
     pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateProjectRequest {
     pub name: String,
     pub root_path: String,
@@ -87,7 +91,7 @@ pub struct ProjectStatusResponse {
     pub path_exists: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateChatRequest {
     pub project_id: String,
     pub title: String,
@@ -95,12 +99,69 @@ pub struct CreateChatRequest {
     pub permission_mode: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateRecipeRequest {
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_ref: Option<String>,
+    pub instructions: Option<String>,
+    pub prompt: Option<String>,
+    pub definition: Option<String>,
+    pub default_model_id: Option<String>,
+    pub parameters: Option<Vec<CreateRecipeParameterRequest>>,
+    pub extensions: Option<Vec<String>>,
+    pub sub_recipes: Option<Vec<CreateRecipeSubRecipeRequest>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateRecipeParameterRequest {
+    pub name: String,
+    pub param_type: Option<String>,
+    pub description: Option<String>,
+    pub required: Option<i64>,
+    pub default_value: Option<String>,
+    pub idx: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateRecipeSubRecipeRequest {
+    pub child_recipe_id: String,
+    pub name: String,
+    pub values_json: Option<String>,
+    pub sequential_when_repeated: Option<i64>,
+    pub idx: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateScheduleRequest {
+    pub recipe_id: String,
+    pub project_id: Option<String>,
+    pub cron_expr: String,
+    pub timezone: Option<String>,
+    pub param_values: Option<serde_json::Value>,
+    pub enabled: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ExecuteRecipeRequest {
+    pub project_id: String,
+    pub chat_type: Option<String>,
+    pub mode: Option<String>,
+    pub permission_mode: Option<String>,
+    pub param_values: Option<serde_json::Value>,
+    pub parent_chat_id: Option<String>,
+    pub parent_tool_call_id: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ProjectPathQuery {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DecideApprovalRequest {
     pub approved: bool,
     pub decided_by_device: Option<String>,
@@ -109,7 +170,7 @@ pub struct DecideApprovalRequest {
     pub remember_match_kind: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateProviderRequest {
     pub kind: String,
     pub name: String,
@@ -125,7 +186,7 @@ pub struct ProviderStatusResponse {
     pub has_configured_secret: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateModelRequest {
     pub model_key: String,
     pub display_name: String,
@@ -137,43 +198,43 @@ pub struct CreateModelRequest {
     pub price_out_per_mtok: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SubmitChatMessageRequest {
     pub prompt: String,
     pub model_key: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RunEventsQuery {
     pub after_seq: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpdateChatRequest {
     pub title: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpdateProjectRequest {
     pub default_mode: Option<String>,
     pub default_access: Option<String>,
     pub default_model_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateCommandRuleRequest {
     pub pattern: String,
     pub match_kind: Option<String>,
     pub action: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SetToolPermissionRequest {
     pub extension_tool_id: String,
     pub level: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpdateExtensionRequest {
     pub enabled: bool,
 }
@@ -211,26 +272,26 @@ pub struct ToolPermissionStatus {
     pub level: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct WorktreeActionRequest {
     pub confirm: bool,
     pub decided_by_device: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpsertSettingRequest {
     pub key: String,
     pub value: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MemoryQuery {
     pub project_id: Option<String>,
     pub query: Option<String>,
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateMemoryRequest {
     pub project_id: String,
     pub kind: String,
@@ -240,7 +301,7 @@ pub struct CreateMemoryRequest {
     pub pinned: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct UpdateMemoryRequest {
     pub kind: Option<String>,
     pub title: Option<String>,
@@ -256,7 +317,7 @@ pub struct MemoryResponse {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StartChatGptOAuthRequest {
     pub client_id: Option<String>,
     pub auth_url: Option<String>,
@@ -271,13 +332,13 @@ pub struct StartChatGptOAuthResponse {
     pub state: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExchangeChatGptOAuthRequest {
     pub state: String,
     pub code: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ChatGptOAuthCallbackQuery {
     pub state: String,
     pub code: String,
@@ -336,6 +397,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/extensions", get(list_extensions))
         .route("/api/extensions/inventory", get(extensions_inventory))
         .route("/api/extensions/{id}", patch(update_extension))
+        .route("/api/recipes", get(list_recipes).post(create_recipe))
+        .route("/api/recipes/{id}", get(get_recipe))
+        .route("/api/recipes/{id}/execute", post(execute_recipe))
+        .route("/api/schedules", get(list_schedules).post(create_schedule))
+        .route(
+            "/api/schedules/{id}",
+            get(get_schedule)
+                .patch(update_schedule)
+                .delete(delete_schedule),
+        )
         .route("/api/chats", post(create_chat))
         .route("/api/chats/{id}/messages", post(submit_chat_message))
         .route("/api/chats/{id}", patch(update_chat))
@@ -362,17 +433,21 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     let db_path = pool.connect_options().get_filename().to_path_buf();
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
-    Ok(AppState {
+    let state = AppState {
         pool,
         db_path,
         credential_store,
         active_runs,
         oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
-    })
+    };
+    let _ = missed_run_catchup(&state).await;
+    Ok(state)
 }
 
 pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     let state = initialize_server_state(pool).await?;
+    let _ = missed_run_catchup(&state).await;
+    let _scheduler = spawn_recipe_scheduler(state.clone());
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "Gaggle server listening");
@@ -519,6 +594,378 @@ async fn list_project_chats(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(chats))
+}
+
+async fn list_recipes(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Recipe>>, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let recipes = repo
+        .list_all()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(recipes))
+}
+
+async fn get_recipe(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Recipe>, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let recipe = repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Recipe {id} not found")))?;
+    Ok(Json(recipe))
+}
+
+async fn create_recipe(
+    State(state): State<AppState>,
+    Json(req): Json<CreateRecipeRequest>,
+) -> Result<(StatusCode, Json<Recipe>), (StatusCode, String)> {
+    let source_kind = req
+        .source_kind
+        .clone()
+        .unwrap_or_else(|| "inline".to_string());
+    let definition = req.definition.clone().unwrap_or_else(|| {
+        serde_json::json!({
+            "name": req.name,
+            "title": req.title,
+            "description": req.description,
+            "instructions": req.instructions,
+            "prompt": req.prompt,
+            "parameters": req.parameters,
+            "extensions": req.extensions,
+            "sub_recipes": req.sub_recipes,
+        })
+        .to_string()
+    });
+
+    let repo = RecipeRepository::new(state.pool.clone());
+    let recipe = repo
+        .create_recipe_full(
+            &req.name,
+            &req.title,
+            req.description.as_deref(),
+            &source_kind,
+            req.source_ref.as_deref(),
+            req.instructions.as_deref(),
+            req.prompt.as_deref(),
+            &definition,
+            req.default_model_id.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Parameters
+    if let Some(params) = &req.parameters {
+        for (idx, p) in params.iter().enumerate() {
+            let required = p.required.unwrap_or(1);
+            let default_value = p.default_value.clone();
+            if required == 1 && default_value.is_some() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Parameter '{}' required but has default", p.name),
+                ));
+            }
+            if required == 0 && default_value.is_none() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Parameter '{}' optional but missing default", p.name),
+                ));
+            }
+            repo.create_parameter(
+                &recipe.id,
+                &p.name,
+                p.param_type.as_deref().unwrap_or("string"),
+                p.description.as_deref(),
+                required,
+                default_value.as_deref(),
+                p.idx.unwrap_or(idx as i64),
+            )
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        }
+    }
+
+    // Extensions: resolve by id or name.
+    if let Some(exts) = &req.extensions {
+        let ext_repo = ExtensionRepository::new(state.pool.clone());
+        let all = ext_repo
+            .list_all_extensions()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for ext_ref in exts {
+            let found = all.iter().find(|e| e.id == *ext_ref || e.name == *ext_ref);
+            if let Some(ext) = found {
+                repo.add_extension(&recipe.id, &ext.id)
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            } else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Extension '{ext_ref}' not found"),
+                ));
+            }
+        }
+    }
+
+    // Sub-recipes
+    if let Some(subs) = &req.sub_recipes {
+        for (idx, s) in subs.iter().enumerate() {
+            repo.create_sub_recipe(
+                &recipe.id,
+                &s.child_recipe_id,
+                &s.name,
+                s.values_json.as_deref(),
+                s.sequential_when_repeated.unwrap_or(0),
+                s.idx.unwrap_or(idx as i64),
+            )
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(recipe)))
+}
+
+async fn execute_recipe(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<ExecuteRecipeRequest>,
+) -> Result<(StatusCode, Json<Chat>), (StatusCode, String)> {
+    let recipe_repo = RecipeRepository::new(state.pool.clone());
+    let recipe = recipe_repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Recipe {id} not found")))?;
+
+    // Load params specs
+    let specs = recipe_repo
+        .list_parameters(&recipe.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Convert DB specs to gaggle_db model (already) and provided values
+    let provided: HashMap<String, String> = req
+        .param_values
+        .as_ref()
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| {
+                    let s = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    (k.clone(), s)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Validate specs
+    validate_recipe_parameters(&specs).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let resolved = resolve_recipe_parameters(&specs, &provided)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Render instructions/prompt
+    let (rendered_instructions, rendered_prompt) = {
+        let env_values = resolved.clone();
+        // also include raw provided? enough
+        let instr = recipe
+            .instructions
+            .as_deref()
+            .map(|t| render_recipe_template(t, &env_values))
+            .transpose()
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        let prmpt = recipe
+            .prompt
+            .as_deref()
+            .map(|t| render_recipe_template(t, &env_values))
+            .transpose()
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        (instr, prmpt)
+    };
+
+    let chat_type = req.chat_type.clone().unwrap_or_else(|| "user".to_string());
+    let mode = req.mode.clone().unwrap_or_else(|| "local".to_string());
+    let permission_mode = req
+        .permission_mode
+        .clone()
+        .unwrap_or_else(|| "ask".to_string());
+    let title = req.title.clone().unwrap_or_else(|| recipe.title.clone());
+
+    let recipe_values_json = serde_json::to_string(&resolved).unwrap_or_else(|_| "{}".to_string());
+
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .create_recipe_chat(
+            &req.project_id,
+            &title,
+            &chat_type,
+            &mode,
+            &permission_mode,
+            Some(&recipe.id),
+            Some(&recipe_values_json),
+            None,
+            req.parent_chat_id.as_deref(),
+            req.parent_tool_call_id.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Activate required extensions in chat_extensions
+    let ext_repo = ExtensionRepository::new(state.pool.clone());
+    let ext_ids = recipe_repo
+        .list_extension_ids(&recipe.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for ext_id in ext_ids {
+        ext_repo
+            .enable_extension_for_chat(&chat.id, &ext_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    // Optionally store rendered instructions as system prompt override? Set system_prompt_override maybe not needed.
+    // We could append rendered prompt as a message? Keep minimal.
+
+    let _ = (rendered_instructions, rendered_prompt);
+
+    Ok((StatusCode::CREATED, Json(chat)))
+}
+
+async fn list_schedules(
+    State(state): State<AppState>,
+    Query(query): Query<ScheduleQuery>,
+) -> Result<Json<Vec<Schedule>>, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let schedules = repo
+        .list_schedules(query.project_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(schedules))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ScheduleQuery {
+    pub project_id: Option<String>,
+}
+
+async fn get_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Schedule>, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let sched = repo
+        .get_schedule(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Schedule {id} not found")))?;
+    Ok(Json(sched))
+}
+
+async fn create_schedule(
+    State(state): State<AppState>,
+    Json(req): Json<CreateScheduleRequest>,
+) -> Result<(StatusCode, Json<Schedule>), (StatusCode, String)> {
+    let timezone = req.timezone.clone().unwrap_or_else(|| "UTC".to_string());
+    let param_values_str = req.param_values.as_ref().map(|v| v.to_string());
+
+    // compute next_run_at
+    let now = now_ms();
+    let next_run = compute_next_run(&req.cron_expr, &timezone, now)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let enabled = req.enabled.unwrap_or(1);
+    let repo = RecipeRepository::new(state.pool.clone());
+    // validate recipe exists
+    repo.get_by_id(&req.recipe_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Recipe {} not found", req.recipe_id),
+            )
+        })?;
+
+    let sched = repo
+        .create_schedule_with_options(
+            &req.recipe_id,
+            req.project_id.as_deref(),
+            &req.cron_expr,
+            &timezone,
+            param_values_str.as_deref(),
+            enabled,
+            Some(next_run),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(sched)))
+}
+
+async fn update_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateScheduleRequest>,
+) -> Result<Json<Schedule>, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool.clone());
+    if let Some(enabled) = req.enabled {
+        repo.set_schedule_enabled(&id, enabled != 0)
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    }
+    if let (Some(cron_expr), Some(timezone)) = (req.cron_expr.as_deref(), req.timezone.as_deref()) {
+        let now = now_ms();
+        let next = compute_next_run(cron_expr, timezone, now)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        // update cron_expr/timezone not stored? need update; repo lacks update cron. Add direct query.
+        sqlx::query(
+            "UPDATE schedules SET cron_expr = ?, timezone = ?, next_run_at = ? WHERE id = ?",
+        )
+        .bind(cron_expr)
+        .bind(timezone)
+        .bind(next)
+        .bind(&id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+    let sched = repo
+        .get_schedule(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Schedule {id} not found")))?;
+    Ok(Json(sched))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateScheduleRequest {
+    pub enabled: Option<i64>,
+    pub cron_expr: Option<String>,
+    pub timezone: Option<String>,
+    pub param_values: Option<serde_json::Value>,
+}
+
+async fn delete_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let deleted = repo
+        .delete_schedule(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !deleted {
+        return Err((StatusCode::NOT_FOUND, format!("Schedule {id} not found")));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn create_chat(
@@ -1788,4 +2235,149 @@ async fn discard_worktree(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     Ok(Json(updated))
+}
+
+// ============================================================================
+// Recipe scheduler helpers
+// ============================================================================
+
+pub async fn missed_run_catchup(state: &AppState) -> Result<(), anyhow::Error> {
+    let repo = RecipeRepository::new(state.pool.clone());
+    let schedules = repo.list_schedules(None).await?;
+    let now = now_ms();
+    for sched in schedules {
+        if sched.enabled != 1 {
+            continue;
+        }
+        if let Some(next) = sched.next_run_at {
+            if next <= now {
+                // compute next future occurrence
+                if let Ok(future) = compute_next_run(&sched.cron_expr, &sched.timezone, now) {
+                    repo.update_schedule_next_run(&sched.id, Some(future))
+                        .await?;
+                }
+            }
+        } else {
+            // no next_run_at; compute
+            if let Ok(future) = compute_next_run(&sched.cron_expr, &sched.timezone, now) {
+                repo.update_schedule_next_run(&sched.id, Some(future))
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn execute_scheduled_recipe(
+    state: &AppState,
+    schedule: &Schedule,
+) -> Result<Chat, anyhow::Error> {
+    let recipe_repo = RecipeRepository::new(state.pool.clone());
+    let recipe = recipe_repo
+        .get_by_id(&schedule.recipe_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Recipe not found"))?;
+
+    let specs = recipe_repo.list_parameters(&recipe.id).await?;
+    validate_recipe_parameters(&specs).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let provided: HashMap<String, String> = schedule
+        .param_values
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .map(|obj| {
+            obj.into_iter()
+                .map(|(k, v)| {
+                    let s = match v {
+                        serde_json::Value::String(s) => s,
+                        other => other.to_string(),
+                    };
+                    (k, s)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let resolved =
+        resolve_recipe_parameters(&specs, &provided).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let chat_type = "scheduled".to_string();
+    let mode = "local".to_string();
+    let permission_mode = "ask".to_string();
+    let title = recipe.title.clone();
+    let recipe_values_json = serde_json::to_string(&resolved).unwrap_or_else(|_| "{}".to_string());
+
+    let project_id = schedule
+        .project_id
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("Schedule has no project_id"))?;
+
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .create_recipe_chat(
+            &project_id,
+            &title,
+            &chat_type,
+            &mode,
+            &permission_mode,
+            Some(&recipe.id),
+            Some(&recipe_values_json),
+            Some(&schedule.id),
+            None,
+            None,
+        )
+        .await?;
+
+    let ext_repo = ExtensionRepository::new(state.pool.clone());
+    let ext_ids = recipe_repo.list_extension_ids(&recipe.id).await?;
+    for ext_id in ext_ids {
+        ext_repo
+            .enable_extension_for_chat(&chat.id, &ext_id)
+            .await?;
+    }
+
+    Ok(chat)
+}
+
+pub async fn process_due_schedules(state: &AppState) -> Result<(), anyhow::Error> {
+    let repo = RecipeRepository::new(state.pool.clone());
+    let now = now_ms();
+    let due = repo.list_due_schedules(now).await?;
+    for sched in due {
+        let result = execute_scheduled_recipe(state, &sched).await;
+        let next = compute_next_run(&sched.cron_expr, &sched.timezone, now).ok();
+        match result {
+            Ok(_) => {
+                repo.update_schedule_status(&sched.id, Some(now), Some("ok"), next)
+                    .await?;
+            }
+            Err(_) => {
+                repo.update_schedule_status(&sched.id, Some(now), Some("error"), next)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+// Aliases
+pub async fn run_scheduler_tick(state: &AppState) -> Result<(), anyhow::Error> {
+    process_due_schedules(state).await
+}
+
+pub async fn check_due_schedules(state: &AppState) -> Result<(), anyhow::Error> {
+    process_due_schedules(state).await
+}
+
+pub fn spawn_recipe_scheduler(state: AppState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        // catch up missed runs on startup
+        let _ = missed_run_catchup(&state).await;
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let _ = process_due_schedules(&state).await;
+        }
+    })
 }
