@@ -1,6 +1,8 @@
 pub mod agent_loop;
 pub mod code_mode;
 pub mod compaction;
+
+pub use compaction::{CompactionEngine, CompactionResult, should_compact};
 pub mod context_assembler;
 pub mod credentials;
 pub mod diagnostics;

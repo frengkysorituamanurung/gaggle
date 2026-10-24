@@ -1,6 +1,7 @@
 use crate::{
-    ActionableError, ContextAssembler, CorrelationIds, DataPreservation, FailureCategory,
+    ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation, FailureCategory,
     PermissionDecision, PermissionEngine, ToolCallContext,
+    context_assembler::DEFAULT_CONTEXT_WINDOW,
     observability::{redact_log_text, summarize_tool_arguments},
     provider::{
         ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
@@ -182,6 +183,26 @@ impl AgentRuntime {
             .get_by_id(&chat.project_id)
             .await?
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
+
+        // 0. Auto-compaction: summarize older history when token ratio exceeds threshold.
+        let resolved_context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
+            sqlx::query_scalar::<_, i64>("SELECT context_window FROM models WHERE id = ?")
+                .bind(model_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .filter(|w| *w > 0)
+                .unwrap_or(DEFAULT_CONTEXT_WINDOW)
+        } else {
+            DEFAULT_CONTEXT_WINDOW
+        };
+        let _ = CompactionEngine::maybe_compact_chat(
+            self.pool.clone(),
+            chat_id,
+            resolved_context_window,
+            provider,
+            "auto",
+        )
+        .await;
 
         // 1. Assemble bounded context before persisting the current user message. The assembler
         // loads project instructions, AGENTS.md, recent history, relevant memories, and enabled

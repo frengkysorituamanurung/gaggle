@@ -287,8 +287,17 @@ impl ContextAssembler {
         let history_rows = chat_repo
             .list_messages_with_parts(chat_id, fetch_limit)
             .await?;
+        let latest_summary = chat_repo.get_latest_summary(chat_id).await.ok().flatten();
         let mut rendered_history: Vec<(String, String)> = Vec::new();
         for (message, parts) in history_rows {
+            // Context replacement: skip messages already covered by a stored summary,
+            // except system prompts which are always preserved.
+            if let Some(summary) = &latest_summary
+                && message.role != "system"
+                && message.seq <= summary.covers_until_seq
+            {
+                continue;
+            }
             let Some(content) = render_history_content(&parts) else {
                 continue;
             };
@@ -339,11 +348,17 @@ impl ContextAssembler {
         }
         history.reverse();
 
-        let mut messages = Vec::with_capacity(history.len() + 2);
+        let mut messages = Vec::with_capacity(history.len() + 3);
         messages.push(ProviderMessage {
             role: "system".to_string(),
             content: system_content,
         });
+        if let Some(summary) = &latest_summary {
+            messages.push(ProviderMessage {
+                role: "system".to_string(),
+                content: format!("Conversation summary:\n{}", summary.summary),
+            });
+        }
         messages.extend(history);
         messages.push(ProviderMessage {
             role: "user".to_string(),
