@@ -1,6 +1,6 @@
 use crate::{
     connection::{new_id, now_ms},
-    models::{Extension, ExtensionTool},
+    models::{ChatExtension, Extension, ExtensionPermission, ExtensionTool},
 };
 use anyhow::Result;
 use sqlx::SqlitePool;
@@ -172,6 +172,33 @@ impl ExtensionRepository {
         Ok(tools)
     }
 
+    pub async fn enable_extension_for_chat(&self, chat_id: &str, extension_id: &str) -> Result<()> {
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            INSERT INTO chat_extensions (chat_id, extension_id, enabled, enabled_at)
+            VALUES (?, ?, 1, ?)
+            ON CONFLICT(chat_id, extension_id) DO UPDATE SET enabled = 1, enabled_at = excluded.enabled_at
+            "#,
+        )
+        .bind(chat_id)
+        .bind(extension_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_chat_extensions(&self, chat_id: &str) -> Result<Vec<ChatExtension>> {
+        let rows = sqlx::query_as::<_, ChatExtension>(
+            "SELECT * FROM chat_extensions WHERE chat_id = ? ORDER BY enabled_at ASC",
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<Extension> {
         sqlx::query("UPDATE extensions SET enabled = ? WHERE id = ?")
             .bind(if enabled { 1 } else { 0 })
@@ -183,4 +210,230 @@ impl ExtensionRepository {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Extension {id} not found after update"))
     }
+
+    // ---------------------------------------------------------------------
+    // Extension lifecycle (MCP / issue #12)
+    // ---------------------------------------------------------------------
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_extension(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        kind: &str,
+        version: &str,
+        source: &str,
+        command: Option<&str>,
+        args: Option<&str>,
+        url: Option<&str>,
+        env_secret_refs: Option<&str>,
+        timeout_secs: i64,
+        manifest: Option<&str>,
+        bundled: bool,
+        enabled: bool,
+    ) -> Result<Extension> {
+        let id = new_id();
+        let now = now_ms();
+
+        sqlx::query(
+            r#"
+            INSERT INTO extensions (
+                id, name, description, kind, version, source, command, args, url,
+                env_secret_refs, timeout_secs, manifest, bundled, enabled, installed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(description)
+        .bind(kind)
+        .bind(version)
+        .bind(source)
+        .bind(command)
+        .bind(args)
+        .bind(url)
+        .bind(env_secret_refs)
+        .bind(timeout_secs)
+        .bind(manifest)
+        .bind(if bundled { 1 } else { 0 })
+        .bind(if enabled { 1 } else { 0 })
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_extension_by_id(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {id} not found after insert"))
+    }
+
+    pub async fn delete_extension(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM extensions WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // Capability grants (extension_permissions)
+    // ---------------------------------------------------------------------
+
+    pub async fn list_permissions(&self, extension_id: &str) -> Result<Vec<ExtensionPermission>> {
+        let perms = sqlx::query_as::<_, ExtensionPermission>(
+            "SELECT * FROM extension_permissions WHERE extension_id = ? ORDER BY permission ASC",
+        )
+        .bind(extension_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(perms)
+    }
+
+    pub async fn grant_permission(
+        &self,
+        extension_id: &str,
+        permission: &str,
+        scope: Option<&str>,
+    ) -> Result<ExtensionPermission> {
+        let id = new_id();
+        let now = now_ms();
+
+        // Upsert by (extension_id, permission, scope) best-effort.
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM extension_permissions WHERE extension_id = ? AND permission = ? AND (scope IS ? OR scope = ?)",
+        )
+        .bind(extension_id)
+        .bind(permission)
+        .bind(scope)
+        .bind(scope.unwrap_or(""))
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or(None);
+
+        let row_id = if let Some(existing_id) = existing {
+            sqlx::query(
+                "UPDATE extension_permissions SET granted = 1, granted_at = ?, scope = ? WHERE id = ?",
+            )
+            .bind(now)
+            .bind(scope)
+            .bind(&existing_id)
+            .execute(&self.pool)
+            .await?;
+            existing_id
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO extension_permissions (id, extension_id, permission, scope, granted, granted_at)
+                VALUES (?, ?, ?, ?, 1, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(extension_id)
+            .bind(permission)
+            .bind(scope)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+            id
+        };
+
+        let perm = sqlx::query_as::<_, ExtensionPermission>(
+            "SELECT * FROM extension_permissions WHERE id = ?",
+        )
+        .bind(&row_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(perm)
+    }
+
+    pub async fn revoke_permission(&self, extension_id: &str, permission: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE extension_permissions SET granted = 0, granted_at = NULL WHERE extension_id = ? AND permission = ?",
+        )
+        .bind(extension_id)
+        .bind(permission)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn has_granted_permission(
+        &self,
+        extension_id: &str,
+        permission: &str,
+    ) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM extension_permissions WHERE extension_id = ? AND permission = ? AND granted = 1",
+        )
+        .bind(extension_id)
+        .bind(permission)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count > 0)
+    }
+
+    pub async fn any_granted_permission(&self, extension_id: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM extension_permissions WHERE extension_id = ? AND granted = 1",
+        )
+        .bind(extension_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count > 0)
+    }
+
+    // ---------------------------------------------------------------------
+    // chat_extensions
+    // ---------------------------------------------------------------------
+
+    pub async fn disable_extension_for_chat(
+        &self,
+        chat_id: &str,
+        extension_id: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE chat_extensions SET enabled = 0 WHERE chat_id = ? AND extension_id = ?",
+        )
+        .bind(chat_id)
+        .bind(extension_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // audit logs
+    // ---------------------------------------------------------------------
+
+    pub async fn record_audit_log(
+        &self,
+        actor_kind: &str,
+        actor_id: Option<&str>,
+        action: &str,
+        entity_type: &str,
+        entity_id: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<()> {
+        let id = new_id();
+        let now = now_ms();
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, actor_kind, actor_id, action, entity_type, entity_id, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(actor_kind)
+        .bind(actor_id)
+        .bind(action)
+        .bind(entity_type)
+        .bind(entity_id)
+        .bind(metadata)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }
+
+/// Alias for callers that prefer a chat-extension-focused repository name.
+pub type ChatExtensionRepository = ExtensionRepository;

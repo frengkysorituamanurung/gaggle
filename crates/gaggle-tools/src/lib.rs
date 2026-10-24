@@ -10,10 +10,15 @@ use gaggle_db::{
 };
 use sqlx::SqlitePool;
 
+pub mod browser_tools;
 pub mod fs_tools;
 pub mod git_tools;
 pub mod shell_tools;
+pub mod terminal;
 
+pub use browser_tools::{
+    BrowserToolError, chromium_available, chromium_executable, close_all_browsers, close_browser,
+};
 pub use fs_tools::{
     DEFAULT_MAX_LIST_ENTRIES, DEFAULT_MAX_READ_BYTES, DEFAULT_MAX_SEARCH_MATCHES, FsEntry,
     FsReadOutput, FsSearchMatch, FsToolError, FsWriteOutput, fs_list, fs_read, fs_search, fs_write,
@@ -27,6 +32,7 @@ pub use shell_tools::{
     DEFAULT_MAX_SHELL_OUTPUT_BYTES, DEFAULT_SHELL_TIMEOUT_MS, ShellExecOutput, ShellToolError,
     shell_exec,
 };
+pub use terminal::{DEFAULT_SCROLLBACK_BYTES, TerminalPty, TerminalPtyConfig, TerminalPtyError};
 
 pub struct BuiltinToolSpec {
     pub extension_name: &'static str,
@@ -125,6 +131,46 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
         description: "Navigate the sandboxed browser session to a URL",
         is_read_only: false,
         schema_json: r#"{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.browser",
+        extension_desc: "Built-in headless browser sandbox tools",
+        tool_name: "browser.click",
+        description: "Click an element by CSS selector in the sandboxed browser session",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"selector":{"type":"string"}},"required":["selector"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.browser",
+        extension_desc: "Built-in headless browser sandbox tools",
+        tool_name: "browser.type",
+        description: "Type text into an input element by CSS selector",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"selector":{"type":"string"},"text":{"type":"string"}},"required":["selector","text"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.browser",
+        extension_desc: "Built-in headless browser sandbox tools",
+        tool_name: "browser.scroll",
+        description: "Scroll the page by an amount or to an element",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"selector":{"type":"string"},"amount":{"type":"integer"},"x":{"type":"integer"},"y":{"type":"integer"}}}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.browser",
+        extension_desc: "Built-in headless browser sandbox tools",
+        tool_name: "browser.screenshot",
+        description: "Capture a PNG screenshot of the current page",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{}}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.browser",
+        extension_desc: "Built-in headless browser sandbox tools",
+        tool_name: "browser.extract",
+        description: "Extract page text or HTML from the current page",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"format":{"type":"string","enum":["text","html"]}}}"#,
     },
 ];
 
@@ -382,6 +428,68 @@ impl ToolExecutor for BuiltinToolExecutor {
                     "tags": stored_tags
                 }))
                 .map_err(|e| e.to_string())
+            }
+            "browser.navigate" => {
+                let url = args
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'url' argument".to_string())?;
+                browser_tools::browser_navigate(&self.pool, &chat.id, Some(run_id), url)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            "browser.click" => {
+                let selector = args
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'selector' argument".to_string())?;
+                browser_tools::browser_click(&self.pool, &chat.id, Some(run_id), selector)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            "browser.type" => {
+                let selector = args
+                    .get("selector")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'selector' argument".to_string())?;
+                let text = args
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing required 'text' argument".to_string())?;
+                browser_tools::browser_type(&self.pool, &chat.id, Some(run_id), selector, text)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            "browser.scroll" => {
+                let selector = args.get("selector").and_then(|v| v.as_str());
+                let amount = args.get("amount").and_then(|v| v.as_i64());
+                let x = args.get("x").and_then(|v| v.as_i64());
+                let y = args.get("y").and_then(|v| v.as_i64());
+                browser_tools::browser_scroll(
+                    &self.pool,
+                    &chat.id,
+                    Some(run_id),
+                    selector,
+                    amount,
+                    x,
+                    y,
+                )
+                .await
+                .map_err(|e| e.to_string())
+            }
+            "browser.screenshot" => {
+                browser_tools::browser_screenshot(&self.pool, &chat.id, Some(run_id))
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            "browser.extract" => {
+                let format = args
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("text");
+                browser_tools::browser_extract(&self.pool, &chat.id, Some(run_id), format)
+                    .await
+                    .map_err(|e| e.to_string())
             }
             "memory.read" => {
                 let query = args

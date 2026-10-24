@@ -7,8 +7,11 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+libc = "0.2"
 gaggle-core.workspace = true
+futures.workspace = true
 gaggle-db.workspace = true
+portable-pty.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -17,3 +20,5 @@ sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+url = "2"
+chromiumoxide = { version = "0.9", default-features = false, features = ["rustls", "zip8"] }

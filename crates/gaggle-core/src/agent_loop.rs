@@ -1,5 +1,8 @@
 use crate::{
-    ContextAssembler, PermissionDecision, PermissionEngine, ToolCallContext,
+    ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation,
+    FailureCategory, PermissionDecision, PermissionEngine, ToolCallContext,
+    context_assembler::DEFAULT_CONTEXT_WINDOW,
+    observability::{redact_log_text, summarize_tool_arguments},
     provider::{
         ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
         ProposedToolCall, ProviderMessage, TokenUsage,
@@ -25,6 +28,7 @@ use std::{
     },
     time::Instant,
 };
+use tracing::Instrument;
 
 /// Default maximum agent loop iterations per run to prevent runaway tool-call loops.
 pub const DEFAULT_MAX_AGENT_STEPS: usize = 8;
@@ -142,6 +146,29 @@ impl AgentRuntime {
         tool_executor: &dyn ToolExecutor,
         cancel_token: &CancellationToken,
     ) -> Result<AgentLoopOutcome> {
+        let span = CorrelationIds::for_chat(chat_id).span("agent.run");
+        self.run_turn_inner(
+            chat_id,
+            user_prompt,
+            model_key,
+            provider,
+            tool_executor,
+            cancel_token,
+        )
+        .instrument(span)
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_turn_inner(
+        &self,
+        chat_id: &str,
+        user_prompt: &str,
+        model_key: &str,
+        provider: &dyn ModelProviderAdapter,
+        tool_executor: &dyn ToolExecutor,
+        cancel_token: &CancellationToken,
+    ) -> Result<AgentLoopOutcome> {
         let chat_repo = ChatRepository::new(self.pool.clone());
         let proj_repo = ProjectRepository::new(self.pool.clone());
         let run_repo = RunRepository::new(self.pool.clone());
@@ -157,6 +184,26 @@ impl AgentRuntime {
             .await?
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
 
+        // 0. Auto-compaction: summarize older history when token ratio exceeds threshold.
+        let resolved_context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
+            sqlx::query_scalar::<_, i64>("SELECT context_window FROM models WHERE id = ?")
+                .bind(model_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .filter(|w| *w > 0)
+                .unwrap_or(DEFAULT_CONTEXT_WINDOW)
+        } else {
+            DEFAULT_CONTEXT_WINDOW
+        };
+        let _ = CompactionEngine::maybe_compact_chat(
+            self.pool.clone(),
+            chat_id,
+            resolved_context_window,
+            provider,
+            "auto",
+        )
+        .await;
+
         // 1. Assemble bounded context before persisting the current user message. The assembler
         // loads project instructions, AGENTS.md, recent history, relevant memories, and enabled
         // tool definitions while excluding secrets.
@@ -171,6 +218,18 @@ impl AgentRuntime {
         let run = run_repo
             .create(chat_id, Some(&user_msg.id), chat.model_id.as_deref())
             .await?;
+        let correlation = CorrelationIds::for_chat(chat_id).with_run(&run.id);
+        let run_repo = run_repo.with_correlation(correlation.clone());
+        let perm_engine = perm_engine.with_correlation(correlation.clone());
+
+        tracing::info!(
+            target: "gaggle.agent",
+            run_id = %run.id,
+            model_key = %model_key,
+            max_steps = self.max_steps,
+            prompt_chars = user_prompt.chars().count(),
+            "Agent run started"
+        );
 
         run_repo
             .emit_event(
@@ -200,6 +259,16 @@ impl AgentRuntime {
             )
             .await?;
 
+        tracing::info!(
+            target: "gaggle.agent",
+            run_id = %run.id,
+            estimated_tokens = assembled.estimated_tokens,
+            budget_tokens = assembled.budget_tokens,
+            truncated = assembled.truncated,
+            tool_count = assembled.tools.len(),
+            "Agent context assembled"
+        );
+
         let mut conversation = assembled.messages;
         let tool_definitions = assembled.tools;
 
@@ -209,6 +278,14 @@ impl AgentRuntime {
             }
 
             let step_start = Instant::now();
+            tracing::debug!(
+                target: "gaggle.agent",
+                run_id = %run.id,
+                step = step_idx,
+                message_count = conversation.len(),
+                tool_count = tool_definitions.len(),
+                "Agent step started"
+            );
             let req = ModelCompletionRequest {
                 model_key: model_key.to_string(),
                 messages: conversation.clone(),
@@ -296,25 +373,38 @@ impl AgentRuntime {
             let completion = match completion_result {
                 Ok(resp) => resp,
                 Err(err) => {
-                    let err_msg = err.to_string();
-                    run_repo
-                        .emit_event(
-                            &run.id,
-                            "run.failed",
-                            &serde_json::json!({ "step": step_idx, "error": err_msg }).to_string(),
-                        )
-                        .await?;
-                    let failed_run = run_repo
-                        .update_run_status(&run.id, "failed", Some(&err_msg))
-                        .await?;
-                    return Ok(AgentLoopOutcome::Failed {
-                        run: failed_run,
-                        error: err_msg,
-                    });
+                    let failure =
+                        ActionableError::from_provider_error("agent.turn", &err, &correlation);
+                    tracing::error!(
+                        target: "gaggle.agent",
+                        run_id = %run.id,
+                        step = step_idx,
+                        failure_category = failure.category.as_str(),
+                        operation = %failure.operation,
+                        data_preservation = failure.data_preservation.as_str(),
+                        retryable = failure.retryable,
+                        error = %failure.message,
+                        "Agent run failed while waiting for the model provider"
+                    );
+                    return self
+                        .finish_failed(&run_repo, &run.id, Some(step_idx), failure)
+                        .await;
                 }
             };
 
             let latency_ms = step_start.elapsed().as_millis() as i64;
+            tracing::info!(
+                target: "gaggle.agent",
+                run_id = %run.id,
+                step = step_idx,
+                latency_ms,
+                input_tokens = completion.usage.input_tokens,
+                output_tokens = completion.usage.output_tokens,
+                cached_tokens = completion.usage.cached_tokens,
+                tool_call_count = completion.tool_calls.len(),
+                native_stream = used_native_stream,
+                "Model completion received"
+            );
             run_repo
                 .record_usage(
                     &run.id,
@@ -379,7 +469,22 @@ impl AgentRuntime {
                     .find_enabled_tool_by_name(&proposed.tool_name)
                     .await?
                 else {
-                    bail!("Unknown or disabled tool '{}'", proposed.tool_name);
+                    let failure = ActionableError::new(
+                        FailureCategory::Tool,
+                        "agent.tool_lookup",
+                        format!("Unknown or disabled tool '{}'", proposed.tool_name),
+                    )
+                    .with_data_preservation(DataPreservation::Preserved)
+                    .with_correlation(&correlation);
+                    tracing::error!(
+                        target: "gaggle.agent",
+                        run_id = %run.id,
+                        step = step_idx,
+                        tool_name = %proposed.tool_name,
+                        failure_category = failure.category.as_str(),
+                        "Proposed tool is unknown or disabled"
+                    );
+                    bail!("{failure}");
                 };
 
                 let shell_cmd =
@@ -395,6 +500,15 @@ impl AgentRuntime {
                 let decision = perm_engine.evaluate(&ctx).await?;
                 match decision {
                     PermissionDecision::Deny { reason } => {
+                        tracing::warn!(
+                            target: "gaggle.agent",
+                            run_id = %run.id,
+                            step = step_idx,
+                            tool_name = %proposed.tool_name,
+                            decision = "deny",
+                            reason = %redact_log_text(&reason),
+                            "Tool call denied by policy"
+                        );
                         let tc = run_repo
                             .record_tool_call(
                                 &run.id,
@@ -427,6 +541,15 @@ impl AgentRuntime {
                         });
                     }
                     PermissionDecision::NeedsApproval { kind, summary } => {
+                        tracing::info!(
+                            target: "gaggle.agent",
+                            run_id = %run.id,
+                            step = step_idx,
+                            tool_name = %proposed.tool_name,
+                            decision = "needs_approval",
+                            approval_kind = %kind,
+                            "Tool call is waiting for user approval"
+                        );
                         let tc = run_repo
                             .record_tool_call(
                                 &run.id,
@@ -480,6 +603,14 @@ impl AgentRuntime {
                         });
                     }
                     PermissionDecision::Allow => {
+                        tracing::debug!(
+                            target: "gaggle.agent",
+                            run_id = %run.id,
+                            step = step_idx,
+                            tool_name = %proposed.tool_name,
+                            decision = "allow",
+                            "Tool call allowed by policy"
+                        );
                         let tool_out = self
                             .execute_allowed_tool(
                                 &run_repo,
@@ -509,20 +640,50 @@ impl AgentRuntime {
         }
 
         // Budget exhausted
-        let budget_err = format!("Maximum agent step budget ({}) exhausted", self.max_steps);
-        run_repo
-            .emit_event(
-                &run.id,
-                "run.failed",
-                &serde_json::json!({ "error": budget_err }).to_string(),
-            )
-            .await?;
+        let failure = ActionableError::new(
+            FailureCategory::BudgetExhausted,
+            "agent.turn",
+            format!("Maximum agent step budget ({}) exhausted", self.max_steps),
+        )
+        .with_data_preservation(DataPreservation::Preserved)
+        .with_correlation(&correlation);
+        tracing::warn!(
+            target: "gaggle.agent",
+            run_id = %run.id,
+            max_steps = self.max_steps,
+            failure_category = failure.category.as_str(),
+            "Agent step budget exhausted"
+        );
+        self.finish_failed(&run_repo, &run.id, None, failure).await
+    }
+
+    /// Marks the run failed, appends a structured `run.failed` event, and returns the outcome.
+    async fn finish_failed(
+        &self,
+        run_repo: &RunRepository,
+        run_id: &str,
+        step: Option<usize>,
+        failure: ActionableError,
+    ) -> Result<AgentLoopOutcome> {
+        let display_error = failure.to_string();
+        let payload = serde_json::json!({
+            "step": step,
+            "error": display_error,
+            "failure_category": failure.category.as_str(),
+            "operation": failure.operation,
+            "data_preservation": failure.data_preservation.as_str(),
+            "retryable": failure.retryable,
+            "retry_guidance": failure.retry_guidance,
+        })
+        .to_string();
+
+        run_repo.emit_event(run_id, "run.failed", &payload).await?;
         let failed_run = run_repo
-            .update_run_status(&run.id, "failed", Some(&budget_err))
+            .update_run_status(run_id, "failed", Some(&display_error))
             .await?;
         Ok(AgentLoopOutcome::Failed {
             run: failed_run,
-            error: budget_err,
+            error: display_error,
         })
     }
 
@@ -547,6 +708,15 @@ impl AgentRuntime {
                 "running",
             )
             .await?;
+        tracing::debug!(
+            target: "gaggle.agent",
+            run_id = %run_id,
+            tool_call_id = %tc.id,
+            tool_name = %proposed.tool_name,
+            step = step_index,
+            args = %summarize_tool_arguments(&proposed.tool_name, &proposed.arguments_json),
+            "Tool call started"
+        );
         run_repo
             .emit_event(
                 run_id,
@@ -560,6 +730,10 @@ impl AgentRuntime {
             .await?;
 
         let started = Instant::now();
+        let tool_span = CorrelationIds::for_chat(&chat.id)
+            .with_run(run_id)
+            .with_tool_call(&tc.id)
+            .span("agent.tool_call");
         let exec_res = tool_executor
             .execute_tool(
                 run_id,
@@ -568,11 +742,23 @@ impl AgentRuntime {
                 &proposed.tool_name,
                 &proposed.arguments_json,
             )
+            .instrument(tool_span)
             .await;
         let duration_ms = started.elapsed().as_millis() as i64;
 
         match exec_res {
             Ok(result_json) => {
+                tracing::info!(
+                    target: "gaggle.agent",
+                    run_id = %run_id,
+                    tool_call_id = %tc.id,
+                    tool_name = %proposed.tool_name,
+                    step = step_index,
+                    duration_ms,
+                    result_bytes = result_json.len(),
+                    status = "ok",
+                    "Tool call completed"
+                );
                 run_repo
                     .update_tool_call_result(&tc.id, "ok", Some(&result_json), duration_ms)
                     .await?;
@@ -591,6 +777,17 @@ impl AgentRuntime {
                 Ok(result_json)
             }
             Err(err_str) => {
+                tracing::warn!(
+                    target: "gaggle.agent",
+                    run_id = %run_id,
+                    tool_call_id = %tc.id,
+                    tool_name = %proposed.tool_name,
+                    step = step_index,
+                    duration_ms,
+                    failure_category = FailureCategory::Tool.as_str(),
+                    error = %redact_log_text(&err_str),
+                    "Tool call failed"
+                );
                 let err_json = serde_json::json!({ "error": err_str }).to_string();
                 run_repo
                     .update_tool_call_result(&tc.id, "error", Some(&err_json), duration_ms)
@@ -617,6 +814,13 @@ impl AgentRuntime {
         run_repo: &RunRepository,
         run_id: &str,
     ) -> Result<AgentLoopOutcome> {
+        tracing::info!(
+            target: "gaggle.agent",
+            run_id = %run_id,
+            failure_category = FailureCategory::Cancelled.as_str(),
+            data_preservation = DataPreservation::Preserved.as_str(),
+            "Agent run cancelled by user"
+        );
         run_repo
             .emit_event(
                 run_id,

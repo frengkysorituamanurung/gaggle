@@ -49,7 +49,7 @@ gaggle/
 │  └─ Gaggle.icns            # macOS application icon
 ├─ docs/
 │  ├─ ERD.md                 # Database schema and ERD documentation
-│  └─ development/           # CI/CD audit and packaging documentation
+│  └─ development/           # Data portability, CI/CD audit, and packaging documentation
 ├─ .github/
 │  ├─ workflows/             # CI, package, release, and security workflows
 │  └─ scripts/               # Reproducible packaging and validation scripts
@@ -74,6 +74,10 @@ Default database locations (resolved via the `directories` crate):
 - **macOS**: `~/Library/Application Support/gaggle/gaggle.db`
 - **Linux**: `~/.local/share/gaggle/gaggle.db`
 - **Windows**: `%APPDATA%\gaggle\data\gaggle.db`
+
+Attachments live beside the database in `<data directory>/attachments/`. See
+[Data Portability](./docs/development/data-portability.md) for export, import,
+memory sharing, checksummed backups, and safe restore procedures.
 
 Core SQLite conventions enforced in `gaggle-db`:
 - **Primary Keys**: Time-ordered UUIDv7 stored as `TEXT`.
@@ -137,6 +141,137 @@ installation steps, runtime requirements, signing status, and the release
 procedure. The macOS artifact is a ZIP containing `Gaggle.app`; no `.dmg`
 installer is produced.
 
+### Install on macOS (ZIP)
+
+1. Download `Gaggle-macOS-arm64.zip` on Apple Silicon or
+   `Gaggle-macOS-x64.zip` on Intel.
+2. Verify the checksum next to the downloaded artifact:
+
+   ```bash
+   shasum -a 256 -c Gaggle-macOS-arm64.zip.sha256
+   ```
+
+3. Extract the bundle and move it into `/Applications`:
+
+   ```bash
+   ditto -x -k Gaggle-macOS-arm64.zip /Applications
+   open /Applications/Gaggle.app
+   ```
+
+   `ditto` preserves the app bundle structure and executable permissions. Do
+   not move the raw `Gaggle` executable out of the bundle.
+
+4. Gaggle starts a local server on `127.0.0.1:4321` and opens the default
+   browser. If the browser does not open, visit <http://127.0.0.1:4321>.
+
+The database is stored outside the app bundle at
+`~/Library/Application Support/gaggle/gaggle.db`. Replacing `Gaggle.app` does
+not delete chats, settings, or memories.
+
+### macOS Gatekeeper behavior
+
+Release artifacts are not notarized unless the release workflow had access to
+the Apple signing secrets. An unsigned or ad-hoc-signed build may show a
+Gatekeeper warning such as "Gaggle.app cannot be opened because the developer
+cannot be verified".
+
+Use the standard confirmation flow instead of disabling Gatekeeper:
+
+1. Open the app once from Finder, dismiss the warning, then open **System
+   Settings → Privacy & Security**.
+2. Click **Open Anyway** for Gaggle and confirm.
+3. Alternatively, right-click `Gaggle.app` in Finder, choose **Open**, and
+   confirm.
+
+Do not run `spctl --master-disable`. If you manage downloads yourself and
+accept the security trade-off, macOS may attach a quarantine attribute; the
+standard Finder confirmation is still preferred over removing it manually.
+
+### Reproducible macOS ZIP locally
+
+The checked-in packaging script builds the release binaries, assembles
+`Gaggle.app`, validates `Info.plist`, signs the bundle (ad-hoc by default),
+recreates the ZIP with `ditto`, prints the SHA-256 checksum, and runs an
+extraction plus `/api/health` smoke test:
+
+```bash
+./scripts/package_macos_zip.sh
+```
+
+Common options:
+
+```bash
+# Use a Developer ID identity instead of ad-hoc signing
+./scripts/package_macos_zip.sh --sign-identity "Developer ID Application: Example (TEAMID)"
+
+# Reuse prebuilt release binaries and skip the smoke test
+./scripts/package_macos_zip.sh --binary-dir target/aarch64-apple-darwin/release --skip-smoke-test
+
+# Build the other architecture
+./scripts/package_macos_zip.sh --arch x64
+```
+
+Outputs are written to `dist/`:
+
+```text
+dist/Gaggle.app
+dist/Gaggle-macOS-arm64.zip
+dist/Gaggle-macOS-arm64.zip.sha256
+dist/Gaggle-macOS-arm64.json
+```
+
+Passing `--skip-smoke-test` is only appropriate for local iteration; CI and
+release validation always launch the extracted bundle and call `/api/health`.
+
+### Build and run on Linux
+
+```bash
+cargo build --release --locked -p gaggle-cli --bin gaggle --bin gaggle-desktop
+./target/release/gaggle-desktop
+```
+
+The launcher starts the local server and opens the default browser with
+`xdg-open`. Use `--no-browser` on headless sessions and open
+<http://127.0.0.1:4321> manually. The CLI is available as
+`./target/release/gaggle` (`gaggle --help`).
+
+Portable Linux archives can also be built locally:
+
+```bash
+./.github/scripts/package-linux.sh \
+  --target x86_64-unknown-linux-gnu \
+  --version 0.1.0 \
+  --binary-dir "$PWD/target/x86_64-unknown-linux-gnu/release" \
+  --output-dir "$PWD/dist" \
+  --commit "$(git rev-parse HEAD)" \
+  --ref "$(git rev-parse HEAD)"
+
+tar -xzf dist/Gaggle-linux-x86_64.tar.gz
+cd Gaggle-linux-x86_64
+./install.sh
+```
+
+`install.sh` installs into the current user's `~/.local` directories without
+`sudo`, including a desktop entry. Linux data lives at
+`${XDG_DATA_HOME:-$HOME/.local/share}/gaggle/gaggle.db`.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Cmd/Ctrl + K` | Open the quick switcher for projects and conversations. |
+| `Cmd/Ctrl + N` | Create a new chat in the active project. |
+| `Cmd/Ctrl + B` | Toggle the sidebar. |
+| `Cmd/Ctrl + I` | Toggle the contextual details inspector. |
+| `Cmd/Ctrl + ,` | Open Settings & Diagnostics. |
+| `Cmd/Ctrl + /` | Open the in-app keyboard shortcut cheatsheet. |
+| `Cmd/Ctrl + Enter` | Send the current composer message. |
+| `Esc` | Close the open dialog and restore focus to its opener. |
+
+Native editing shortcuts (`Cmd/Ctrl + C`, `V`, `X`, `A`, `Z`) are never
+intercepted while focus is inside an input or textarea. Dialogs trap `Tab` and
+`Shift + Tab` focus until they close.
+
 ---
 
 ## CLI Usage (`gaggle`)
@@ -150,8 +285,13 @@ cargo run -p gaggle-cli -- db-path
 
 ### 2. Run Diagnostics & Database Health Check
 ```bash
-cargo run -p gaggle-cli -- doctor
+cargo run -p gaggle-cli -- doctor          # human-readable summary
+cargo run -p gaggle-cli -- doctor --json   # full machine-readable report
 ```
+The report includes build identity (version, commit, profile, target), core health checks, optional
+capability availability with reasons and next actions, and an explicit privacy statement. It never
+contains prompts, source files, secrets, or raw tool output. See
+[`docs/development/observability.md`](docs/development/observability.md).
 
 ### 3. Register a Project Workspace
 ```bash
@@ -175,6 +315,50 @@ cargo run -p gaggle-cli --bin gaggle-desktop -- --no-browser
 The desktop launcher starts the same server and, unless `--no-browser` is used,
 opens `http://127.0.0.1:4321` in the default browser.
 
+### 7. Export a Chat Bundle
+```bash
+cargo run -p gaggle-cli -- export chat <chat-id> --output chat.json
+```
+Writes a versioned `gaggle.chat-bundle` JSON file containing `chat`, `messages`,
+and `message_parts`, plus `format`, `version`, and `exported_at` metadata.
+
+### 8. Import a Chat Bundle
+```bash
+cargo run -p gaggle-cli -- import chat chat.json --project <project-id>
+```
+Validates the bundle and creates a **new** chat in the target project. Existing
+chats are never overwritten; run-tool-attachment references that are not part of
+the bundle are dropped.
+
+### 9. Export Project Memories
+```bash
+cargo run -p gaggle-cli -- export memory --project <project-id>
+# Optional directory inside the project workspace:
+cargo run -p gaggle-cli -- export memory --project <project-id> --output .pal/memory
+```
+Writes one redacted Markdown file per active memory to `<project>/.pal/memory/`
+so project knowledge can be shared through Git.
+
+### 10. Create a Checksummed Backup
+```bash
+cargo run -p gaggle-cli -- backup --output backup.tar.gz
+```
+Creates a `.tar.gz` containing a WAL-safe `VACUUM INTO` snapshot of `gaggle.db`,
+the `attachments/` directory when present, and a `manifest.json` with SHA-256
+checksums. The command prints the archive SHA-256 and refuses to overwrite an
+existing file without `--force`.
+
+### 11. Verify and Restore a Backup
+```bash
+cargo run -p gaggle-cli -- restore backup.tar.gz --dry-run
+cargo run -p gaggle-cli -- restore backup.tar.gz --force
+```
+Restore verifies archive path safety, every SHA-256 checksum, and SQLite
+integrity before touching existing data. Existing databases and attachment
+directories are moved aside to `gaggle-restore-previous-<timestamp>/` and only
+replaced after verification; without `--force` the command refuses to replace
+anything. Stop the server before restoring.
+
 On startup, Gaggle automatically:
 1. Opens the global SQLite pool in WAL mode and applies any pending `sqlx` migrations.
 2. Registers all bundled built-in extensions (`gaggle.fs`, `gaggle.shell`, `gaggle.memory`, `gaggle.web`, `gaggle.browser`).
@@ -183,7 +367,8 @@ On startup, Gaggle automatically:
 ### Core HTTP Endpoints
 - `GET /` — Serves the Gaggle Web UI.
 - `GET /api/health` — Health check endpoint (`{"status": "ok", "service": "gaggle"}`).
-- `GET /api/diagnostics` — Returns a redacted diagnostic report of OS, SQLite PRAGMAs, migrations, and active counts.
+- `GET /api/diagnostics` — Returns a redacted diagnostic report with build identity, core health checks, optional capability availability and reasons, and active counts.
+- `GET /api/diagnostics/export` — Explicit, user-initiated redacted diagnostics export with up to ten recent failure summaries; contains no prompts, source files, tool arguments, or raw tool output.
 - `GET /api/settings` — Lists persisted application settings (`app_settings`, including UI theme).
 - `PUT /api/settings` — Upserts a JSON-validated application setting by key.
 - `GET /api/projects` — Lists all active projects along with `path_exists: bool` workspace accessibility status.
@@ -234,6 +419,7 @@ On startup, Gaggle automatically:
 - API keys are submitted once, cleared from the form immediately, stored in the server `CredentialStore`, and surfaced only as `has_configured_secret: bool`.
 - ChatGPT providers can complete an OAuth + PKCE sign-in from Settings; access and refresh tokens remain in the credential store.
 - The Memory tab creates, searches, pins, and soft-deletes project-scoped and global memories.
+- The Diagnostics tab refreshes, copies, and downloads a redacted export on explicit user action; failed chat turns show a problem notice with failure category, retry guidance, and a diagnostics copy action. No telemetry is sent automatically.
 
 ### Context assembly, memory & providers
 - `ContextAssembler` loads `project_settings.instructions`, bounded `AGENTS.md` files from the project root and nested directories, recent chat history, pinned and FTS-matched memories, and enabled extension tool definitions before each model turn.

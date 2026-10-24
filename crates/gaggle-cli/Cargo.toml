@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+name = "gaggle_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gaggle"
 path = "src/main.rs"
@@ -15,13 +19,22 @@ path = "src/bin/gaggle-desktop.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+flate2.workspace = true
 gaggle-core.workspace = true
 gaggle-db.workspace = true
 gaggle-mcp.workspace = true
 gaggle-recipes.workspace = true
 gaggle-server.workspace = true
 gaggle-tools.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+tar.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -61,7 +61,7 @@ Keep changes aligned with the domain boundaries of each crate:
 | `crates/gaggle-mcp` | Model Context Protocol (MCP) client integration, extension registry, and active tool count guard (`<= 25` tools per chat). |
 | `crates/gaggle-recipes` | Recipe YAML/JSON parser, required vs. optional parameter validation, `minijinja` template rendering, and `croner` schedule evaluation. |
 | `crates/gaggle-server` | Axum HTTP/SSE server, REST API handlers, chat JSON export/import, and Web UI serving. |
-| `crates/gaggle-cli` | The `gaggle` command-line binary (`serve`, `project`, `db-path`, etc.). |
+| `crates/gaggle-cli` | The `gaggle` command-line binary (`serve`, `project`, `export`, `import`, `backup`, `restore`, `db-path`, etc.) and data portability library. |
 | `crates/gaggle-ui` | Web UI assets and HTML shell served by `gaggle-server`. |
 
 ---
@@ -96,6 +96,8 @@ All schema changes under `crates/gaggle-db/migrations/` **must** follow the conv
 Every new feature or bug fix should include automated tests:
 
 - For database, repository, and permission tests in `gaggle-db` and `gaggle-core`, use `gaggle_db::connect_in_memory().await?` to provision an isolated in-memory SQLite instance with all migrations and FTS5 triggers applied.
+- CLI behavior (chat export/import, memory export, backup/restore) is covered by integration tests in `crates/gaggle-cli/tests/` that run the real binary against temporary directories. Never rewrite or restore over developer data in tests; always use `tempfile::TempDir`.
+- See [Data Portability](./docs/development/data-portability.md) for the backup manifest format, restore safety guarantees, and the expected export layout.
 - Run the full verification checks before submitting a pull request:
   ```bash
   cargo fmt --all -- --check

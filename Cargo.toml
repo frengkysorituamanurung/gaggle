@@ -31,10 +31,14 @@ async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws", "macros"] }
 clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 croner = "4"
 directories = "6"
+flate2 = "1"
 futures = "0.3"
 minijinja = "3"
+portable-pty = "0.9"
 notify = "8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +47,8 @@ serde_yaml_ng = "0.10"
 sha2 = "0.11"
 similar = "3"
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+tar = "0.4"
+tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
