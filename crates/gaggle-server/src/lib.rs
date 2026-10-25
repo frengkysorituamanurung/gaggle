@@ -24,7 +24,8 @@ use gaggle_db::{
     connection::{new_id, now_ms},
     models::{
         AppSetting, Approval, Chat, ChatSummary, CommandRule, Extension, ExtensionPermission,
-        ExtensionTool, Memory, Model, Project, Provider, Recipe, Run, Schedule, Worktree,
+        ExtensionTool, Memory, Message, MessagePart, Model, Project, Provider, Recipe, Run,
+        Schedule, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
@@ -217,6 +218,12 @@ pub struct SubmitChatMessageRequest {
 #[derive(Debug, Deserialize)]
 pub struct CompactChatRequest {
     pub trigger: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatMessagesResponse {
+    pub messages: Vec<Message>,
+    pub message_parts: Vec<MessagePart>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -461,13 +468,12 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(delete_schedule),
         )
         .route("/api/chats", post(create_chat))
-        .route("/api/chats/{id}", get(get_chat))
+        .route("/api/chats/{id}", get(get_chat).patch(update_chat))
         .route(
             "/api/chats/{id}/messages",
-            get(list_chat_messages).post(submit_chat_message),
+            get(get_chat_messages).post(submit_chat_message),
         )
         .route("/api/chats/{id}/compact", post(compact_chat))
-        .route("/api/chats/{id}", patch(update_chat))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
@@ -696,6 +702,40 @@ async fn list_project_chats(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(chats))
+}
+
+async fn get_chat(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Chat>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let chat = repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    Ok(Json(chat))
+}
+
+async fn get_chat_messages(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<ChatMessagesResponse>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let rows = repo
+        .list_messages_with_parts(&chat_id, 500)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut messages = Vec::with_capacity(rows.len());
+    let mut message_parts = Vec::new();
+    for (msg, parts) in rows {
+        messages.push(msg);
+        message_parts.extend(parts);
+    }
+    Ok(Json(ChatMessagesResponse {
+        messages,
+        message_parts,
+    }))
 }
 
 async fn list_recipes(
@@ -1148,49 +1188,6 @@ async fn create_chat(
     }
 
     Ok((StatusCode::CREATED, Json(chat)))
-}
-
-async fn get_chat(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<Chat>, (StatusCode, String)> {
-    let repo = ChatRepository::new(state.pool);
-    let chat = repo
-        .get_by_id(&id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat {id} not found")))?;
-    Ok(Json(chat))
-}
-
-async fn list_chat_messages(
-    State(state): State<AppState>,
-    Path(chat_id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let repo = ChatRepository::new(state.pool.clone());
-    // Ensure the chat exists so callers get a clear 404 instead of an empty list.
-    if repo
-        .get_by_id(&chat_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .is_none()
-    {
-        return Err((StatusCode::NOT_FOUND, format!("Chat {chat_id} not found")));
-    }
-    let pairs = repo
-        .list_messages_with_parts(&chat_id, 500)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let mut messages = Vec::new();
-    let mut message_parts = Vec::new();
-    for (message, parts) in pairs {
-        messages.push(message);
-        message_parts.extend(parts);
-    }
-    Ok(Json(serde_json::json!({
-        "messages": messages,
-        "message_parts": message_parts,
-    })))
 }
 
 async fn export_chat(
@@ -2262,8 +2259,11 @@ async fn submit_chat_message(
     Path(chat_id): Path<String>,
     Json(req): Json<SubmitChatMessageRequest>,
 ) -> Result<Json<AgentLoopOutcome>, (StatusCode, String)> {
-    let runtime = AgentRuntime::new(state.pool.clone(), DEFAULT_MAX_AGENT_STEPS)
-        .with_active_runs(state.active_runs.clone());
+    let runtime = AgentRuntime::new_with_active_runs(
+        state.pool.clone(),
+        DEFAULT_MAX_AGENT_STEPS,
+        state.active_runs.clone(),
+    );
     let executor = BuiltinToolExecutor::new(state.pool.clone());
     let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
     if requested_model_key.len() > 200 {
