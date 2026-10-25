@@ -38,6 +38,7 @@ pub enum BrowserToolError {
 
 #[derive(Clone)]
 struct ActiveBrowser {
+    pool: SqlitePool,
     session_id: String,
     browser: std::sync::Arc<TokioMutex<Browser>>,
     page: Page,
@@ -49,6 +50,16 @@ static REGISTRY: OnceLock<TokioMutex<HashMap<String, ActiveBrowser>>> = OnceLock
 
 fn registry() -> &'static TokioMutex<HashMap<String, ActiveBrowser>> {
     REGISTRY.get_or_init(|| TokioMutex::new(HashMap::new()))
+}
+
+fn chat_pools() -> &'static TokioMutex<HashMap<String, SqlitePool>> {
+    static CHAT_POOLS: OnceLock<TokioMutex<HashMap<String, SqlitePool>>> = OnceLock::new();
+    CHAT_POOLS.get_or_init(|| TokioMutex::new(HashMap::new()))
+}
+
+fn session_pools() -> &'static TokioMutex<HashMap<String, SqlitePool>> {
+    static SESSION_POOLS: OnceLock<TokioMutex<HashMap<String, SqlitePool>>> = OnceLock::new();
+    SESSION_POOLS.get_or_init(|| TokioMutex::new(HashMap::new()))
 }
 
 pub fn chromium_executable() -> Option<PathBuf> {
@@ -187,12 +198,22 @@ async fn ensure_session(
     };
 
     let active = ActiveBrowser {
+        pool: pool.clone(),
         session_id: created.id,
         browser,
         page,
         profile_dir,
         handler_task,
     };
+
+    {
+        let mut cp = chat_pools().lock().await;
+        cp.insert(chat_id.to_string(), pool.clone());
+    }
+    {
+        let mut sp = session_pools().lock().await;
+        sp.insert(active.session_id.clone(), pool.clone());
+    }
 
     let mut guard = registry().lock().await;
     guard.insert(chat_id.to_string(), active.clone());
@@ -562,23 +583,151 @@ pub async fn browser_extract(
     .to_string())
 }
 
-pub async fn close_all_browsers() {
-    let mut guard = registry().lock().await;
-    for (_, active) in guard.drain() {
-        let mut b = active.browser.lock().await;
-        let _ = b.close().await;
-        active.handler_task.abort();
-        let _ = std::fs::remove_dir_all(&active.profile_dir);
-    }
+async fn close_active_browser(active: ActiveBrowser) {
+    let mut b = active.browser.lock().await;
+    let _ = b.close().await;
+    active.handler_task.abort();
+    let _ = std::fs::remove_dir_all(&active.profile_dir);
+    let repo = BrowserRepository::new(active.pool.clone());
+    let _ = repo.close_session(&active.session_id).await;
 }
 
-pub async fn close_browser(chat_id: &str) {
-    let mut guard = registry().lock().await;
-    if let Some(active) = guard.remove(chat_id) {
-        let mut b = active.browser.lock().await;
-        let _ = b.close().await;
-        active.handler_task.abort();
-        let _ = std::fs::remove_dir_all(&active.profile_dir);
-        // mark session closed in DB? caller may
+pub async fn close_browser(chat_id: &str) -> Result<(), BrowserToolError> {
+    // Close the live Chromium instance for this chat, if any.
+    let active = {
+        let mut guard = registry().lock().await;
+        guard.remove(chat_id)
+    };
+    if let Some(active) = active {
+        close_active_browser(active).await;
     }
+
+    // Mark every DB session for this chat as closed and remove profile dirs.
+    let pool = {
+        let guard = chat_pools().lock().await;
+        guard.get(chat_id).cloned()
+    };
+    if let Some(pool) = pool {
+        let repo = BrowserRepository::new(pool);
+        let sessions = repo
+            .list_sessions_by_chat(chat_id)
+            .await
+            .map_err(|e| BrowserToolError::Database(e.to_string()))?;
+        for session in sessions {
+            if session.status != "closed" {
+                let _ = repo.close_session(&session.id).await;
+            }
+            let _ = std::fs::remove_dir_all(&session.profile_dir);
+        }
+    }
+    Ok(())
+}
+
+pub async fn close_browser_with_pool(
+    pool: &SqlitePool,
+    chat_id: &str,
+) -> Result<(), BrowserToolError> {
+    {
+        let mut guard = chat_pools().lock().await;
+        guard.insert(chat_id.to_string(), pool.clone());
+    }
+    close_browser(chat_id).await
+}
+
+pub async fn close_browser_session(session_id: &str) -> Result<(), BrowserToolError> {
+    // Close the live Chromium instance for this session, if any.
+    let active = {
+        let mut guard = registry().lock().await;
+        let key = guard
+            .iter()
+            .find(|(_, a)| a.session_id == session_id)
+            .map(|(k, _)| k.clone());
+        if let Some(key) = key {
+            guard.remove(&key)
+        } else {
+            None
+        }
+    };
+    if let Some(active) = active {
+        close_active_browser(active).await;
+    }
+
+    // Mark the DB session as closed and remove its profile dir.
+    let pool = {
+        let guard = session_pools().lock().await;
+        guard.get(session_id).cloned()
+    };
+    if let Some(pool) = pool {
+        let repo = BrowserRepository::new(pool);
+        let _ = repo.close_session(session_id).await;
+        if let Ok(Some(session)) = repo.get_session(session_id).await {
+            let _ = std::fs::remove_dir_all(&session.profile_dir);
+        }
+    }
+    Ok(())
+}
+
+pub async fn close_browser_session_with_pool(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<(), BrowserToolError> {
+    {
+        let mut guard = session_pools().lock().await;
+        guard.insert(session_id.to_string(), pool.clone());
+    }
+    close_browser_session(session_id).await
+}
+
+pub async fn close_all_browsers() -> Result<(), BrowserToolError> {
+    // Close every live Chromium instance.
+    let actives: Vec<ActiveBrowser> = {
+        let mut guard = registry().lock().await;
+        guard.drain().map(|(_, v)| v).collect()
+    };
+    for active in actives {
+        close_active_browser(active).await;
+    }
+
+    // Mark any remaining DB rows as closed and remove profile dirs.
+    let pools: Vec<SqlitePool> = {
+        let guard = session_pools().lock().await;
+        guard.values().cloned().collect()
+    };
+    for pool in pools {
+        let repo = BrowserRepository::new(pool);
+        let sessions = match repo.list_running_sessions().await {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for session in sessions {
+            if session.status != "closed" {
+                let _ = repo.close_session(&session.id).await;
+            }
+            let _ = std::fs::remove_dir_all(&session.profile_dir);
+        }
+    }
+    Ok(())
+}
+
+pub async fn close_all_browsers_with_pool(pool: &SqlitePool) -> Result<(), BrowserToolError> {
+    // Mark all running rows closed using provided pool.
+
+    // Mark all running rows closed using provided pool.
+    let repo = BrowserRepository::new(pool.clone());
+    let sessions = repo.list_running_sessions().await.unwrap_or_default();
+    // Close active instances first.
+    let actives: Vec<ActiveBrowser> = {
+        let mut guard = registry().lock().await;
+        guard.drain().map(|(_, v)| v).collect()
+    };
+    for active in actives {
+        close_active_browser(active).await;
+    }
+    for session in sessions {
+        if session.status != "closed" {
+            let _ = repo.close_session(&session.id).await;
+        }
+        let _ = std::fs::remove_dir_all(&session.profile_dir);
+    }
+    Ok(())
 }

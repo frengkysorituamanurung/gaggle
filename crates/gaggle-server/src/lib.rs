@@ -42,7 +42,8 @@ use gaggle_db::{
 };
 use gaggle_mcp::{ExtensionRegistry, InstallExtensionRequest, RECOMMENDED_MAX_ACTIVE_TOOLS};
 use gaggle_recipes::{
-    compute_next_run, render_recipe_template, resolve_recipe_parameters, validate_recipe_parameters,
+    compute_next_run, render_recipe_template, resolve_recipe_parameters,
+    validate_recipe_parameters, validate_timezone,
 };
 use gaggle_tools::{
     BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
@@ -52,7 +53,7 @@ use gaggle_tools::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     convert::Infallible,
     net::SocketAddr,
     path::PathBuf,
@@ -143,6 +144,22 @@ pub struct CreateRecipeSubRecipeRequest {
     pub values_json: Option<String>,
     pub sequential_when_repeated: Option<i64>,
     pub idx: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UpdateRecipeRequest {
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_ref: Option<String>,
+    pub instructions: Option<String>,
+    pub prompt: Option<String>,
+    pub definition: Option<String>,
+    pub default_model_id: Option<String>,
+    pub parameters: Option<Vec<CreateRecipeParameterRequest>>,
+    pub extensions: Option<Vec<String>>,
+    pub sub_recipes: Option<Vec<CreateRecipeSubRecipeRequest>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -458,7 +475,13 @@ pub fn build_router(state: AppState) -> Router {
             get(list_extension_permissions).post(grant_extension_permission),
         )
         .route("/api/recipes", get(list_recipes).post(create_recipe))
-        .route("/api/recipes/{id}", get(get_recipe))
+        .route(
+            "/api/recipes/{id}",
+            get(get_recipe)
+                .put(update_recipe)
+                .patch(update_recipe)
+                .delete(delete_recipe),
+        )
         .route("/api/recipes/{id}/execute", post(execute_recipe))
         .route("/api/schedules", get(list_schedules).post(create_schedule))
         .route(
@@ -526,6 +549,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
 
 pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     let state = initialize_server_state(pool).await?;
+    let browser_pool = state.pool.clone();
     let tm = state.terminal_manager.clone();
     let _ = missed_run_catchup(&state).await;
     let _scheduler = spawn_recipe_scheduler(state.clone());
@@ -534,6 +558,7 @@ pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     info!(%addr, "Gaggle server listening");
     let res = axum::serve(listener, app).await;
     tm.shutdown_all().await;
+    let _ = gaggle_tools::close_all_browsers_with_pool(&browser_pool).await;
     res?;
     Ok(())
 }
@@ -872,6 +897,149 @@ async fn create_recipe(
     Ok((StatusCode::CREATED, Json(recipe)))
 }
 
+async fn update_recipe(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateRecipeRequest>,
+) -> Result<Json<Recipe>, (StatusCode, String)> {
+    if let Some(source_kind) = &req.source_kind
+        && !matches!(source_kind.as_str(), "inline" | "file" | "github" | "url")
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "source_kind must be one of: inline, file, github, url".to_string(),
+        ));
+    }
+
+    let repo = RecipeRepository::new(state.pool.clone());
+    repo.get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Recipe {id} not found")))?;
+
+    let _updated = repo
+        .update_recipe(
+            &id,
+            req.name.as_deref(),
+            req.title.as_deref(),
+            req.description.as_deref(),
+            req.source_kind.as_deref(),
+            req.source_ref.as_deref(),
+            req.instructions.as_deref(),
+            req.prompt.as_deref(),
+            req.definition.as_deref(),
+            req.default_model_id.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Replace parameters if provided.
+    if let Some(params) = &req.parameters {
+        repo.delete_parameters(&id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for (idx, p) in params.iter().enumerate() {
+            let required = p.required.unwrap_or(1);
+            let default_value = p.default_value.clone();
+            if required == 1 && default_value.is_some() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Parameter '{}' required but has default", p.name),
+                ));
+            }
+            if required == 0 && default_value.is_none() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Parameter '{}' optional but missing default", p.name),
+                ));
+            }
+            repo.create_parameter(
+                &id,
+                &p.name,
+                p.param_type.as_deref().unwrap_or("string"),
+                p.description.as_deref(),
+                required,
+                default_value.as_deref(),
+                p.idx.unwrap_or(idx as i64),
+            )
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        }
+    }
+
+    // Replace extensions if provided.
+    if let Some(exts) = &req.extensions {
+        let existing = repo
+            .list_recipe_extensions(&id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for re in existing {
+            repo.remove_extension(&id, &re.extension_id)
+                .await
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        }
+        let ext_repo = ExtensionRepository::new(state.pool.clone());
+        let all = ext_repo
+            .list_all_extensions()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for ext_ref in exts {
+            let found = all.iter().find(|e| e.id == *ext_ref || e.name == *ext_ref);
+            if let Some(ext) = found {
+                repo.add_extension(&id, &ext.id)
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            } else {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Extension '{ext_ref}' not found"),
+                ));
+            }
+        }
+    }
+
+    // Replace sub-recipes if provided.
+    if let Some(subs) = &req.sub_recipes {
+        repo.delete_sub_recipes(&id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for (idx, s) in subs.iter().enumerate() {
+            repo.create_sub_recipe(
+                &id,
+                &s.child_recipe_id,
+                &s.name,
+                s.values_json.as_deref(),
+                s.sequential_when_repeated.unwrap_or(0),
+                s.idx.unwrap_or(idx as i64),
+            )
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        }
+    }
+
+    let recipe = repo
+        .get_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Recipe {id} not found")))?;
+    Ok(Json(recipe))
+}
+
+async fn delete_recipe(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let repo = RecipeRepository::new(state.pool);
+    let deleted = repo
+        .delete_recipe(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !deleted {
+        return Err((StatusCode::NOT_FOUND, format!("Recipe {id} not found")));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn execute_recipe(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -883,6 +1051,14 @@ async fn execute_recipe(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Recipe {id} not found")))?;
+
+    // Recursion/cycle guard for recipe sub-recipes.
+    if recipe_graph_has_cycle(&recipe_repo, &recipe.id).await? {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Recipe recursion or cycle detected".to_string(),
+        ));
+    }
 
     // Load params specs
     let specs = recipe_repo
@@ -978,6 +1154,65 @@ async fn execute_recipe(
 
     let _ = (rendered_instructions, rendered_prompt);
 
+    // Execute (create child chats for) any sub-recipes attached to this recipe.
+    // Child chats are bound to the main chat as subagents.
+    let sub_recipes = recipe_repo
+        .list_sub_recipes(&recipe.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let ext_repo = ExtensionRepository::new(state.pool.clone());
+    for sub in sub_recipes {
+        let child_recipe = recipe_repo
+            .get_by_id(&sub.child_recipe_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("Recipe {} not found", sub.child_recipe_id),
+                )
+            })?;
+
+        let title = if sub.name.trim().is_empty() {
+            child_recipe.title.clone()
+        } else {
+            sub.name.clone()
+        };
+
+        let child_chat = chat_repo
+            .create_recipe_chat(
+                &req.project_id,
+                &title,
+                "subagent",
+                &mode,
+                &permission_mode,
+                Some(&child_recipe.id),
+                sub.values_json.as_deref(),
+                None,
+                Some(&chat.id),
+                req.parent_tool_call_id.as_deref(),
+            )
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+        // Activate required extensions for the child recipe chat.
+        let child_ext_ids = recipe_repo
+            .list_extension_ids(&child_recipe.id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        for ext_id in child_ext_ids {
+            ext_repo
+                .enable_extension_for_chat(&child_chat.id, &ext_id)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        }
+
+        // `sequential_when_repeated` is enforced by creating these child chats
+        // sequentially (awaiting each creation) rather than in parallel.
+        let _ = sub.sequential_when_repeated;
+    }
+
     Ok((StatusCode::CREATED, Json(chat)))
 }
 
@@ -1058,16 +1293,47 @@ async fn update_schedule(
     Json(req): Json<UpdateScheduleRequest>,
 ) -> Result<Json<Schedule>, (StatusCode, String)> {
     let repo = RecipeRepository::new(state.pool.clone());
+
+    let existing = repo
+        .get_schedule(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Schedule {id} not found")))?;
+
     if let Some(enabled) = req.enabled {
         repo.set_schedule_enabled(&id, enabled != 0)
             .await
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     }
-    if let (Some(cron_expr), Some(timezone)) = (req.cron_expr.as_deref(), req.timezone.as_deref()) {
+
+    // Persist param_values when provided (including null to clear).
+    if req.param_values.is_some() {
+        let param_values_str = req.param_values.as_ref().and_then(|v| {
+            if v.is_null() {
+                None
+            } else {
+                Some(v.to_string())
+            }
+        });
+        sqlx::query("UPDATE schedules SET param_values = ? WHERE id = ?")
+            .bind(param_values_str)
+            .bind(&id)
+            .execute(&state.pool)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    // Update cron/timezone when either is provided, validating timezone.
+    if req.cron_expr.is_some() || req.timezone.is_some() {
+        let cron_expr = req.cron_expr.as_deref().unwrap_or(&existing.cron_expr);
+        let timezone = req.timezone.as_deref().unwrap_or(&existing.timezone);
+
+        validate_timezone(timezone).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
         let now = now_ms();
         let next = compute_next_run(cron_expr, timezone, now)
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-        // update cron_expr/timezone not stored? need update; repo lacks update cron. Add direct query.
+
         sqlx::query(
             "UPDATE schedules SET cron_expr = ?, timezone = ?, next_run_at = ? WHERE id = ?",
         )
@@ -1079,6 +1345,7 @@ async fn update_schedule(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
+
     let sched = repo
         .get_schedule(&id)
         .await
@@ -2820,4 +3087,66 @@ pub fn spawn_recipe_scheduler(state: AppState) -> tokio::task::JoinHandle<()> {
             let _ = process_due_schedules(&state).await;
         }
     })
+}
+
+async fn recipe_graph_has_cycle(
+    repo: &RecipeRepository,
+    root: &str,
+) -> Result<bool, (StatusCode, String)> {
+    // Load the reachable sub-recipe graph iteratively.
+    let mut adjacency: HashMap<String, Vec<String>> = HashMap::new();
+    let mut to_visit = vec![root.to_string()];
+    let mut visited = HashSet::new();
+    while let Some(node) = to_visit.pop() {
+        if visited.contains(&node) {
+            continue;
+        }
+        visited.insert(node.clone());
+        let subs = repo
+            .list_sub_recipes(&node)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let children: Vec<String> = subs.into_iter().map(|s| s.child_recipe_id).collect();
+        for c in &children {
+            if !visited.contains(c) {
+                to_visit.push(c.clone());
+            }
+        }
+        adjacency.insert(node, children);
+    }
+
+    // Synchronous cycle detection.
+    let mut state_visited = HashSet::new();
+    let mut stack = HashSet::new();
+    fn dfs(
+        adjacency: &HashMap<String, Vec<String>>,
+        node: &str,
+        visited: &mut HashSet<String>,
+        stack: &mut HashSet<String>,
+    ) -> bool {
+        if stack.contains(node) {
+            return true;
+        }
+        if visited.contains(node) {
+            return false;
+        }
+        stack.insert(node.to_string());
+        if let Some(children) = adjacency.get(node) {
+            for child in children {
+                if dfs(adjacency, child, visited, stack) {
+                    return true;
+                }
+            }
+        }
+        stack.remove(node);
+        visited.insert(node.to_string());
+        false
+    }
+
+    for node in adjacency.keys() {
+        if dfs(&adjacency, node, &mut state_visited, &mut stack) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

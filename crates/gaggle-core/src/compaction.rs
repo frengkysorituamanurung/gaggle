@@ -8,6 +8,10 @@
 use crate::{
     ModelCompletionRequest, ModelProviderAdapter, ProviderMessage,
     context_assembler::estimate_tokens,
+    structured_summary::{
+        CompactionTemplates, StructuredSummary, auto_compact_threshold,
+        format_message_for_compacting, render_template,
+    },
 };
 use anyhow::{Context, Result};
 use gaggle_db::{
@@ -178,7 +182,8 @@ impl CompactionEngine {
             return Ok(None);
         }
 
-        let threshold = chat.compact_threshold;
+        let threshold =
+            auto_compact_threshold(context_window.max(0) as usize, chat.compact_threshold);
         if !force && !should_compact(total_tokens, context_window, threshold) {
             return Ok(None);
         }
@@ -202,24 +207,40 @@ impl CompactionEngine {
         .await
         .unwrap_or_default();
 
-        // Build the summarization prompt.
-        let mut prompt = String::from(
-            "Summarize the following conversation history into a concise, faithful summary. \
-             Preserve all critical constraints, unresolved approvals, deny rules, security-relevant \
-             context, and important decisions. Do not invent facts.\n\n",
-        );
-        for (seq, content) in &summarizable {
-            prompt.push_str(&format!("[seq {}] {}\n", seq, content));
-        }
+        // Build the summarization prompt using the ported compaction template.
+        let templates = CompactionTemplates::default();
+        let messages_text = summarizable
+            .iter()
+            .map(|(seq, content)| format_message_for_compacting(*seq, "history", content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut prompt = render_template(
+            &templates.compaction,
+            &serde_json::json!({ "messages": messages_text }),
+        )
+        .unwrap_or_else(|_| {
+            // Fallback to the previous hard-coded prompt if rendering fails.
+            let mut fallback = String::from(
+                "Summarize the following conversation history into a concise, faithful summary. \
+                 Preserve all critical constraints, unresolved approvals, deny rules, security-relevant \
+                 context, and important decisions. Do not invent facts.\n\n",
+            );
+            for (seq, content) in &summarizable {
+                fallback.push_str(&format!("[seq {}] {}\n", seq, content));
+            }
+            fallback
+        });
+
+        // Preserve system prompts and unresolved approvals explicitly.
         if !system_prompts.is_empty() {
-            prompt.push_str("\nSystem prompts that must be preserved:\n");
+            prompt.push_str("\n\nSystem prompts that must be preserved:\n");
             for s in &system_prompts {
                 prompt.push_str(s);
                 prompt.push('\n');
             }
         }
         if !pending_approvals.is_empty() {
-            prompt.push_str("\nUnresolved approvals that must be preserved:\n");
+            prompt.push_str("\n\nUnresolved approvals that must be preserved:\n");
             for (id, command) in &pending_approvals {
                 prompt.push_str(&format!(
                     "- approval {} (command: {})\n",
@@ -234,6 +255,7 @@ impl CompactionEngine {
             messages: vec![ProviderMessage {
                 role: "user".to_string(),
                 content: prompt,
+                ..Default::default()
             }],
             tools: Vec::new(),
             max_output_tokens: Some(512),
@@ -245,6 +267,15 @@ impl CompactionEngine {
             .with_context(|| "Provider failed during compaction summarization")?;
 
         let mut summary = completion.text.trim().to_string();
+        // If the model followed the structured output contract, render the
+        // structured summary into markdown context. Otherwise keep the raw
+        // response as a lossless fallback.
+        if let Some(structured) = StructuredSummary::parse(&summary)
+            && let Ok(rendered) = structured.render_with(&templates.summary)
+            && !rendered.trim().is_empty()
+        {
+            summary = rendered;
+        }
         if summary.is_empty() {
             summary = "Summary unavailable.".to_string();
         }
@@ -288,6 +319,7 @@ impl CompactionEngine {
         let compacted_messages = vec![ProviderMessage {
             role: "system".to_string(),
             content: format!("Conversation summary:\n{}", stored.summary),
+            ..Default::default()
         }];
 
         Ok(Some(CompactionResult {

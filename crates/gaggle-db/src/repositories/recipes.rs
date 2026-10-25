@@ -116,6 +116,74 @@ impl RecipeRepository {
         Ok(res.rows_affected() > 0)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_recipe(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        title: Option<&str>,
+        description: Option<&str>,
+        source_kind: Option<&str>,
+        source_ref: Option<&str>,
+        instructions: Option<&str>,
+        prompt: Option<&str>,
+        definition: Option<&str>,
+        default_model_id: Option<&str>,
+    ) -> Result<Recipe> {
+        if let Some(source_kind) = source_kind
+            && !matches!(source_kind, "inline" | "file" | "github" | "url")
+        {
+            anyhow::bail!("source_kind must be one of: inline, file, github, url");
+        }
+
+        let now = now_ms();
+        let result = sqlx::query(
+            r#"
+            UPDATE recipes SET
+                name = COALESCE(?, name),
+                title = COALESCE(?, title),
+                description = COALESCE(?, description),
+                source_kind = COALESCE(?, source_kind),
+                source_ref = COALESCE(?, source_ref),
+                instructions = COALESCE(?, instructions),
+                prompt = COALESCE(?, prompt),
+                definition = COALESCE(?, definition),
+                default_model_id = COALESCE(?, default_model_id),
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(name)
+        .bind(title)
+        .bind(description)
+        .bind(source_kind)
+        .bind(source_ref)
+        .bind(instructions)
+        .bind(prompt)
+        .bind(definition)
+        .bind(default_model_id)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            anyhow::bail!("Recipe {id} not found");
+        }
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Recipe {id} not found after update"))
+    }
+
+    pub async fn delete_sub_recipes(&self, recipe_id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM recipe_sub_recipes WHERE recipe_id = ?")
+            .bind(recipe_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     // ------------------------------------------------------------- parameters
 
     #[allow(clippy::too_many_arguments)]

@@ -64,19 +64,19 @@ pub struct MotionTokens {
 pub fn light_theme_tokens() -> DesignTokens {
     DesignTokens {
         colors: ColorTokens {
-            bg_app: "#f8f9fa",
+            bg_app: "#f4f6f7",
             bg_panel: "#ffffff",
-            bg_surface: "#f1f3f5",
-            text_primary: "#212529",
-            text_muted: "#5c646d",
-            accent: "#1c7ed6",
-            danger: "#e03131",
-            success: "#2f9e44",
-            border: "#dee2e6",
+            bg_surface: "#e3e6ea",
+            text_primary: "#3f434b",
+            text_muted: "#878787",
+            accent: "#5c98f9",
+            danger: "#f94b4b",
+            success: "#91cb80",
+            border: "#e3e6ea",
         },
         typography: TypographyTokens {
-            font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-            font_mono: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace",
+            font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+            font_mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
             size_xs: "0.75rem",
             size_sm: "0.875rem",
             size_md: "1rem",
@@ -111,19 +111,66 @@ pub fn light_theme_tokens() -> DesignTokens {
 pub fn dark_theme_tokens() -> DesignTokens {
     DesignTokens {
         colors: ColorTokens {
-            bg_app: "#1a1b1e",
-            bg_panel: "#25262b",
-            bg_surface: "#2c2e33",
-            text_primary: "#e9ecef",
-            text_muted: "#909296",
-            accent: "#4dabf7",
+            bg_app: "#22252a",
+            bg_panel: "#3f434b",
+            bg_surface: "#474e57",
+            text_primary: "#ffffff",
+            text_muted: "#878787",
+            accent: "#7cacff",
             danger: "#ff6b6b",
-            success: "#51cf66",
-            border: "#373a40",
+            success: "#a3d795",
+            border: "#3f434b",
         },
         typography: TypographyTokens {
-            font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-            font_mono: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace",
+            font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+            font_mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            size_xs: "0.75rem",
+            size_sm: "0.875rem",
+            size_md: "1rem",
+            size_lg: "1.125rem",
+            size_xl: "1.25rem",
+            weight_regular: 400,
+            weight_medium: 500,
+            weight_bold: 700,
+        },
+        spacing: SpacingTokens {
+            xs: "0.25rem",
+            sm: "0.5rem",
+            md: "1rem",
+            lg: "1.5rem",
+            xl: "2rem",
+        },
+        borders: BorderTokens {
+            radius_sm: "0.25rem",
+            radius_md: "0.5rem",
+            radius_lg: "1rem",
+            width: "1px",
+        },
+        motion: MotionTokens {
+            duration_fast: "100ms",
+            duration_normal: "200ms",
+            duration_slow: "350ms",
+            easing_standard: "cubic-bezier(0.4, 0, 0.2, 1)",
+        },
+    }
+}
+
+pub fn aura_theme_tokens() -> DesignTokens {
+    DesignTokens {
+        colors: ColorTokens {
+            bg_app: "#15141b",
+            bg_panel: "#1a1921",
+            bg_surface: "#201e2b",
+            text_primary: "#edecee",
+            text_muted: "#8a8282",
+            accent: "#a277ff",
+            danger: "#ff6767",
+            success: "#61ffca",
+            border: "#2d2b38",
+        },
+        typography: TypographyTokens {
+            font_ui: "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", monospace",
+            font_mono: "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", monospace",
             size_xs: "0.75rem",
             size_sm: "0.875rem",
             size_md: "1rem",
@@ -227,6 +274,7 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
 pub fn render_index_html() -> String {
     let light_vars = format_css_variables(&light_theme_tokens());
     let dark_vars = format_css_variables(&dark_theme_tokens());
+    let aura_vars = format_css_variables(&aura_theme_tokens());
 
     let mut html = String::with_capacity(24576);
     html.push_str(
@@ -251,8 +299,15 @@ pub fn render_index_html() -> String {
     html.push_str(
         r#"
     }
+    [data-theme="aura"] {
+      "#,
+    );
+    html.push_str(&aura_vars);
+    html.push_str(
+        r#"
+    }
     @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
+      :root:not([data-theme="light"]):not([data-theme="aura"]) {
         "#,
     );
     html.push_str(&dark_vars);
@@ -971,6 +1026,7 @@ pub fn render_index_html() -> String {
           <option value="system">System</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
+          <option value="aura">Aura</option>
         </select>
         <button id="btn-open-settings" class="icon-btn" type="button" aria-label="Open settings and diagnostics" aria-expanded="false" title="Settings (Cmd/Ctrl + ,)">⚙</button>
       </div>
@@ -1401,6 +1457,7 @@ pub fn render_index_html() -> String {
                 <option value="system">System</option>
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
+                <option value="aura">Aura</option>
               </select>
               <p class="settings-note">Theme changes are persisted in <span class="mono">app_settings</span> and shared with the sidebar switcher. Gaggle respects reduced-motion preferences.</p>
             </div>
@@ -2225,7 +2282,7 @@ pub fn render_index_html() -> String {
       }
 
       function applyTheme(theme) {
-        const valid = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
+        const valid = (theme === 'light' || theme === 'dark' || theme === 'aura' || theme === 'system') ? theme : 'system';
         document.documentElement.setAttribute('data-theme', valid);
         if (themeSwitcher && themeSwitcher.value !== valid) {
           themeSwitcher.value = valid;
