@@ -267,14 +267,17 @@ fn completion_request() -> ModelCompletionRequest {
             ProviderMessage {
                 role: "system".to_string(),
                 content: "You are helpful".to_string(),
+                ..Default::default()
             },
             ProviderMessage {
                 role: "user".to_string(),
                 content: "Read Cargo.toml".to_string(),
+                ..Default::default()
             },
             ProviderMessage {
                 role: "tool".to_string(),
                 content: "{\"ok\":true}".to_string(),
+                ..Default::default()
             },
         ],
         tools: vec![ToolDefinition {
@@ -383,10 +386,15 @@ async fn anthropic_complete_normalizes_text_tools_and_usage() {
     assert_eq!(payload["max_tokens"], 512);
     assert_eq!(payload["stream"], false);
     assert_eq!(payload["messages"][0]["role"], "user");
-    assert_eq!(
-        payload["messages"][1]["content"],
-        "[tool result] {\"ok\":true}"
+    let tool_message = &payload["messages"][1];
+    assert_eq!(tool_message["role"], "user");
+    let tool_content = &tool_message["content"];
+    assert!(
+        tool_content.is_array(),
+        "tool result must be a content block array"
     );
+    assert_eq!(tool_content[0]["type"], "tool_result");
+    assert_eq!(tool_content[0]["content"], "{\"ok\":true}");
     assert_eq!(payload["tools"][0]["name"], "fs.read");
     assert!(payload["tools"][0].get("input_schema").is_some());
     assert!(payload["tools"][0].get("parameters").is_none());

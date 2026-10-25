@@ -334,6 +334,7 @@ impl ContextAssembler {
                         history.push(ProviderMessage {
                             role: role.clone(),
                             content: shortened,
+                            ..Default::default()
                         });
                     }
                 }
@@ -344,6 +345,7 @@ impl ContextAssembler {
             history.push(ProviderMessage {
                 role: role.clone(),
                 content: content.clone(),
+                ..Default::default()
             });
         }
         history.reverse();
@@ -352,17 +354,20 @@ impl ContextAssembler {
         messages.push(ProviderMessage {
             role: "system".to_string(),
             content: system_content,
+            ..Default::default()
         });
         if let Some(summary) = &latest_summary {
             messages.push(ProviderMessage {
                 role: "system".to_string(),
                 content: format!("Conversation summary:\n{}", summary.summary),
+                ..Default::default()
             });
         }
         messages.extend(history);
         messages.push(ProviderMessage {
             role: "user".to_string(),
             content: prompt_text,
+            ..Default::default()
         });
 
         let estimated_tokens =

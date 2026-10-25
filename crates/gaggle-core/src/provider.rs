@@ -50,10 +50,17 @@ pub enum ProviderError {
     Credential(#[from] CredentialError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProviderMessage {
     pub role: String, // "system" | "user" | "assistant" | "tool"
     pub content: String,
+    /// Tool call id associated with a `tool` result message (Anthropic `tool_use_id`,
+    /// OpenAI `tool_call_id`). `None` for non-tool messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    /// Tool calls emitted by an assistant message. Empty for non-assistant messages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<ProposedToolCall>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1123,19 +1130,76 @@ fn build_anthropic_payload(req: &ModelCompletionRequest, stream: bool) -> serde_
     let mut system_parts = Vec::new();
     let mut messages = Vec::new();
 
+    // Anthropic pairs tool results with assistant `tool_use` blocks. A run of consecutive
+    // `tool` messages is collapsed into a single `user` message whose content is a list of
+    // `tool_result` blocks; assistant messages carrying `tool_calls` are emitted with
+    // `tool_use` blocks so the pairing survives a round trip.
+    let mut pending_tool_results: Vec<serde_json::Value> = Vec::new();
+
+    let flush_tool_results = |messages: &mut Vec<serde_json::Value>,
+                              pending: &mut Vec<serde_json::Value>| {
+        if !pending.is_empty() {
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": std::mem::take(pending),
+            }));
+        }
+    };
+
     for message in &req.messages {
         match message.role.as_str() {
             "system" => system_parts.push(message.content.clone()),
-            "tool" => messages.push(serde_json::json!({
-                "role": "user",
-                "content": format!("[tool result] {}", message.content),
-            })),
-            role => messages.push(serde_json::json!({
-                "role": role,
-                "content": message.content,
-            })),
+            "tool" => {
+                let tool_use_id = message
+                    .tool_call_id
+                    .clone()
+                    .unwrap_or_else(|| "tool_0".to_string());
+                pending_tool_results.push(serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": message.content,
+                }));
+            }
+            "assistant" if !message.tool_calls.is_empty() => {
+                flush_tool_results(&mut messages, &mut pending_tool_results);
+                let mut blocks: Vec<serde_json::Value> = Vec::new();
+                if !message.content.trim().is_empty() {
+                    blocks.push(serde_json::json!({
+                        "type": "text",
+                        "text": message.content,
+                    }));
+                }
+                for call in &message.tool_calls {
+                    let input = serde_json::from_str::<serde_json::Value>(&call.arguments_json)
+                        .unwrap_or_else(|_| serde_json::json!({}));
+                    blocks.push(serde_json::json!({
+                        "type": "tool_use",
+                        "id": call.id,
+                        "name": call.tool_name,
+                        "input": input,
+                    }));
+                }
+                if blocks.is_empty() {
+                    blocks.push(serde_json::json!({
+                        "type": "text",
+                        "text": "",
+                    }));
+                }
+                messages.push(serde_json::json!({
+                    "role": "assistant",
+                    "content": blocks,
+                }));
+            }
+            role => {
+                flush_tool_results(&mut messages, &mut pending_tool_results);
+                messages.push(serde_json::json!({
+                    "role": role,
+                    "content": message.content,
+                }));
+            }
         }
     }
+    flush_tool_results(&mut messages, &mut pending_tool_results);
 
     let mut payload = serde_json::json!({
         "model": req.model_key,
