@@ -152,6 +152,13 @@ plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
 # Remove extended attributes so the distribution zip contains only the bundle.
 xattr -cr "$APP_DIR"
 
+# Ad-hoc sign the bundle. This keeps unsigned CI/PR artifacts from being
+# reported as "damaged" by Gatekeeper while still allowing the optional
+# Developer ID signing step to replace this signature later.
+codesign --force --sign - "$APP_DIR/Contents/Resources/bin/gaggle"
+codesign --force --sign - "$APP_DIR/Contents/MacOS/Gaggle"
+codesign --force --sign - "$APP_DIR"
+
 # `ditto` preserves the bundle structure and permissions expected by macOS.
 ditto --norsrc --noextattr --noqtn -c -k --keepParent "$APP_DIR" "$ZIP_PATH"
 

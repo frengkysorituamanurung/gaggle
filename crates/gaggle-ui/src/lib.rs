@@ -1,3 +1,7 @@
+pub mod i18n;
+
+pub use i18n::{I18n, Locale, load_locale};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]

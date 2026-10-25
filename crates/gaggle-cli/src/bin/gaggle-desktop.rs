@@ -60,8 +60,14 @@ async fn main() -> Result<()> {
 }
 
 async fn wait_for_server(addr: SocketAddr) -> bool {
-    for _ in 0..50 {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+    let client = reqwest::Client::new();
+    let url = format!("http://{addr}/api/health");
+    for _ in 0..100 {
+        if let Ok(response) = client.get(&url).send().await
+            && response.status().is_success()
+            && let Ok(body) = response.text().await
+            && body.contains("\"status\":\"ok\"")
+        {
             return true;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -75,6 +81,41 @@ fn browser_url(addr: SocketAddr) -> String {
 
 fn open_browser(addr: SocketAddr) -> Result<()> {
     let url = browser_url(addr);
+
+    // Prefer launching a Chromium-based browser in application mode so Gaggle
+    // behaves like an installed desktop app (dedicated window, no browser chrome)
+    // instead of a plain browser tab. Fall back to the platform default opener.
+    let app_mode_candidates: &[&str] = match std::env::consts::OS {
+        "macos" => &[
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "google-chrome",
+            "chromium",
+            "microsoft-edge",
+        ],
+        "linux" => &[
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "microsoft-edge",
+            "microsoft-edge-stable",
+        ],
+        _ => &[],
+    };
+
+    for candidate in app_mode_candidates {
+        if Command::new(candidate)
+            .arg(format!("--app={url}"))
+            .arg("--new-window")
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
     let program = match std::env::consts::OS {
         "macos" => "open",
         "linux" => "xdg-open",

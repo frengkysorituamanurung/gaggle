@@ -11,6 +11,7 @@ use gaggle_db::{
 use sqlx::SqlitePool;
 
 pub mod browser_tools;
+pub mod download;
 pub mod fs_tools;
 pub mod git_tools;
 pub mod shell_tools;
@@ -21,6 +22,7 @@ pub use browser_tools::{
     close_all_browsers_with_pool, close_browser, close_browser_session,
     close_browser_session_with_pool, close_browser_with_pool,
 };
+pub use download::{DownloadError, DownloadManager, DownloadProgress};
 pub use fs_tools::{
     DEFAULT_MAX_LIST_ENTRIES, DEFAULT_MAX_READ_BYTES, DEFAULT_MAX_SEARCH_MATCHES, FsEntry,
     FsReadOutput, FsSearchMatch, FsToolError, FsWriteOutput, fs_list, fs_read, fs_search, fs_write,

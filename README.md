@@ -187,6 +187,16 @@ Do not run `spctl --master-disable`. If you manage downloads yourself and
 accept the security trade-off, macOS may attach a quarantine attribute; the
 standard Finder confirmation is still preferred over removing it manually.
 
+If an ad-hoc-signed build is reported as damaged, this is usually because the
+browser attached a quarantine attribute to the downloaded ZIP or app. After
+moving `Gaggle.app` to `/Applications`, you can remove only that marker with:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Gaggle.app
+```
+
+This does not disable Gatekeeper.
+
 ### Reproducible macOS ZIP locally
 
 The checked-in packaging script builds the release binaries, assembles
