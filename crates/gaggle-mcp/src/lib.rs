@@ -26,6 +26,9 @@ use tokio::{
 use tracing::warn;
 use url::Url;
 
+pub mod connection_manager;
+pub use connection_manager::McpConnectionManager;
+
 pub const RECOMMENDED_MAX_ACTIVE_TOOLS: usize = 25;
 
 // ---------------------------------------------------------------------------
@@ -869,11 +872,15 @@ pub struct InstallExtensionRequest {
 
 pub struct ExtensionRegistry {
     pool: SqlitePool,
+    connections: McpConnectionManager,
 }
 
 impl ExtensionRegistry {
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool: pool.clone(),
+            connections: McpConnectionManager::new(),
+        }
     }
 
     pub async fn list_enabled_extensions(&self) -> Result<Vec<Extension>> {
@@ -1054,10 +1061,8 @@ impl ExtensionRegistry {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Extension {extension_id} not found"))?;
 
-        let client = McpClient::from_extension(&ext, None).await?;
-        client.initialize().await?;
+        let client = self.connections.get_or_connect(&ext).await?;
         let tools = client.list_tools().await?;
-        let _ = client.close().await;
 
         let mut out = Vec::new();
         for t in tools {
@@ -1135,11 +1140,22 @@ impl ExtensionRegistry {
 
 pub struct McpToolExecutor {
     pool: SqlitePool,
+    connections: McpConnectionManager,
 }
 
 impl McpToolExecutor {
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool: pool.clone(),
+            connections: McpConnectionManager::new(),
+        }
+    }
+
+    async fn client_for(&self, ext: &Extension) -> Result<Arc<McpClient>, String> {
+        self.connections
+            .get_or_connect(ext)
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -1175,18 +1191,18 @@ impl ToolExecutor for McpToolExecutor {
             return Err(format!("Extension '{}' lacks capability grants", ext.name));
         }
 
-        let client = McpClient::from_extension(&ext, None)
-            .await
-            .map_err(|e| e.to_string())?;
-        client.initialize().await.map_err(|e| e.to_string())?;
+        let client = self.client_for(&ext).await?;
 
         let args: Value =
             serde_json::from_str(args_json).unwrap_or(Value::Object(Default::default()));
-        let result = client
-            .call_tool(tool_name, args)
-            .await
-            .map_err(|e| e.to_string())?;
-        let _ = client.close().await;
+        let result = match client.call_tool(tool_name, args).await {
+            Ok(result) => result,
+            Err(err) => {
+                // Drop a potentially stale connection so the next call reconnects.
+                let _ = self.connections.invalidate(&ext.id).await;
+                return Err(err.to_string());
+            }
+        };
 
         if result.is_error {
             return Err(result.text());

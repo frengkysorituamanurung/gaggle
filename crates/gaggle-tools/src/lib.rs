@@ -15,9 +15,11 @@ pub mod fs_tools;
 pub mod git_tools;
 pub mod shell_tools;
 pub mod terminal;
-
+pub mod worktree_manager;
 pub use browser_tools::{
-    BrowserToolError, chromium_available, chromium_executable, close_all_browsers, close_browser,
+    BrowserToolError, chromium_available, chromium_executable, close_all_browsers,
+    close_all_browsers_with_pool, close_browser, close_browser_session,
+    close_browser_session_with_pool, close_browser_with_pool,
 };
 pub use fs_tools::{
     DEFAULT_MAX_LIST_ENTRIES, DEFAULT_MAX_READ_BYTES, DEFAULT_MAX_SEARCH_MATCHES, FsEntry,
@@ -33,6 +35,7 @@ pub use shell_tools::{
     shell_exec,
 };
 pub use terminal::{DEFAULT_SCROLLBACK_BYTES, TerminalPty, TerminalPtyConfig, TerminalPtyError};
+pub use worktree_manager::WorktreeManager;
 
 pub struct BuiltinToolSpec {
     pub extension_name: &'static str,

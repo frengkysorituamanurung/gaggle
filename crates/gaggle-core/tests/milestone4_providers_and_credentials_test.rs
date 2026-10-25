@@ -164,6 +164,7 @@ async fn test_provider_repository_and_mock_adapter() -> Result<()> {
         messages: vec![ProviderMessage {
             role: "user".to_string(),
             content: "Hello".to_string(),
+            ..Default::default()
         }],
         tools: vec![],
         max_output_tokens: Some(256),

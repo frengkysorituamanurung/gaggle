@@ -37,6 +37,8 @@ impl BrowserRepository {
         let now = now_ms();
         let headless_i = if headless { 1 } else { 0 };
 
+        let mut tx = self.pool.begin().await?;
+
         sqlx::query(
             r#"
             INSERT INTO browser_sessions (id, chat_id, run_id, profile_dir, headless, status, started_at)
@@ -49,8 +51,32 @@ impl BrowserRepository {
         .bind(profile_dir)
         .bind(headless_i)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        let audit_id = new_id();
+        let metadata = serde_json::json!({
+            "chat_id": chat_id,
+            "run_id": run_id,
+            "profile_dir": profile_dir,
+            "headless": headless,
+        })
+        .to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, actor_kind, action, entity_type, entity_id, metadata, created_at)
+            VALUES (?, 'system', 'browser_session.created', 'browser_session', ?, ?, ?)
+            "#,
+        )
+        .bind(&audit_id)
+        .bind(id)
+        .bind(&metadata)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
 
         let session =
             sqlx::query_as::<_, BrowserSession>("SELECT * FROM browser_sessions WHERE id = ?")
@@ -79,13 +105,49 @@ impl BrowserRepository {
         Ok(sessions)
     }
 
+    pub async fn list_running_sessions(&self) -> Result<Vec<BrowserSession>> {
+        let sessions = sqlx::query_as::<_, BrowserSession>(
+            "SELECT * FROM browser_sessions WHERE status = 'running' ORDER BY started_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(sessions)
+    }
+
     pub async fn close_session(&self, id: &str) -> Result<BrowserSession> {
         let now = now_ms();
+
+        let existing = self.get_session(id).await?;
+
         sqlx::query("UPDATE browser_sessions SET status = 'closed', ended_at = ? WHERE id = ?")
             .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        if let Some(session) = existing
+            && session.status != "closed"
+        {
+            let audit_id = new_id();
+            let metadata = serde_json::json!({
+                "chat_id": session.chat_id,
+                "run_id": session.run_id,
+                "profile_dir": session.profile_dir,
+            })
+            .to_string();
+            sqlx::query(
+                    r#"
+                    INSERT INTO audit_logs (id, actor_kind, action, entity_type, entity_id, metadata, created_at)
+                    VALUES (?, 'system', 'browser_session.closed', 'browser_session', ?, ?, ?)
+                    "#,
+                )
+                .bind(&audit_id)
+                .bind(id)
+                .bind(&metadata)
+                .bind(now)
+                .execute(&self.pool)
+                .await?;
+        }
 
         self.get_session(id)
             .await?
@@ -94,11 +156,38 @@ impl BrowserRepository {
 
     pub async fn mark_crashed(&self, id: &str) -> Result<BrowserSession> {
         let now = now_ms();
+
+        let existing = self.get_session(id).await?;
+
         sqlx::query("UPDATE browser_sessions SET status = 'crashed', ended_at = ? WHERE id = ?")
             .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        if let Some(session) = existing
+            && session.status != "crashed"
+        {
+            let audit_id = new_id();
+            let metadata = serde_json::json!({
+                "chat_id": session.chat_id,
+                "run_id": session.run_id,
+                "profile_dir": session.profile_dir,
+            })
+            .to_string();
+            sqlx::query(
+                    r#"
+                    INSERT INTO audit_logs (id, actor_kind, action, entity_type, entity_id, metadata, created_at)
+                    VALUES (?, 'system', 'browser_session.crashed', 'browser_session', ?, ?, ?)
+                    "#,
+                )
+                .bind(&audit_id)
+                .bind(id)
+                .bind(&metadata)
+                .bind(now)
+                .execute(&self.pool)
+                .await?;
+        }
 
         self.get_session(id)
             .await?

@@ -1,8 +1,13 @@
 pub mod agent_loop;
 pub mod code_mode;
 pub mod compaction;
+pub mod structured_summary;
 
 pub use compaction::{CompactionEngine, CompactionResult, should_compact};
+pub use structured_summary::{
+    CompactionTemplates, FileActivity, StructuredSummary, Templates, auto_compact_threshold,
+    format_message_for_compacting, render_template,
+};
 pub mod context_assembler;
 pub mod credentials;
 pub mod diagnostics;

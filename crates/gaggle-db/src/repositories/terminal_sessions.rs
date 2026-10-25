@@ -28,6 +28,8 @@ impl TerminalSessionRepository {
     ) -> Result<TerminalSession> {
         let id = new_id();
         let now = now_ms();
+        let mut tx = self.pool.begin().await?;
+
         sqlx::query(
             r#"
             INSERT INTO terminal_sessions (
@@ -45,8 +47,36 @@ impl TerminalSessionRepository {
         .bind(rows)
         .bind(pid)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        let audit_id = new_id();
+        let metadata = serde_json::json!({
+            "project_id": project_id,
+            "chat_id": chat_id,
+            "worktree_id": worktree_id,
+            "cwd": cwd,
+            "shell": shell,
+            "cols": cols,
+            "rows": rows,
+            "pid": pid,
+        })
+        .to_string();
+
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, actor_kind, action, entity_type, entity_id, metadata, created_at)
+            VALUES (?, 'system', 'terminal_session.created', 'terminal_session', ?, ?, ?)
+            "#,
+        )
+        .bind(&audit_id)
+        .bind(&id)
+        .bind(&metadata)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
 
         self.get_by_id(&id)
             .await?
@@ -93,14 +123,49 @@ impl TerminalSessionRepository {
     }
 
     pub async fn mark_exited(&self, id: &str, exit_code: Option<i64>, ended_at: i64) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        let existing =
+            sqlx::query_as::<_, TerminalSession>("SELECT * FROM terminal_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
         sqlx::query(
             "UPDATE terminal_sessions SET status = 'exited', exit_code = ?, ended_at = ? WHERE id = ?",
         )
         .bind(exit_code)
         .bind(ended_at)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+
+        if let Some(session) = existing
+            && session.status != "exited"
+        {
+            let audit_id = new_id();
+            let metadata = serde_json::json!({
+                "exit_code": exit_code,
+                "ended_at": ended_at,
+                "project_id": session.project_id,
+                "chat_id": session.chat_id,
+            })
+            .to_string();
+            sqlx::query(
+                    r#"
+                    INSERT INTO audit_logs (id, actor_kind, action, entity_type, entity_id, metadata, created_at)
+                    VALUES (?, 'system', 'terminal_session.exited', 'terminal_session', ?, ?, ?)
+                    "#,
+                )
+                .bind(&audit_id)
+                .bind(id)
+                .bind(&metadata)
+                .bind(ended_at)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 

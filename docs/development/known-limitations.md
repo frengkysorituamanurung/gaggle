@@ -14,9 +14,11 @@ the UI/backend integration audit.
 
 - The browser tool requires a locally installed Chromium/Chrome binary. When it
   cannot launch, browser-dependent tests and features are skipped or reported
-  unavailable rather than faked.
+  unavailable rather than faked. Browser sessions are closed on server shutdown
+  and their temporary profiles are removed.
 - PTY terminal sessions depend on platform process-tree and signal behavior;
-  behavior may differ between macOS and Linux.
+  behavior may differ between macOS and Linux. Process groups are terminated
+  on close to avoid orphaned children.
 - MCP extensions are treated as untrusted until explicitly enabled and
   authorized. Transport support is limited to implemented and tested transports.
 
@@ -59,3 +61,20 @@ the UI/backend integration audit.
   is not supported.
 - Credential store, shell discovery, and file watcher behavior are
   platform-dependent and documented per platform where applicable.
+
+
+## Audit and traceability
+
+- Audit logs are append-only SQLite records written in the same transaction as
+  the state change. There is no retention, export, or tamper-evidence policy
+  yet.
+- Lifecycle events for terminal and browser sessions are recorded, but
+  higher-level run/compaction audit coverage is still expanding.
+
+## Architecture decisions
+
+- ADRs for the agent state machine (`0001-agent-state-machine.md`), provider
+  trait (`0002-provider-trait.md`), and worktree/PTY/browser
+  (`0003-worktree-pty-browser.md`) are recorded under `docs/adr/`. Some
+  referenced refactors (state machine operation pipeline) are planned rather
+  than fully implemented.

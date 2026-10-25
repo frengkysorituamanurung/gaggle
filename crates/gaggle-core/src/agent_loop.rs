@@ -69,6 +69,7 @@ impl Drop for RunRegistrationGuard {
 #[derive(Clone, Default)]
 pub struct ActiveRunRegistry {
     tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
+    steering: Arc<RwLock<HashMap<String, Vec<String>>>>,
 }
 
 impl ActiveRunRegistry {
@@ -104,6 +105,25 @@ impl ActiveRunRegistry {
     pub fn unregister(&self, run_id: &str) {
         if let Ok(mut guard) = self.tokens.write() {
             guard.remove(run_id);
+        }
+        if let Ok(mut guard) = self.steering.write() {
+            guard.remove(run_id);
+        }
+    }
+
+    /// Queue a mid-run steering message for `run_id`.
+    pub fn steer(&self, run_id: &str, message: String) {
+        if let Ok(mut guard) = self.steering.write() {
+            guard.entry(run_id.to_string()).or_default().push(message);
+        }
+    }
+
+    /// Drain all queued steering messages for `run_id`.
+    pub fn drain_steering(&self, run_id: &str) -> Vec<String> {
+        if let Ok(mut guard) = self.steering.write() {
+            guard.remove(run_id).unwrap_or_default()
+        } else {
+            Vec::new()
         }
     }
 }
@@ -326,6 +346,17 @@ impl AgentRuntime {
                 return self.finish_cancelled(&run_repo, &run.id).await;
             }
 
+            // Apply any mid-run steering messages queued by the user.
+            for steering_message in self.active_runs.drain_steering(&run.id) {
+                if !steering_message.trim().is_empty() {
+                    conversation.push(ProviderMessage {
+                        role: "user".to_string(),
+                        content: steering_message,
+                        ..Default::default()
+                    });
+                }
+            }
+
             let step_start = Instant::now();
             tracing::debug!(
                 target: "gaggle.agent",
@@ -508,6 +539,15 @@ impl AgentRuntime {
                 });
             }
 
+            // Record the assistant turn that requested these tool calls so providers can pair
+            // tool results with their originating tool_use blocks (required by Anthropic).
+            conversation.push(ProviderMessage {
+                role: "assistant".to_string(),
+                content: completion.text.clone(),
+                tool_calls: completion.tool_calls.clone(),
+                ..Default::default()
+            });
+
             // Process proposed tool calls through the 7-step PermissionEngine
             for proposed in &completion.tool_calls {
                 if cancel_token.is_cancelled() {
@@ -587,6 +627,8 @@ impl AgentRuntime {
                         conversation.push(ProviderMessage {
                             role: "tool".to_string(),
                             content: deny_json,
+                            tool_call_id: Some(proposed.id.clone()),
+                            ..Default::default()
                         });
                     }
                     PermissionDecision::NeedsApproval { kind, summary } => {
@@ -676,6 +718,8 @@ impl AgentRuntime {
                         conversation.push(ProviderMessage {
                             role: "tool".to_string(),
                             content: tool_out,
+                            tool_call_id: Some(proposed.id.clone()),
+                            ..Default::default()
                         });
                     }
                 }
