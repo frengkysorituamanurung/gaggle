@@ -63,14 +63,12 @@ async fn wait_for_server(addr: SocketAddr) -> bool {
     let client = reqwest::Client::new();
     let url = format!("http://{addr}/api/health");
     for _ in 0..100 {
-        if let Ok(response) = client.get(&url).send().await {
-            if response.status().is_success() {
-                if let Ok(body) = response.text().await {
-                    if body.contains("\"status\":\"ok\"") {
-                        return true;
-                    }
-                }
-            }
+        if let Ok(response) = client.get(&url).send().await
+            && response.status().is_success()
+            && let Ok(body) = response.text().await
+            && body.contains("\"status\":\"ok\"")
+        {
+            return true;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
