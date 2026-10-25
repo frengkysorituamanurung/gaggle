@@ -14,32 +14,12 @@ pub struct ColorTokens {
     pub bg_app: &'static str,
     pub bg_panel: &'static str,
     pub bg_surface: &'static str,
-    pub bg_sidebar: &'static str,
-    pub sidebar_bg: &'static str,
-    pub sidebar_background: &'static str,
-    pub bg_elevated: &'static str,
-    pub elevated_bg: &'static str,
-    pub elevated_surface: &'static str,
-    pub bg_overlay: &'static str,
-    pub overlay_backdrop: &'static str,
     pub text_primary: &'static str,
     pub text_muted: &'static str,
-    pub text_secondary: &'static str,
-    pub secondary_text: &'static str,
     pub accent: &'static str,
     pub danger: &'static str,
     pub success: &'static str,
-    pub warning: &'static str,
-    pub warning_color: &'static str,
-    pub info: &'static str,
-    pub info_color: &'static str,
-    pub information: &'static str,
-    pub focus_ring: &'static str,
-    pub focus: &'static str,
-    pub focus_color: &'static str,
     pub border: &'static str,
-    pub divider: &'static str,
-    pub divider_color: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,26 +73,6 @@ pub fn light_theme_tokens() -> DesignTokens {
             danger: "#e03131",
             success: "#2f9e44",
             border: "#dee2e6",
-            divider: "#dee2e6",
-            divider_color: "#dee2e6",
-            bg_sidebar: "#f1f3f5",
-            sidebar_bg: "#f1f3f5",
-            sidebar_background: "#f1f3f5",
-            bg_elevated: "#ffffff",
-            elevated_bg: "#ffffff",
-            elevated_surface: "#ffffff",
-            bg_overlay: "rgba(0, 0, 0, 0.55)",
-            overlay_backdrop: "rgba(0, 0, 0, 0.55)",
-            text_secondary: "#495057",
-            secondary_text: "#495057",
-            warning: "#f08c00",
-            warning_color: "#f08c00",
-            info: "#1c7ed6",
-            info_color: "#1c7ed6",
-            information: "#1c7ed6",
-            focus_ring: "#1c7ed6",
-            focus: "#1c7ed6",
-            focus_color: "#1c7ed6",
         },
         typography: TypographyTokens {
             font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -160,26 +120,6 @@ pub fn dark_theme_tokens() -> DesignTokens {
             danger: "#ff6b6b",
             success: "#51cf66",
             border: "#373a40",
-            divider: "#373a40",
-            divider_color: "#373a40",
-            bg_sidebar: "#1f2024",
-            sidebar_bg: "#1f2024",
-            sidebar_background: "#1f2024",
-            bg_elevated: "#2c2e33",
-            elevated_bg: "#2c2e33",
-            elevated_surface: "#2c2e33",
-            bg_overlay: "rgba(0, 0, 0, 0.65)",
-            overlay_backdrop: "rgba(0, 0, 0, 0.65)",
-            text_secondary: "#adb5bd",
-            secondary_text: "#adb5bd",
-            warning: "#f08c00",
-            warning_color: "#f08c00",
-            info: "#4dabf7",
-            info_color: "#4dabf7",
-            information: "#4dabf7",
-            focus_ring: "#4dabf7",
-            focus: "#4dabf7",
-            focus_color: "#4dabf7",
         },
         typography: TypographyTokens {
             font_ui: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -226,27 +166,6 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
          --danger: {danger};\n      \
          --success: {success};\n      \
          --border: {border};\n      \
-         --divider: {divider};\n      \
-         --divider-color: {divider_color};\n      \
-         --border-divider: {divider};\n      \
-         --bg-sidebar: {bg_sidebar};\n      \
-         --sidebar-bg: {sidebar_bg};\n      \
-         --sidebar-background: {sidebar_background};\n      \
-         --bg-elevated: {bg_elevated};\n      \
-         --elevated-bg: {elevated_bg};\n      \
-         --elevated-surface: {elevated_surface};\n      \
-         --bg-overlay: {bg_overlay};\n      \
-         --overlay-backdrop: {overlay_backdrop};\n      \
-         --text-secondary: {text_secondary};\n      \
-         --secondary-text: {secondary_text};\n      \
-         --warning: {warning};\n      \
-         --warning-color: {warning_color};\n      \
-         --info: {info};\n      \
-         --info-color: {info_color};\n      \
-         --information: {information};\n      \
-         --focus-ring: {focus_ring};\n      \
-         --focus: {focus};\n      \
-         --focus-color: {focus_color};\n      \
          --font-ui: {font_ui};\n      \
          --font-mono: {font_mono};\n      \
          --size-xs: {size_xs};\n      \
@@ -279,26 +198,6 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         danger = tokens.colors.danger,
         success = tokens.colors.success,
         border = tokens.colors.border,
-        divider = tokens.colors.divider,
-        divider_color = tokens.colors.divider_color,
-        bg_sidebar = tokens.colors.bg_sidebar,
-        sidebar_bg = tokens.colors.sidebar_bg,
-        sidebar_background = tokens.colors.sidebar_background,
-        bg_elevated = tokens.colors.bg_elevated,
-        elevated_bg = tokens.colors.elevated_bg,
-        elevated_surface = tokens.colors.elevated_surface,
-        bg_overlay = tokens.colors.bg_overlay,
-        overlay_backdrop = tokens.colors.overlay_backdrop,
-        text_secondary = tokens.colors.text_secondary,
-        secondary_text = tokens.colors.secondary_text,
-        warning = tokens.colors.warning,
-        warning_color = tokens.colors.warning_color,
-        info = tokens.colors.info,
-        info_color = tokens.colors.info_color,
-        information = tokens.colors.information,
-        focus_ring = tokens.colors.focus_ring,
-        focus = tokens.colors.focus,
-        focus_color = tokens.colors.focus_color,
         font_ui = tokens.typography.font_ui,
         font_mono = tokens.typography.font_mono,
         size_xs = tokens.typography.size_xs,
@@ -372,22 +271,8 @@ pub fn render_index_html() -> String {
       overflow: hidden;
     }
     :focus-visible {
-      outline: 2px solid var(--focus-ring);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
-    }
-    .skip-link {
-      position: absolute;
-      left: -9999px;
-      top: var(--space-sm);
-      z-index: 1200;
-      padding: var(--space-sm) var(--space-md);
-      background: var(--bg-elevated);
-      color: var(--text-primary);
-      border: var(--border-width) solid var(--focus-ring);
-      border-radius: var(--radius-md);
-    }
-    .skip-link:focus {
-      left: var(--space-sm);
     }
     #app-shell {
       display: grid;
@@ -407,8 +292,8 @@ pub fn render_index_html() -> String {
       grid-template-columns: 0 minmax(0, 1fr) 0;
     }
     #sidebar {
-      background: var(--bg-sidebar);
-      border-right: var(--border-width) solid var(--divider);
+      background: var(--bg-panel);
+      border-right: var(--border-width) solid var(--border);
       padding: var(--space-md);
       overflow-y: auto;
       display: flex;
@@ -476,11 +361,6 @@ pub fn render_index_html() -> String {
       background: rgba(224, 49, 49, 0.12);
       color: var(--danger);
       display: none;
-    }
-    .warning-banner {
-      border-color: var(--warning);
-      background: rgba(240, 140, 0, 0.12);
-      color: var(--warning);
     }
     .error-banner.visible, .warning-banner.visible {
       display: block;
@@ -649,146 +529,6 @@ pub fn render_index_html() -> String {
       border-radius: var(--radius-md);
       padding: 0.75rem;
     }
-    .surface {
-      background: var(--bg-surface);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius-md);
-    }
-    .surface-elevated {
-      background: var(--bg-elevated);
-      border: var(--border-width) solid var(--divider);
-      border-radius: var(--radius-md);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    }
-    .divider {
-      height: var(--border-width);
-      background: var(--divider);
-      border: none;
-      margin: var(--space-sm) 0;
-    }
-    .btn-primary {
-      background: var(--accent);
-      color: #ffffff;
-    }
-    .btn-danger {
-      background: var(--danger);
-      color: #ffffff;
-    }
-    .btn-warning {
-      background: var(--warning);
-      color: #1a1b1e;
-    }
-    .btn-info {
-      background: var(--info);
-      color: #ffffff;
-    }
-    .btn-ghost {
-      background: transparent;
-      color: var(--text-primary);
-      border: var(--border-width) solid transparent;
-    }
-    .btn-ghost:hover {
-      background: var(--bg-surface);
-    }
-    .input, .text-input {
-      font-family: var(--font-ui);
-      font-size: var(--size-sm);
-      background: var(--bg-surface);
-      color: var(--text-primary);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 0.45rem 0.6rem;
-      width: 100%;
-    }
-    .input:focus-visible, .text-input:focus-visible, .select-control:focus-visible, .composer-input:focus-visible {
-      outline: 2px solid var(--focus-ring);
-      outline-offset: 1px;
-      border-color: var(--focus-ring);
-    }
-    .select, .select-control {
-      font-family: var(--font-ui);
-      font-size: var(--size-sm);
-      background: var(--bg-surface);
-      color: var(--text-primary);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 0.45rem 0.6rem;
-    }
-    .textarea, .composer-input {
-      font-family: var(--font-ui);
-      font-size: var(--size-sm);
-      background: var(--bg-surface);
-      color: var(--text-primary);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 0.75rem;
-      resize: vertical;
-    }
-    .dialog {
-      background: var(--bg-elevated);
-      color: var(--text-primary);
-      border: var(--border-width) solid var(--divider);
-      border-radius: var(--radius-lg);
-      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-    }
-    .dialog-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-sm);
-      padding: var(--space-md);
-      border-bottom: var(--border-width) solid var(--divider);
-    }
-    .menu {
-      display: flex;
-      flex-direction: column;
-      gap: 0.15rem;
-      background: var(--bg-elevated);
-      border: var(--border-width) solid var(--divider);
-      border-radius: var(--radius-md);
-      padding: var(--space-xs);
-    }
-    .menu-item {
-      text-align: left;
-      background: transparent;
-      color: var(--text-primary);
-      border: var(--border-width) solid transparent;
-      border-radius: var(--radius-sm);
-      padding: 0.4rem 0.6rem;
-      cursor: pointer;
-      font-size: var(--size-sm);
-    }
-    .menu-item:hover, .menu-item[aria-selected="true"], .menu-item.is-active {
-      background: var(--bg-surface);
-      border-color: var(--accent);
-    }
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      padding: 0.15rem 0.5rem;
-      border-radius: 9999px;
-      font-size: var(--size-xs);
-      font-weight: var(--weight-bold);
-      border: var(--border-width) solid var(--border);
-    }
-    .status-neutral { background: var(--bg-surface); color: var(--text-primary); }
-    .status-info { background: var(--info); color: #ffffff; border-color: var(--info); }
-    .status-success { background: var(--success); color: #ffffff; border-color: var(--success); }
-    .status-warning { background: var(--warning); color: #1a1b1e; border-color: var(--warning); }
-    .status-danger { background: var(--danger); color: #ffffff; border-color: var(--danger); }
-    .is-active { font-weight: var(--weight-bold); }
-    .is-disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
-    .is-loading { opacity: 0.7; pointer-events: none; }
-    .is-collapsed { display: none; }
-    .text-secondary { color: var(--text-secondary); }
-    .text-muted { color: var(--text-muted); }
-    .app-shell { display: grid; }
-    .sidebar { background: var(--bg-sidebar); }
-    .content, .content-container, .main-content { min-width: 0; }
-    .nav-list { display: flex; flex-direction: column; gap: 0.25rem; }
-    .nav-item { cursor: pointer; }
-    .button { border: none; border-radius: var(--radius-md); padding: 0.45rem 0.85rem; font-weight: var(--weight-medium); font-size: var(--size-sm); cursor: pointer; background: var(--accent); color: #ffffff; }
     .badge, .status-badge {
       display: inline-flex;
       align-items: center;
@@ -1009,9 +749,9 @@ pub fn render_index_html() -> String {
       max-height: 88vh;
       display: flex;
       flex-direction: column;
-      background: var(--bg-elevated);
+      background: var(--bg-panel);
       color: var(--text-primary);
-      border: var(--border-width) solid var(--divider);
+      border: var(--border-width) solid var(--border);
       border-radius: var(--radius-lg);
       box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
       overflow: hidden;
@@ -1222,9 +962,8 @@ pub fn render_index_html() -> String {
   </style>
 </head>
 <body>
-  <a class="skip-link" href='#main-workspace'>Skip to main content</a>
-  <div id="app-shell" class="app-shell">
-    <aside id="sidebar" class="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
+  <div id="app-shell">
+    <aside id="sidebar" role="navigation" aria-label="Sidebar" aria-hidden="false">
       <div class="sidebar-top-row">
         <button id="btn-toggle-sidebar" class="icon-btn" type="button" aria-label="Toggle sidebar panel" aria-expanded="true" aria-controls="sidebar" title="Toggle sidebar (Cmd/Ctrl + B)">☰</button>
         <div class="panel-header" style="margin-bottom:0;">Gaggle</div>
@@ -1287,12 +1026,15 @@ pub fn render_index_html() -> String {
       </div>
 
       <div class="panel-header" style="margin-bottom:0.25rem;">Conversations</div>
-      <div id="recent-chats" class="chat-list sidebar-nav nav-list">
+      <div id="recent-chats" class="chat-list">
         <div class="empty-state">No recent conversations yet. Register a project to get started.</div>
       </div>
+
+      <div class="panel-header" style="margin-bottom:0.25rem;margin-top:0.5rem;">Screens</div>
+      <button id="btn-open-secondary" class="btn btn-secondary" type="button" style="width:100%;" aria-label="Open secondary screens">Open secondary screens</button>
     </aside>
 
-    <main id="main-workspace" class="content content-container main-content" role="main" aria-label="Main Workspace">
+    <main id="main-workspace" role="main" aria-label="Main Workspace">
       <div id="reconnect-banner" class="warning-banner" role="alert" aria-live="assertive" style="display:none;">
         Reconnecting to local Gaggle server...
       </div>
@@ -1361,7 +1103,7 @@ pub fn render_index_html() -> String {
       </div>
     </main>
 
-    <aside id="details-panel" class="inspector details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
+    <aside id="details-panel" role="complementary" aria-label="Contextual Details" aria-hidden="false">
       <div class="workspace-header-row">
         <div class="panel-header" style="margin-bottom:0;">Inspector</div>
         <button id="btn-toggle-inspector" class="icon-btn" type="button" aria-label="Toggle contextual details panel" aria-expanded="true" aria-controls="details-panel" title="Toggle inspector (Cmd/Ctrl + I)">⚙</button>
@@ -1716,6 +1458,78 @@ pub fn render_index_html() -> String {
     </div>
   </div>
 
+  <div id="secondary-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="secondary-title">
+      <div class="modal-header">
+        <div>
+          <div id="secondary-title" class="panel-header" style="margin:0;">Secondary Screens</div>
+          <div class="settings-note">Real backend data · honest states for unsupported capabilities</div>
+        </div>
+        <button id="btn-close-secondary" class="icon-btn" type="button" aria-label="Close secondary screens">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-tabs" role="tablist" aria-label="Secondary screens" aria-orientation="vertical">
+          <button class="settings-tab" id="tab-secondary-recipes" type="button" role="tab" data-secondary-tab="recipes" aria-selected="true" aria-controls="panel-secondary-recipes">Recipes</button>
+          <button class="settings-tab" id="tab-secondary-scheduler" type="button" role="tab" data-secondary-tab="scheduler" aria-selected="false" aria-controls="panel-secondary-scheduler">Scheduler</button>
+          <button class="settings-tab" id="tab-secondary-extensions" type="button" role="tab" data-secondary-tab="extensions" aria-selected="false" aria-controls="panel-secondary-extensions">Extensions</button>
+          <button class="settings-tab" id="tab-secondary-sessions" type="button" role="tab" data-secondary-tab="sessions" aria-selected="false" aria-controls="panel-secondary-sessions">Session History</button>
+          <button class="settings-tab" id="tab-secondary-skills" type="button" role="tab" data-secondary-tab="skills" aria-selected="false" aria-controls="panel-secondary-skills">Skills</button>
+          <button class="settings-tab" id="tab-secondary-apps" type="button" role="tab" data-secondary-tab="apps" aria-selected="false" aria-controls="panel-secondary-apps">Apps</button>
+        </div>
+        <div class="settings-panels">
+          <section class="settings-panel active" id="panel-secondary-recipes" role="tabpanel" aria-labelledby="tab-secondary-recipes">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Recipes</h3>
+                <button id="btn-refresh-recipes" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-recipes-output"><div class="empty-state">Loading recipes…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-scheduler" role="tabpanel" aria-labelledby="tab-secondary-scheduler">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Scheduled jobs</h3>
+                <button id="btn-refresh-schedules" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-schedules-output"><div class="empty-state">Loading schedules…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-extensions" role="tabpanel" aria-labelledby="tab-secondary-extensions">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Extensions</h3>
+                <button id="btn-refresh-secondary-extensions" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-extensions-output"><div class="empty-state">Loading extensions…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-sessions" role="tabpanel" aria-labelledby="tab-secondary-sessions">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Session history</h3>
+                <button id="btn-refresh-sessions" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-sessions-output"><div class="empty-state">Loading sessions…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-skills" role="tabpanel" aria-labelledby="tab-secondary-skills">
+            <div class="settings-section">
+              <h3>Skills</h3>
+              <div class="empty-state">Skills are file-based instruction packs loaded from <span class="mono">.opencode/skills</span>. A managed skills browser is planned; no fake implementation is provided.</div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-apps" role="tabpanel" aria-labelledby="tab-secondary-apps">
+            <div class="settings-section">
+              <h3>Apps</h3>
+              <div class="empty-state">Apps / external application integrations are not yet supported by the backend. This screen is intentionally unavailable.</div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="app-toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -1728,6 +1542,9 @@ pub fn render_index_html() -> String {
       const btnStop = document.getElementById('btn-stop');
       const btnRetry = document.getElementById('btn-retry');
       const approvalQueue = document.getElementById('approval-queue');
+      const btnOpenSecondary = document.getElementById('btn-open-secondary');
+      const btnCloseSecondary = document.getElementById('btn-close-secondary');
+      const secondaryModalEl = document.getElementById('secondary-modal');
       const themeSwitcher = document.getElementById('theme-switcher');
 
       const projectSwitcher = document.getElementById('project-switcher');
@@ -2125,6 +1942,34 @@ pub fn render_index_html() -> String {
         if (restoreFocus !== false) {
           focusElement(lastFocusedBeforeSettings);
         }
+      }
+
+      function openSecondary(tab) {
+        if (!secondaryModalEl) return;
+        secondaryModalEl.classList.add('open');
+        secondaryModalEl.setAttribute('aria-hidden', 'false');
+        switchSecondaryTab(tab || 'recipes');
+        loadSecondaryRecipes();
+        loadSecondarySchedules();
+        loadSecondaryExtensions();
+        loadSecondarySessions();
+      }
+
+      function closeSecondary() {
+        if (!secondaryModalEl) return;
+        secondaryModalEl.classList.remove('open');
+        secondaryModalEl.setAttribute('aria-hidden', 'true');
+      }
+
+      function switchSecondaryTab(tab) {
+        const tabs = document.querySelectorAll('[data-secondary-tab]');
+        tabs.forEach(function(button) {
+          const selected = button.getAttribute('data-secondary-tab') === tab;
+          button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        document.querySelectorAll('[id^="panel-secondary-"]').forEach(function(panel) {
+          panel.classList.toggle('active', panel.id === 'panel-secondary-' + tab);
+        });
       }
 
       function openAddProject(opener) {
@@ -2583,6 +2428,96 @@ pub fn render_index_html() -> String {
         } catch (e) {
           extensionListEl.textContent = '';
           extensionListEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load extensions: ' + e.message }));
+        }
+      }
+
+      async function loadSecondaryRecipes() {
+        const out = document.getElementById('secondary-recipes-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading recipes…' }));
+        try {
+          const items = await apiRequest('/api/recipes');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No recipes registered.' }));
+            return;
+          }
+          items.forEach(function(r) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (r.name || r.id) + (r.description ? ' — ' + r.description : '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load recipes: ' + e.message }));
+        }
+      }
+
+      async function loadSecondarySchedules() {
+        const out = document.getElementById('secondary-schedules-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading schedules…' }));
+        try {
+          const items = await apiRequest('/api/schedules');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No scheduled jobs.' }));
+            return;
+          }
+          items.forEach(function(s) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (s.name || s.id) + (s.cron_expression ? ' · ' + s.cron_expression : '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load schedules: ' + e.message }));
+        }
+      }
+
+      async function loadSecondaryExtensions() {
+        const out = document.getElementById('secondary-extensions-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading extensions…' }));
+        try {
+          const inventory = await apiRequest('/api/extensions/inventory');
+          out.textContent = '';
+          const exts = inventory.extensions || [];
+          if (exts.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No extensions registered.' }));
+            return;
+          }
+          exts.forEach(function(e) {
+            out.appendChild(createEl('div', { className: 'action', textContent: e.name + ' · ' + e.kind + ' · ' + e.source + ' · ' + (e.enabled === 1 ? 'enabled' : 'disabled') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load extensions: ' + e.message }));
+        }
+      }
+
+      async function loadSecondarySessions() {
+        const out = document.getElementById('secondary-sessions-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading sessions…' }));
+        try {
+          if (!currentProjectId) {
+            out.textContent = '';
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select a project to view session history.' }));
+            return;
+          }
+          const items = await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No sessions for this project.' }));
+            return;
+          }
+          items.forEach(function(c) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (c.title || c.id) + ' · ' + (c.permission_mode || '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load sessions: ' + e.message }));
         }
       }
 
@@ -3287,6 +3222,34 @@ pub fn render_index_html() -> String {
           if (event.target === settingsModalEl) closeSettings();
         });
       }
+      if (btnOpenSecondary) {
+        btnOpenSecondary.addEventListener('click', function() {
+          openSecondary('recipes');
+        });
+      }
+      if (btnCloseSecondary) {
+        btnCloseSecondary.addEventListener('click', function() {
+          closeSecondary();
+        });
+      }
+      if (secondaryModalEl) {
+        secondaryModalEl.addEventListener('click', function(event) {
+          if (event.target === secondaryModalEl) closeSecondary();
+        });
+      }
+      document.querySelectorAll('[data-secondary-tab]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          switchSecondaryTab(button.getAttribute('data-secondary-tab'));
+        });
+      });
+      const btnRefreshRecipes = document.getElementById('btn-refresh-recipes');
+      if (btnRefreshRecipes) btnRefreshRecipes.addEventListener('click', loadSecondaryRecipes);
+      const btnRefreshSchedules = document.getElementById('btn-refresh-schedules');
+      if (btnRefreshSchedules) btnRefreshSchedules.addEventListener('click', loadSecondarySchedules);
+      const btnRefreshSecondaryExtensions = document.getElementById('btn-refresh-secondary-extensions');
+      if (btnRefreshSecondaryExtensions) btnRefreshSecondaryExtensions.addEventListener('click', loadSecondaryExtensions);
+      const btnRefreshSessions = document.getElementById('btn-refresh-sessions');
+      if (btnRefreshSessions) btnRefreshSessions.addEventListener('click', loadSecondarySessions);
       if (btnCloseQuickSwitcher) {
         btnCloseQuickSwitcher.addEventListener('click', function() {
           closeQuickSwitcher();
@@ -3481,6 +3444,11 @@ pub fn render_index_html() -> String {
           if (settingsModalEl && settingsModalEl.classList.contains('open')) {
             event.preventDefault();
             closeSettings();
+            return;
+          }
+          if (secondaryModalEl && secondaryModalEl.classList.contains('open')) {
+            event.preventDefault();
+            closeSecondary();
             return;
           }
           if (addProjectModal && addProjectModal.classList.contains('open')) {
@@ -4301,13 +4269,13 @@ mod tests {
         let html = render_index_html();
 
         // Structural landmarks and live regions.
-        assert!(html.contains("<aside id=\"sidebar\" class=\"sidebar\" role=\"navigation\" aria-label=\"Sidebar\" aria-hidden=\"false\">"));
+        assert!(html.contains("<aside id=\"sidebar\" role=\"navigation\" aria-label=\"Sidebar\" aria-hidden=\"false\">"));
         assert!(
             html.contains(
-                "<main id=\"main-workspace\" class=\"content content-container main-content\" role=\"main\" aria-label=\"Main Workspace\">"
+                "<main id=\"main-workspace\" role=\"main\" aria-label=\"Main Workspace\">"
             )
         );
-        assert!(html.contains("<aside id=\"details-panel\" class=\"inspector details-panel\" role=\"complementary\" aria-label=\"Contextual Details\" aria-hidden=\"false\">"));
+        assert!(html.contains("<aside id=\"details-panel\" role=\"complementary\" aria-label=\"Contextual Details\" aria-hidden=\"false\">"));
         assert!(html.contains("id=\"messages\" role=\"log\" aria-live=\"polite\""));
         assert!(html.contains("id=\"reconnect-banner\" class=\"warning-banner\" role=\"alert\" aria-live=\"assertive\""));
 
@@ -4376,6 +4344,42 @@ mod tests {
     }
 
     #[test]
+    fn test_secondary_screens_phase5_controls_present() {
+        let html = render_index_html();
+
+        // Entry point and modal
+        assert!(html.contains("id=\"btn-open-secondary\""));
+        assert!(html.contains("id=\"secondary-modal\""));
+
+        // Tabs for supported and unsupported screens
+        assert!(html.contains("data-secondary-tab=\"recipes\""));
+        assert!(html.contains("data-secondary-tab=\"scheduler\""));
+        assert!(html.contains("data-secondary-tab=\"extensions\""));
+        assert!(html.contains("data-secondary-tab=\"sessions\""));
+        assert!(html.contains("data-secondary-tab=\"skills\""));
+        assert!(html.contains("data-secondary-tab=\"apps\""));
+
+        // Real backend data usage
+        assert!(html.contains("function loadSecondaryRecipes("));
+        assert!(html.contains("/api/recipes"));
+        assert!(html.contains("function loadSecondarySchedules("));
+        assert!(html.contains("/api/schedules"));
+        assert!(html.contains("function loadSecondaryExtensions("));
+        assert!(html.contains("/api/extensions/inventory"));
+        assert!(html.contains("function loadSecondarySessions("));
+        assert!(html.contains("/api/projects/' + encodeURIComponent(currentProjectId) + '/chats"));
+
+        // Honest unavailable states
+        assert!(html.contains("A managed skills browser is planned"));
+        assert!(html.contains("Apps / external application integrations are not yet supported"));
+
+        // Consistent navigation
+        assert!(html.contains("function openSecondary("));
+        assert!(html.contains("function closeSecondary("));
+        assert!(html.contains("function switchSecondaryTab("));
+    }
+
+    #[test]
     fn test_design_token_css_variables_are_complete_for_both_themes() {
         let light = light_theme_tokens();
         let dark = dark_theme_tokens();
@@ -4386,16 +4390,8 @@ mod tests {
             "--bg-app:",
             "--bg-panel:",
             "--bg-surface:",
-            "--bg-sidebar:",
-            "--bg-elevated:",
-            "--bg-overlay:",
             "--text-primary:",
             "--text-muted:",
-            "--text-secondary:",
-            "--warning:",
-            "--info:",
-            "--focus-ring:",
-            "--divider:",
             "--accent:",
             "--danger:",
             "--success:",

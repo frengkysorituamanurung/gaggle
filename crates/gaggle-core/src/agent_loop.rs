@@ -53,6 +53,18 @@ impl CancellationToken {
     }
 }
 
+/// Guard that unregisters a run's cancellation token when dropped.
+struct RunRegistrationGuard {
+    registry: ActiveRunRegistry,
+    run_id: String,
+}
+
+impl Drop for RunRegistrationGuard {
+    fn drop(&mut self) {
+        self.registry.unregister(&self.run_id);
+    }
+}
+
 /// Registry of active run cancellation tokens so HTTP/CLI endpoints can cancel an in-flight run.
 #[derive(Clone, Default)]
 pub struct ActiveRunRegistry {
@@ -137,7 +149,7 @@ pub enum AgentLoopOutcome {
 pub struct AgentRuntime {
     pool: SqlitePool,
     max_steps: usize,
-    active_runs: Option<ActiveRunRegistry>,
+    pub active_runs: ActiveRunRegistry,
 }
 
 impl AgentRuntime {
@@ -145,14 +157,25 @@ impl AgentRuntime {
         Self {
             pool,
             max_steps,
-            active_runs: None,
+            active_runs: ActiveRunRegistry::new(),
         }
     }
 
-    /// Attach an [`ActiveRunRegistry`] so cancellation tokens are registered under the
-    /// durable run id and can be reached by `/api/runs/{id}/cancel`.
+    pub fn new_with_active_runs(
+        pool: SqlitePool,
+        max_steps: usize,
+        active_runs: ActiveRunRegistry,
+    ) -> Self {
+        Self {
+            pool,
+            max_steps,
+            active_runs,
+        }
+    }
+
+    /// Attach/replace the [`ActiveRunRegistry`] used for cancellation.
     pub fn with_active_runs(mut self, registry: ActiveRunRegistry) -> Self {
-        self.active_runs = Some(registry);
+        self.active_runs = registry;
         self
     }
 
@@ -173,7 +196,6 @@ impl AgentRuntime {
             provider,
             tool_executor,
             cancel_token,
-            self.active_runs.clone(),
         )
         .instrument(span)
         .await
@@ -189,7 +211,6 @@ impl AgentRuntime {
         provider: &dyn ModelProviderAdapter,
         tool_executor: &dyn ToolExecutor,
         cancel_token: &CancellationToken,
-        active_runs: Option<ActiveRunRegistry>,
     ) -> Result<AgentLoopOutcome> {
         let chat_repo = ChatRepository::new(self.pool.clone());
         let proj_repo = ProjectRepository::new(self.pool.clone());
@@ -240,9 +261,12 @@ impl AgentRuntime {
         let run = run_repo
             .create(chat_id, Some(&user_msg.id), chat.model_id.as_deref())
             .await?;
-        if let Some(registry) = active_runs.as_ref() {
-            registry.register_token(&run.id, cancel_token.clone());
-        }
+        self.active_runs
+            .register_token(&run.id, cancel_token.clone());
+        let _run_registration = RunRegistrationGuard {
+            registry: self.active_runs.clone(),
+            run_id: run.id.clone(),
+        };
         let correlation = CorrelationIds::for_chat(chat_id).with_run(&run.id);
         let run_repo = run_repo.with_correlation(correlation.clone());
         let perm_engine = perm_engine.with_correlation(correlation.clone());
