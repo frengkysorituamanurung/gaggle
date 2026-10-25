@@ -61,7 +61,10 @@ impl InMemoryAcpTransport {
 
     /// Returns a clone of the last message recorded by this transport, if any.
     pub fn last_message_snapshot(&self) -> Option<AcpMessage> {
-        self.last_message.lock().ok().and_then(|guard| guard.clone())
+        self.last_message
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 }
 
