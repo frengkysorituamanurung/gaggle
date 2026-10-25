@@ -157,7 +157,9 @@ async fn test_close_all_browsers() -> Result<()> {
     };
 
     let repo = BrowserRepository::new(pool.clone());
-    browser_tools::close_all_browsers_with_pool(&pool).await.unwrap();
+    browser_tools::close_all_browsers_with_pool(&pool)
+        .await
+        .unwrap();
 
     let s = repo.get_session(&session_id).await?.unwrap();
     assert_eq!(s.status, "closed");
