@@ -714,10 +714,7 @@ pub async fn close_all_browsers_with_pool(pool: &SqlitePool) -> Result<(), Brows
 
     // Mark all running rows closed using provided pool.
     let repo = BrowserRepository::new(pool.clone());
-    let sessions = match repo.list_running_sessions().await {
-        Ok(s) => s,
-        Err(_) => Vec::new(),
-    };
+    let sessions = repo.list_running_sessions().await.unwrap_or_default();
     // Close active instances first.
     let actives: Vec<ActiveBrowser> = {
         let mut guard = registry().lock().await;
