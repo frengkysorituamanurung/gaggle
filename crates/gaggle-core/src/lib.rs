@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod agent_loop;
 pub mod code_mode;
 pub mod compaction;
@@ -22,6 +23,7 @@ pub mod subagent_manager;
 pub mod subagents;
 pub mod workspace_policy;
 
+pub use acp::{AcpError, AcpMessage, AcpResponse, AcpTransport, InMemoryAcpTransport};
 pub use agent_loop::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, DEFAULT_MAX_AGENT_STEPS,
     ToolExecutor,

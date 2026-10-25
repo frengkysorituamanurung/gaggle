@@ -556,11 +556,33 @@ pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "Gaggle server listening");
-    let res = axum::serve(listener, app).await;
+    let res = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await;
     tm.shutdown_all().await;
     let _ = gaggle_tools::close_all_browsers_with_pool(&browser_pool).await;
     res?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+            sigterm.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
 
 async fn index_handler() -> Html<String> {
