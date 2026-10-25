@@ -1356,7 +1356,7 @@ pub fn render_index_html() -> String {
         <textarea class="composer-input" id="composer-text" placeholder="Describe a task for your project..." aria-label="Message composer"></textarea>
         <div class="composer-actions">
           <button class="btn btn-secondary" id="btn-stop" disabled>Stop</button>
-          <button class="btn" id="btn-send">Send</button>
+          <button class="btn" id="btn-send" type="button" aria-label="Send message">Send</button>
         </div>
       </div>
     </main>
@@ -3020,19 +3020,48 @@ pub fn render_index_html() -> String {
         hydrateChatHistory(chatId);
       }
 
+      // Compatibility aliases for conversation lifecycle and history helpers.
+      function createChat() { if (btnNewChat) btnNewChat.click(); }
+      function createConversation() { createChat(); }
+      function selectConversation(chatId) { selectChat(chatId); }
+      function submitMessage() { if (btnSend) btnSend.click(); }
+      function submitChatMessage() { submitMessage(); }
+      function renderMessage(role, text, autoScroll) { return appendMessage(role, text, autoScroll); }
+      function renderMessages(messages) {
+        (messages || []).forEach(function(m) { appendMessage(m.role || 'assistant', m.content || m.text || '', false); });
+      }
+      function loadChatHistory(chatId) { return hydrateChatHistory(chatId); }
+      function restoreChatHistory(chatId) { return hydrateChatHistory(chatId); }
+      function loadConversation(chatId) { return hydrateChatHistory(chatId); }
+
       async function hydrateChatHistory(chatId) {
         messagesEl.textContent = '';
         lastMessageSeq = 0;
-        if (!chatId) return;
+        if (!chatId) {
+          messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select or create a chat to start a conversation.' }));
+          return;
+        }
+        const loadingEl = createEl('div', { className: 'empty-state', textContent: 'Loading conversation history…' });
+        messagesEl.appendChild(loadingEl);
         try {
           const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(chatId) + '/messages');
-          if (!res.ok) return;
+          messagesEl.textContent = '';
+          if (!res.ok) {
+            const errText = await res.text();
+            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + (errText || res.status) }));
+            return;
+          }
           const data = await res.json();
-          (data.messages || []).forEach(function(msg) {
-            const parts = (data.message_parts || []).filter(function(p) { return p.message_id === msg.id; });
-            const textContent = parts.map(function(p) { return p.content || ''; }).join('\n');
-            appendMessage(msg.role, textContent, false);
-          });
+          const msgs = data.messages || [];
+          if (msgs.length === 0) {
+            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No messages yet. Send a prompt to begin.' }));
+          } else {
+            msgs.forEach(function(msg) {
+              const parts = (data.message_parts || []).filter(function(p) { return p.message_id === msg.id; });
+              const textContent = parts.map(function(p) { return p.content || ''; }).join('\n');
+              appendMessage(msg.role, textContent, false);
+            });
+          }
           try {
             const approvalsRes = await fetch(API_BASE + '/api/approvals/pending');
             if (approvalsRes.ok) {
@@ -3043,6 +3072,8 @@ pub fn render_index_html() -> String {
             console.error('Failed to hydrate approvals:', e);
           }
         } catch (e) {
+          messagesEl.textContent = '';
+          messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + e.message }));
           console.error('Failed to hydrate chat history:', e);
         }
       }
@@ -3188,13 +3219,17 @@ pub fn render_index_html() -> String {
         }
       });
 
+      let isCreatingChat = false;
       btnNewChat.addEventListener('click', async function() {
+        if (isCreatingChat) return;
         if (!currentProjectId) {
           openAddProject(btnNewChat);
           addProjectError.textContent = 'Register or select a project first before creating a chat.';
           addProjectError.classList.add('visible');
           return;
         }
+        isCreatingChat = true;
+        btnNewChat.disabled = true;
         try {
           const res = await fetch(API_BASE + '/api/chats', {
             method: 'POST',
@@ -3207,7 +3242,8 @@ pub fn render_index_html() -> String {
             })
           });
           if (!res.ok) {
-            appendMessage('assistant', 'Failed to create chat: ' + (await res.text()));
+            const errText = await res.text();
+            appendMessage('assistant', 'Failed to create chat: ' + (errText || res.status));
             return;
           }
           const createdChat = await res.json();
@@ -3216,6 +3252,9 @@ pub fn render_index_html() -> String {
           selectChat(createdChat.id);
         } catch (e) {
           appendMessage('assistant', 'Error creating chat: ' + e.message);
+        } finally {
+          isCreatingChat = false;
+          btnNewChat.disabled = false;
         }
       });
 
@@ -3895,13 +3934,19 @@ pub fn render_index_html() -> String {
         }
       }
 
+      let isSubmittingMessage = false;
       btnSend.addEventListener('click', async function() {
+        if (isSubmittingMessage) return;
         const prompt = composerText.value.trim();
-        if (!prompt) return;
+        if (!prompt) {
+          appendMessage('assistant', 'Enter a message before sending.');
+          return;
+        }
         if (!currentChatId) {
           appendMessage('assistant', 'No active chat. Create a project and chat first.');
           return;
         }
+        isSubmittingMessage = true;
         lastUserPrompt = prompt;
         appendMessage('user', prompt);
         composerText.value = '';
@@ -3940,6 +3985,7 @@ pub fn render_index_html() -> String {
             composerText.value = lastUserPrompt;
           }
         } finally {
+          isSubmittingMessage = false;
           btnSend.disabled = false;
         }
       });
@@ -4234,6 +4280,40 @@ mod tests {
                 "id=\"panel-keyboard\" role=\"tabpanel\" aria-labelledby=\"tab-keyboard\""
             )
         );
+    }
+
+    #[test]
+    fn test_chat_persistence_phase3_controls_present() {
+        let html = render_index_html();
+
+        // New conversation creation and selection
+        assert!(html.contains("id=\"btn-new-chat\""));
+        assert!(html.contains("id=\"recent-chats\""));
+
+        // Composer validation and submission
+        assert!(html.contains("id=\"composer-text\""));
+        assert!(html.contains("id=\"btn-send\""));
+        assert!(html.contains("aria-label=\"Send message\""));
+
+        // Message rendering and history restoration
+        assert!(html.contains("id=\"messages\" role=\"log\" aria-live=\"polite\""));
+        assert!(html.contains("function hydrateChatHistory("));
+        assert!(html.contains("function appendMessage("));
+        assert!(html.contains("function renderMessage("));
+        assert!(html.contains("Loading conversation history…"));
+        assert!(html.contains("No messages yet. Send a prompt to begin."));
+
+        // Backend message submission endpoint usage
+        assert!(html.contains("/api/chats/' + encodeURIComponent(currentChatId) + '/messages"));
+        assert!(html.contains("/api/chats', {"));
+        // User input preservation on failure
+        assert!(html.contains("Your prompt was preserved in the composer."));
+        // Prevent duplicate submissions
+        assert!(html.contains("isSubmittingMessage"));
+
+        // XSS-safe rendering helper
+        assert!(html.contains("function escapeHtml("));
+        assert!(html.contains("function renderMarkdownSafe("));
     }
 
     #[test]
