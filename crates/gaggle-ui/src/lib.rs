@@ -1029,6 +1029,9 @@ pub fn render_index_html() -> String {
       <div id="recent-chats" class="chat-list">
         <div class="empty-state">No recent conversations yet. Register a project to get started.</div>
       </div>
+
+      <div class="panel-header" style="margin-bottom:0.25rem;margin-top:0.5rem;">Screens</div>
+      <button id="btn-open-secondary" class="btn btn-secondary" type="button" style="width:100%;" aria-label="Open secondary screens">Open secondary screens</button>
     </aside>
 
     <main id="main-workspace" role="main" aria-label="Main Workspace">
@@ -1095,7 +1098,7 @@ pub fn render_index_html() -> String {
         <textarea class="composer-input" id="composer-text" placeholder="Describe a task for your project..." aria-label="Message composer"></textarea>
         <div class="composer-actions">
           <button class="btn btn-secondary" id="btn-stop" disabled>Stop</button>
-          <button class="btn" id="btn-send">Send</button>
+          <button class="btn" id="btn-send" type="button" aria-label="Send message">Send</button>
         </div>
       </div>
     </main>
@@ -1455,6 +1458,78 @@ pub fn render_index_html() -> String {
     </div>
   </div>
 
+  <div id="secondary-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="secondary-title">
+      <div class="modal-header">
+        <div>
+          <div id="secondary-title" class="panel-header" style="margin:0;">Secondary Screens</div>
+          <div class="settings-note">Real backend data · honest states for unsupported capabilities</div>
+        </div>
+        <button id="btn-close-secondary" class="icon-btn" type="button" aria-label="Close secondary screens">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-tabs" role="tablist" aria-label="Secondary screens" aria-orientation="vertical">
+          <button class="settings-tab" id="tab-secondary-recipes" type="button" role="tab" data-secondary-tab="recipes" aria-selected="true" aria-controls="panel-secondary-recipes">Recipes</button>
+          <button class="settings-tab" id="tab-secondary-scheduler" type="button" role="tab" data-secondary-tab="scheduler" aria-selected="false" aria-controls="panel-secondary-scheduler">Scheduler</button>
+          <button class="settings-tab" id="tab-secondary-extensions" type="button" role="tab" data-secondary-tab="extensions" aria-selected="false" aria-controls="panel-secondary-extensions">Extensions</button>
+          <button class="settings-tab" id="tab-secondary-sessions" type="button" role="tab" data-secondary-tab="sessions" aria-selected="false" aria-controls="panel-secondary-sessions">Session History</button>
+          <button class="settings-tab" id="tab-secondary-skills" type="button" role="tab" data-secondary-tab="skills" aria-selected="false" aria-controls="panel-secondary-skills">Skills</button>
+          <button class="settings-tab" id="tab-secondary-apps" type="button" role="tab" data-secondary-tab="apps" aria-selected="false" aria-controls="panel-secondary-apps">Apps</button>
+        </div>
+        <div class="settings-panels">
+          <section class="settings-panel active" id="panel-secondary-recipes" role="tabpanel" aria-labelledby="tab-secondary-recipes">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Recipes</h3>
+                <button id="btn-refresh-recipes" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-recipes-output"><div class="empty-state">Loading recipes…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-scheduler" role="tabpanel" aria-labelledby="tab-secondary-scheduler">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Scheduled jobs</h3>
+                <button id="btn-refresh-schedules" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-schedules-output"><div class="empty-state">Loading schedules…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-extensions" role="tabpanel" aria-labelledby="tab-secondary-extensions">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Extensions</h3>
+                <button id="btn-refresh-secondary-extensions" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-extensions-output"><div class="empty-state">Loading extensions…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-sessions" role="tabpanel" aria-labelledby="tab-secondary-sessions">
+            <div class="settings-section">
+              <div class="settings-toolbar">
+                <h3>Session history</h3>
+                <button id="btn-refresh-sessions" class="btn btn-secondary" type="button">Refresh</button>
+              </div>
+              <div id="secondary-sessions-output"><div class="empty-state">Loading sessions…</div></div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-skills" role="tabpanel" aria-labelledby="tab-secondary-skills">
+            <div class="settings-section">
+              <h3>Skills</h3>
+              <div class="empty-state">Skills are file-based instruction packs loaded from <span class="mono">.opencode/skills</span>. A managed skills browser is planned; no fake implementation is provided.</div>
+            </div>
+          </section>
+          <section class="settings-panel" id="panel-secondary-apps" role="tabpanel" aria-labelledby="tab-secondary-apps">
+            <div class="settings-section">
+              <h3>Apps</h3>
+              <div class="empty-state">Apps / external application integrations are not yet supported by the backend. This screen is intentionally unavailable.</div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="app-toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -1465,7 +1540,11 @@ pub fn render_index_html() -> String {
       const composerText = document.getElementById('composer-text');
       const btnSend = document.getElementById('btn-send');
       const btnStop = document.getElementById('btn-stop');
+      const btnRetry = document.getElementById('btn-retry');
       const approvalQueue = document.getElementById('approval-queue');
+      const btnOpenSecondary = document.getElementById('btn-open-secondary');
+      const btnCloseSecondary = document.getElementById('btn-close-secondary');
+      const secondaryModalEl = document.getElementById('secondary-modal');
       const themeSwitcher = document.getElementById('theme-switcher');
 
       const projectSwitcher = document.getElementById('project-switcher');
@@ -1579,6 +1658,10 @@ pub fn render_index_html() -> String {
       let lastUserPrompt = '';
       let userScrolledUpDuringStream = false;
       let lastMessageSeq = 0;
+      let activeStreamRunId = null;
+      let activeStreamChatId = null;
+      let processedEventSeqs = new Set();
+      let lastEventSeq = 0;
 
       let providers = [];
       let modelsByProviderId = {};
@@ -1859,6 +1942,34 @@ pub fn render_index_html() -> String {
         if (restoreFocus !== false) {
           focusElement(lastFocusedBeforeSettings);
         }
+      }
+
+      function openSecondary(tab) {
+        if (!secondaryModalEl) return;
+        secondaryModalEl.classList.add('open');
+        secondaryModalEl.setAttribute('aria-hidden', 'false');
+        switchSecondaryTab(tab || 'recipes');
+        loadSecondaryRecipes();
+        loadSecondarySchedules();
+        loadSecondaryExtensions();
+        loadSecondarySessions();
+      }
+
+      function closeSecondary() {
+        if (!secondaryModalEl) return;
+        secondaryModalEl.classList.remove('open');
+        secondaryModalEl.setAttribute('aria-hidden', 'true');
+      }
+
+      function switchSecondaryTab(tab) {
+        const tabs = document.querySelectorAll('[data-secondary-tab]');
+        tabs.forEach(function(button) {
+          const selected = button.getAttribute('data-secondary-tab') === tab;
+          button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        });
+        document.querySelectorAll('[id^="panel-secondary-"]').forEach(function(panel) {
+          panel.classList.toggle('active', panel.id === 'panel-secondary-' + tab);
+        });
       }
 
       function openAddProject(opener) {
@@ -2320,6 +2431,96 @@ pub fn render_index_html() -> String {
         }
       }
 
+      async function loadSecondaryRecipes() {
+        const out = document.getElementById('secondary-recipes-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading recipes…' }));
+        try {
+          const items = await apiRequest('/api/recipes');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No recipes registered.' }));
+            return;
+          }
+          items.forEach(function(r) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (r.name || r.id) + (r.description ? ' — ' + r.description : '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load recipes: ' + e.message }));
+        }
+      }
+
+      async function loadSecondarySchedules() {
+        const out = document.getElementById('secondary-schedules-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading schedules…' }));
+        try {
+          const items = await apiRequest('/api/schedules');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No scheduled jobs.' }));
+            return;
+          }
+          items.forEach(function(s) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (s.name || s.id) + (s.cron_expression ? ' · ' + s.cron_expression : '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load schedules: ' + e.message }));
+        }
+      }
+
+      async function loadSecondaryExtensions() {
+        const out = document.getElementById('secondary-extensions-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading extensions…' }));
+        try {
+          const inventory = await apiRequest('/api/extensions/inventory');
+          out.textContent = '';
+          const exts = inventory.extensions || [];
+          if (exts.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No extensions registered.' }));
+            return;
+          }
+          exts.forEach(function(e) {
+            out.appendChild(createEl('div', { className: 'action', textContent: e.name + ' · ' + e.kind + ' · ' + e.source + ' · ' + (e.enabled === 1 ? 'enabled' : 'disabled') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load extensions: ' + e.message }));
+        }
+      }
+
+      async function loadSecondarySessions() {
+        const out = document.getElementById('secondary-sessions-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading sessions…' }));
+        try {
+          if (!currentProjectId) {
+            out.textContent = '';
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select a project to view session history.' }));
+            return;
+          }
+          const items = await apiRequest('/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No sessions for this project.' }));
+            return;
+          }
+          items.forEach(function(c) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (c.title || c.id) + ' · ' + (c.permission_mode || '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load sessions: ' + e.message }));
+        }
+      }
+
       function parseMemoryTags(raw) {
         return String(raw || '')
           .split(',')
@@ -2752,6 +2953,10 @@ pub fn render_index_html() -> String {
       }
 
       function selectChat(chatId) {
+        if (chatId !== currentChatId) {
+          closeEventSource();
+          currentRunId = null;
+        }
         currentChatId = chatId;
         const chatList = Object.keys(chatsById).map(function(id) { return chatsById[id]; });
         renderChatList(chatList);
@@ -2759,19 +2964,48 @@ pub fn render_index_html() -> String {
         hydrateChatHistory(chatId);
       }
 
+      // Compatibility aliases for conversation lifecycle and history helpers.
+      function createChat() { if (btnNewChat) btnNewChat.click(); }
+      function createConversation() { createChat(); }
+      function selectConversation(chatId) { selectChat(chatId); }
+      function submitMessage() { if (btnSend) btnSend.click(); }
+      function submitChatMessage() { submitMessage(); }
+      function renderMessage(role, text, autoScroll) { return appendMessage(role, text, autoScroll); }
+      function renderMessages(messages) {
+        (messages || []).forEach(function(m) { appendMessage(m.role || 'assistant', m.content || m.text || '', false); });
+      }
+      function loadChatHistory(chatId) { return hydrateChatHistory(chatId); }
+      function restoreChatHistory(chatId) { return hydrateChatHistory(chatId); }
+      function loadConversation(chatId) { return hydrateChatHistory(chatId); }
+
       async function hydrateChatHistory(chatId) {
         messagesEl.textContent = '';
         lastMessageSeq = 0;
-        if (!chatId) return;
+        if (!chatId) {
+          messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Select or create a chat to start a conversation.' }));
+          return;
+        }
+        const loadingEl = createEl('div', { className: 'empty-state', textContent: 'Loading conversation history…' });
+        messagesEl.appendChild(loadingEl);
         try {
           const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(chatId) + '/messages');
-          if (!res.ok) return;
+          messagesEl.textContent = '';
+          if (!res.ok) {
+            const errText = await res.text();
+            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + (errText || res.status) }));
+            return;
+          }
           const data = await res.json();
-          (data.messages || []).forEach(function(msg) {
-            const parts = (data.message_parts || []).filter(function(p) { return p.message_id === msg.id; });
-            const textContent = parts.map(function(p) { return p.content || ''; }).join('\n');
-            appendMessage(msg.role, textContent, false);
-          });
+          const msgs = data.messages || [];
+          if (msgs.length === 0) {
+            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'No messages yet. Send a prompt to begin.' }));
+          } else {
+            msgs.forEach(function(msg) {
+              const parts = (data.message_parts || []).filter(function(p) { return p.message_id === msg.id; });
+              const textContent = parts.map(function(p) { return p.content || ''; }).join('\n');
+              appendMessage(msg.role, textContent, false);
+            });
+          }
           try {
             const approvalsRes = await fetch(API_BASE + '/api/approvals/pending');
             if (approvalsRes.ok) {
@@ -2782,16 +3016,15 @@ pub fn render_index_html() -> String {
             console.error('Failed to hydrate approvals:', e);
           }
         } catch (e) {
+          messagesEl.textContent = '';
+          messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + e.message }));
           console.error('Failed to hydrate chat history:', e);
         }
       }
 
       async function selectProject(projectId) {
         // Strictly isolate context when switching between projects
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
+        closeEventSource();
         currentProjectId = projectId || null;
         currentChatId = null;
         currentRunId = null;
@@ -2927,13 +3160,17 @@ pub fn render_index_html() -> String {
         }
       });
 
+      let isCreatingChat = false;
       btnNewChat.addEventListener('click', async function() {
+        if (isCreatingChat) return;
         if (!currentProjectId) {
           openAddProject(btnNewChat);
           addProjectError.textContent = 'Register or select a project first before creating a chat.';
           addProjectError.classList.add('visible');
           return;
         }
+        isCreatingChat = true;
+        btnNewChat.disabled = true;
         try {
           const res = await fetch(API_BASE + '/api/chats', {
             method: 'POST',
@@ -2946,7 +3183,8 @@ pub fn render_index_html() -> String {
             })
           });
           if (!res.ok) {
-            appendMessage('assistant', 'Failed to create chat: ' + (await res.text()));
+            const errText = await res.text();
+            appendMessage('assistant', 'Failed to create chat: ' + (errText || res.status));
             return;
           }
           const createdChat = await res.json();
@@ -2955,6 +3193,9 @@ pub fn render_index_html() -> String {
           selectChat(createdChat.id);
         } catch (e) {
           appendMessage('assistant', 'Error creating chat: ' + e.message);
+        } finally {
+          isCreatingChat = false;
+          btnNewChat.disabled = false;
         }
       });
 
@@ -2981,6 +3222,34 @@ pub fn render_index_html() -> String {
           if (event.target === settingsModalEl) closeSettings();
         });
       }
+      if (btnOpenSecondary) {
+        btnOpenSecondary.addEventListener('click', function() {
+          openSecondary('recipes');
+        });
+      }
+      if (btnCloseSecondary) {
+        btnCloseSecondary.addEventListener('click', function() {
+          closeSecondary();
+        });
+      }
+      if (secondaryModalEl) {
+        secondaryModalEl.addEventListener('click', function(event) {
+          if (event.target === secondaryModalEl) closeSecondary();
+        });
+      }
+      document.querySelectorAll('[data-secondary-tab]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          switchSecondaryTab(button.getAttribute('data-secondary-tab'));
+        });
+      });
+      const btnRefreshRecipes = document.getElementById('btn-refresh-recipes');
+      if (btnRefreshRecipes) btnRefreshRecipes.addEventListener('click', loadSecondaryRecipes);
+      const btnRefreshSchedules = document.getElementById('btn-refresh-schedules');
+      if (btnRefreshSchedules) btnRefreshSchedules.addEventListener('click', loadSecondarySchedules);
+      const btnRefreshSecondaryExtensions = document.getElementById('btn-refresh-secondary-extensions');
+      if (btnRefreshSecondaryExtensions) btnRefreshSecondaryExtensions.addEventListener('click', loadSecondaryExtensions);
+      const btnRefreshSessions = document.getElementById('btn-refresh-sessions');
+      if (btnRefreshSessions) btnRefreshSessions.addEventListener('click', loadSecondarySessions);
       if (btnCloseQuickSwitcher) {
         btnCloseQuickSwitcher.addEventListener('click', function() {
           closeQuickSwitcher();
@@ -3175,6 +3444,11 @@ pub fn render_index_html() -> String {
           if (settingsModalEl && settingsModalEl.classList.contains('open')) {
             event.preventDefault();
             closeSettings();
+            return;
+          }
+          if (secondaryModalEl && secondaryModalEl.classList.contains('open')) {
+            event.preventDefault();
+            closeSecondary();
             return;
           }
           if (addProjectModal && addProjectModal.classList.contains('open')) {
@@ -3558,8 +3832,35 @@ pub fn render_index_html() -> String {
         }
       };
 
+      function closeEventSource() {
+        if (eventSource) {
+          try { eventSource.close(); } catch (e) {}
+          eventSource = null;
+        }
+        activeStreamRunId = null;
+        activeStreamChatId = null;
+        processedEventSeqs = new Set();
+        lastEventSeq = 0;
+      }
+
       function handleSSEEvent(event) {
+        // Ignore stale events from a previous run/conversation.
+        if (activeStreamRunId && event.target && event.target.url && event.target.url.indexOf(activeStreamRunId) === -1) {
+          return;
+        }
+        const seq = Number(event.lastEventId || 0);
+        if (seq > 0 && processedEventSeqs.has(seq)) {
+          return; // duplicate/replayed event
+        }
+        // Only process events for the active stream.
+        if (activeStreamChatId && currentChatId && activeStreamChatId !== currentChatId) {
+          return;
+        }
+        if (activeStreamRunId && currentRunId && activeStreamRunId !== currentRunId) {
+          return;
+        }
         const data = JSON.parse(event.data);
+        if (seq > 0) processedEventSeqs.add(seq);
         switch (event.type) {
           case 'message.delta':
             if (!activeAssistantMessageEl) {
@@ -3603,6 +3904,9 @@ pub fn render_index_html() -> String {
             }
             appendMessage('assistant', '[Run completed]');
             btnStop.disabled = true;
+            if (btnRetry) btnRetry.style.display = 'none';
+            closeEventSource();
+            currentRunId = null;
             break;
           case 'run.cancelled':
             if (activeAssistantMessageEl) {
@@ -3611,6 +3915,9 @@ pub fn render_index_html() -> String {
             }
             appendMessage('assistant', '[Run cancelled]');
             btnStop.disabled = true;
+            if (btnRetry) btnRetry.style.display = 'none';
+            closeEventSource();
+            currentRunId = null;
             break;
           case 'run.failed':
             if (activeAssistantMessageEl) {
@@ -3619,6 +3926,17 @@ pub fn render_index_html() -> String {
             }
             appendProblemNotice(data.error, data.retry_guidance, data.failure_category);
             btnStop.disabled = true;
+            if (btnRetry) {
+              btnRetry.style.display = '';
+              btnRetry.onclick = function() {
+                if (lastUserPrompt) {
+                  composerText.value = lastUserPrompt;
+                }
+                btnSend.click();
+              };
+            }
+            closeEventSource();
+            currentRunId = null;
             break;
         }
       }
@@ -3634,13 +3952,19 @@ pub fn render_index_html() -> String {
         }
       }
 
+      let isSubmittingMessage = false;
       btnSend.addEventListener('click', async function() {
+        if (isSubmittingMessage) return;
         const prompt = composerText.value.trim();
-        if (!prompt) return;
+        if (!prompt) {
+          appendMessage('assistant', 'Enter a message before sending.');
+          return;
+        }
         if (!currentChatId) {
           appendMessage('assistant', 'No active chat. Create a project and chat first.');
           return;
         }
+        isSubmittingMessage = true;
         lastUserPrompt = prompt;
         appendMessage('user', prompt);
         composerText.value = '';
@@ -3659,7 +3983,10 @@ pub fn render_index_html() -> String {
           const outcome = await res.json();
           if (outcome.run && outcome.run.id) {
             currentRunId = outcome.run.id;
-            if (eventSource) eventSource.close();
+            closeEventSource();
+            activeStreamRunId = currentRunId;
+            activeStreamChatId = currentChatId;
+            // reopen below
             eventSource = new EventSource(API_BASE + '/api/runs/' + encodeURIComponent(currentRunId) + '/events');
             eventSource.addEventListener('message.delta', handleSSEEvent);
             eventSource.addEventListener('tool.started', handleSSEEvent);
@@ -3670,6 +3997,12 @@ pub fn render_index_html() -> String {
             eventSource.addEventListener('run.completed', handleSSEEvent);
             eventSource.addEventListener('run.cancelled', handleSSEEvent);
             eventSource.addEventListener('run.failed', handleSSEEvent);
+            eventSource.onopen = function() {
+              if (reconnectBannerEl) reconnectBannerEl.style.display = 'none';
+            };
+            eventSource.onerror = function() {
+              if (reconnectBannerEl) reconnectBannerEl.style.display = '';
+            };
           }
         } catch (e) {
           appendProblemNotice(e.message, 'Review the error, then retry the message. Your prompt was preserved in the composer.', 'request_failed');
@@ -3679,6 +4012,7 @@ pub fn render_index_html() -> String {
             composerText.value = lastUserPrompt;
           }
         } finally {
+          isSubmittingMessage = false;
           btnSend.disabled = false;
         }
       });
@@ -3976,6 +4310,76 @@ mod tests {
     }
 
     #[test]
+    fn test_chat_persistence_phase3_controls_present() {
+        let html = render_index_html();
+
+        // New conversation creation and selection
+        assert!(html.contains("id=\"btn-new-chat\""));
+        assert!(html.contains("id=\"recent-chats\""));
+
+        // Composer validation and submission
+        assert!(html.contains("id=\"composer-text\""));
+        assert!(html.contains("id=\"btn-send\""));
+        assert!(html.contains("aria-label=\"Send message\""));
+
+        // Message rendering and history restoration
+        assert!(html.contains("id=\"messages\" role=\"log\" aria-live=\"polite\""));
+        assert!(html.contains("function hydrateChatHistory("));
+        assert!(html.contains("function appendMessage("));
+        assert!(html.contains("function renderMessage("));
+        assert!(html.contains("Loading conversation history…"));
+        assert!(html.contains("No messages yet. Send a prompt to begin."));
+
+        // Backend message submission endpoint usage
+        assert!(html.contains("/api/chats/' + encodeURIComponent(currentChatId) + '/messages"));
+        assert!(html.contains("/api/chats', {"));
+        // User input preservation on failure
+        assert!(html.contains("Your prompt was preserved in the composer."));
+        // Prevent duplicate submissions
+        assert!(html.contains("isSubmittingMessage"));
+
+        // XSS-safe rendering helper
+        assert!(html.contains("function escapeHtml("));
+        assert!(html.contains("function renderMarkdownSafe("));
+    }
+
+    #[test]
+    fn test_secondary_screens_phase5_controls_present() {
+        let html = render_index_html();
+
+        // Entry point and modal
+        assert!(html.contains("id=\"btn-open-secondary\""));
+        assert!(html.contains("id=\"secondary-modal\""));
+
+        // Tabs for supported and unsupported screens
+        assert!(html.contains("data-secondary-tab=\"recipes\""));
+        assert!(html.contains("data-secondary-tab=\"scheduler\""));
+        assert!(html.contains("data-secondary-tab=\"extensions\""));
+        assert!(html.contains("data-secondary-tab=\"sessions\""));
+        assert!(html.contains("data-secondary-tab=\"skills\""));
+        assert!(html.contains("data-secondary-tab=\"apps\""));
+
+        // Real backend data usage
+        assert!(html.contains("function loadSecondaryRecipes("));
+        assert!(html.contains("/api/recipes"));
+        assert!(html.contains("function loadSecondarySchedules("));
+        assert!(html.contains("/api/schedules"));
+        assert!(html.contains("function loadSecondaryExtensions("));
+        assert!(html.contains("/api/extensions/inventory"));
+        assert!(html.contains("function loadSecondarySessions("));
+        assert!(html.contains("/api/projects/' + encodeURIComponent(currentProjectId) + '/chats"));
+
+        // Honest unavailable states
+        assert!(html.contains("A managed skills browser is planned"));
+        assert!(html.contains("Apps / external application integrations are not yet supported"));
+
+        // Consistent navigation
+        assert!(html.contains("function openSecondary("));
+        assert!(html.contains("function closeSecondary("));
+        assert!(html.contains("function switchSecondaryTab("));
+    }
+
+    #[test]
     fn test_design_token_css_variables_are_complete_for_both_themes() {
         let light = light_theme_tokens();
         let dark = dark_theme_tokens();
@@ -4037,5 +4441,16 @@ mod tests {
         assert!(html.contains("[data-theme=\"light\"]"));
         assert!(html.contains("[data-theme=\"dark\"]"));
         assert!(html.contains("@media (prefers-color-scheme: dark)"));
+    }
+
+    #[test]
+    fn test_streaming_agent_cleanup_and_deduplication_hooks_present() {
+        let html = render_index_html();
+        assert!(html.contains("function closeEventSource("));
+        assert!(html.contains("processedEventSeqs"));
+        assert!(html.contains("activeStreamRunId"));
+        assert!(html.contains("activeStreamChatId"));
+        assert!(html.contains("eventSource.onopen"));
+        assert!(html.contains("eventSource.onerror"));
     }
 }

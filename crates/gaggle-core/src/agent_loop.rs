@@ -53,6 +53,18 @@ impl CancellationToken {
     }
 }
 
+/// Guard that unregisters a run's cancellation token when dropped.
+struct RunRegistrationGuard {
+    registry: ActiveRunRegistry,
+    run_id: String,
+}
+
+impl Drop for RunRegistrationGuard {
+    fn drop(&mut self) {
+        self.registry.unregister(&self.run_id);
+    }
+}
+
 /// Registry of active run cancellation tokens so HTTP/CLI endpoints can cancel an in-flight run.
 #[derive(Clone, Default)]
 pub struct ActiveRunRegistry {
@@ -70,6 +82,13 @@ impl ActiveRunRegistry {
             guard.insert(run_id.to_string(), token.clone());
         }
         token
+    }
+
+    /// Register an existing cancellation token under `run_id` so external callers can cancel it.
+    pub fn register_token(&self, run_id: &str, token: CancellationToken) {
+        if let Ok(mut guard) = self.tokens.write() {
+            guard.insert(run_id.to_string(), token);
+        }
     }
 
     pub fn cancel(&self, run_id: &str) -> bool {
@@ -130,11 +149,34 @@ pub enum AgentLoopOutcome {
 pub struct AgentRuntime {
     pool: SqlitePool,
     max_steps: usize,
+    pub active_runs: ActiveRunRegistry,
 }
 
 impl AgentRuntime {
     pub fn new(pool: SqlitePool, max_steps: usize) -> Self {
-        Self { pool, max_steps }
+        Self {
+            pool,
+            max_steps,
+            active_runs: ActiveRunRegistry::new(),
+        }
+    }
+
+    pub fn new_with_active_runs(
+        pool: SqlitePool,
+        max_steps: usize,
+        active_runs: ActiveRunRegistry,
+    ) -> Self {
+        Self {
+            pool,
+            max_steps,
+            active_runs,
+        }
+    }
+
+    /// Attach/replace the [`ActiveRunRegistry`] used for cancellation.
+    pub fn with_active_runs(mut self, registry: ActiveRunRegistry) -> Self {
+        self.active_runs = registry;
+        self
     }
 
     pub async fn run_turn(
@@ -159,6 +201,7 @@ impl AgentRuntime {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn run_turn_inner(
         &self,
@@ -218,6 +261,12 @@ impl AgentRuntime {
         let run = run_repo
             .create(chat_id, Some(&user_msg.id), chat.model_id.as_deref())
             .await?;
+        self.active_runs
+            .register_token(&run.id, cancel_token.clone());
+        let _run_registration = RunRegistrationGuard {
+            registry: self.active_runs.clone(),
+            run_id: run.id.clone(),
+        };
         let correlation = CorrelationIds::for_chat(chat_id).with_run(&run.id);
         let run_repo = run_repo.with_correlation(correlation.clone());
         let perm_engine = perm_engine.with_correlation(correlation.clone());
@@ -588,7 +637,9 @@ impl AgentRuntime {
                                     "approval_id": approval.id,
                                     "tool_call_id": tc.id,
                                     "tool_name": proposed.tool_name,
-                                    "summary": summary
+                                    "summary": summary,
+                                    "command": shell_cmd,
+                                    "cwd": project.root_path
                                 })
                                 .to_string(),
                             )

@@ -429,6 +429,15 @@ On startup, Gaggle automatically:
 
 ---
 
+## Known Limitations
+
+See [`docs/development/known-limitations.md`](./docs/development/known-limitations.md) for an up-to-date list of
+intentionally limited, unavailable, or planned capabilities (credentials, optional
+tooling, secondary screens, data/concurrency, agent runtime, accessibility, and
+cross-platform support).
+
+---
+
 ## Contributing & Community
 
 Contributions are welcome! Please review the following documents before opening an issue or submitting a pull request:

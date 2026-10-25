@@ -24,7 +24,8 @@ use gaggle_db::{
     connection::{new_id, now_ms},
     models::{
         AppSetting, Approval, Chat, ChatSummary, CommandRule, Extension, ExtensionPermission,
-        ExtensionTool, Memory, Model, Project, Provider, Recipe, Run, Schedule, Worktree,
+        ExtensionTool, Memory, Message, MessagePart, Model, Project, Provider, Recipe, Run,
+        Schedule, Worktree,
     },
     repositories::{
         chats::{ChatExportBundle, ChatRepository},
@@ -217,6 +218,12 @@ pub struct SubmitChatMessageRequest {
 #[derive(Debug, Deserialize)]
 pub struct CompactChatRequest {
     pub trigger: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatMessagesResponse {
+    pub messages: Vec<Message>,
+    pub message_parts: Vec<MessagePart>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -461,9 +468,12 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(delete_schedule),
         )
         .route("/api/chats", post(create_chat))
-        .route("/api/chats/{id}/messages", post(submit_chat_message))
+        .route("/api/chats/{id}", get(get_chat).patch(update_chat))
+        .route(
+            "/api/chats/{id}/messages",
+            get(get_chat_messages).post(submit_chat_message),
+        )
         .route("/api/chats/{id}/compact", post(compact_chat))
-        .route("/api/chats/{id}", patch(update_chat))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
@@ -692,6 +702,40 @@ async fn list_project_chats(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(chats))
+}
+
+async fn get_chat(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Chat>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let chat = repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    Ok(Json(chat))
+}
+
+async fn get_chat_messages(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<ChatMessagesResponse>, (StatusCode, String)> {
+    let repo = ChatRepository::new(state.pool);
+    let rows = repo
+        .list_messages_with_parts(&chat_id, 500)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut messages = Vec::with_capacity(rows.len());
+    let mut message_parts = Vec::new();
+    for (msg, parts) in rows {
+        messages.push(msg);
+        message_parts.extend(parts);
+    }
+    Ok(Json(ChatMessagesResponse {
+        messages,
+        message_parts,
+    }))
 }
 
 async fn list_recipes(
@@ -2215,7 +2259,11 @@ async fn submit_chat_message(
     Path(chat_id): Path<String>,
     Json(req): Json<SubmitChatMessageRequest>,
 ) -> Result<Json<AgentLoopOutcome>, (StatusCode, String)> {
-    let runtime = AgentRuntime::new(state.pool.clone(), DEFAULT_MAX_AGENT_STEPS);
+    let runtime = AgentRuntime::new_with_active_runs(
+        state.pool.clone(),
+        DEFAULT_MAX_AGENT_STEPS,
+        state.active_runs.clone(),
+    );
     let executor = BuiltinToolExecutor::new(state.pool.clone());
     let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
     if requested_model_key.len() > 200 {
@@ -2412,16 +2460,34 @@ async fn cancel_run(
         run_id = %run_id,
         "Cancellation requested for durable run"
     );
-    state.active_runs.cancel(&run_id);
-    let repo = RunRepository::new(state.pool);
-    repo.emit_event(
-        &run_id,
-        "run.cancelled",
-        &serde_json::json!({ "reason": "user_cancelled_via_api" }).to_string(),
-    )
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let repo = RunRepository::new(state.pool.clone());
+    // Signal the active run (if any) so the agent loop stops promptly.
+    let was_active = state.active_runs.cancel(&run_id);
+
+    if was_active {
+        // Let the agent loop own the terminal event/status update to avoid duplicates.
+        for _ in 0..40 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if let Ok(Some(run)) = repo.get_run_by_id(&run_id).await
+                && matches!(run.status.as_str(), "cancelled" | "completed" | "failed")
+            {
+                return Ok(Json(run));
+            }
+        }
+        if let Ok(Some(run)) = repo.get_run_by_id(&run_id).await {
+            return Ok(Json(run));
+        }
+    }
+
+    // Fallback for runs without an active token: record cancellation directly.
+    let _ = repo
+        .emit_event(
+            &run_id,
+            "run.cancelled",
+            &serde_json::json!({ "reason": "user_cancelled_via_api" }).to_string(),
+        )
+        .await;
     let updated = repo
         .update_run_status(&run_id, "cancelled", Some("Cancelled by user"))
         .await
@@ -2442,23 +2508,53 @@ async fn stream_run_events(
 
     let after_seq = query.after_seq.or(last_event_id_header).unwrap_or(0);
 
-    let repo = RunRepository::new(state.pool);
-    let events = repo
-        .list_run_events(&run_id, after_seq)
+    // Validate the run exists.
+    let repo = RunRepository::new(state.pool.clone());
+    if repo
+        .get_run_by_id(&run_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .is_none()
+    {
+        return Err((StatusCode::NOT_FOUND, format!("Run '{run_id}' not found")));
+    }
 
-    let sse_items: Vec<Result<Event, Infallible>> = events
-        .into_iter()
-        .map(|ev| {
-            Ok(Event::default()
-                .id(ev.seq.to_string())
-                .event(ev.kind)
-                .data(ev.payload))
-        })
-        .collect();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(64);
+    let pool = state.pool.clone();
+    let run_id_task = run_id.clone();
+    tokio::spawn(async move {
+        let mut after_seq = after_seq;
+        loop {
+            let repo = RunRepository::new(pool.clone());
+            if let Ok(events) = repo.list_run_events(&run_id_task, after_seq).await {
+                let mut terminal = false;
+                for ev in events {
+                    after_seq = ev.seq;
+                    let kind = ev.kind.clone();
+                    if matches!(
+                        kind.as_str(),
+                        "run.completed" | "run.cancelled" | "run.failed"
+                    ) {
+                        terminal = true;
+                    }
+                    let event = Event::default()
+                        .id(ev.seq.to_string())
+                        .event(ev.kind)
+                        .data(ev.payload);
+                    if tx.send(Ok(event)).await.is_err() {
+                        return;
+                    }
+                }
+                if terminal {
+                    return;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    });
 
-    Ok(Sse::new(tokio_stream::iter(sse_items)))
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }
 
 async fn list_project_worktrees(
