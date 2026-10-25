@@ -1726,6 +1726,7 @@ pub fn render_index_html() -> String {
       const composerText = document.getElementById('composer-text');
       const btnSend = document.getElementById('btn-send');
       const btnStop = document.getElementById('btn-stop');
+      const btnRetry = document.getElementById('btn-retry');
       const approvalQueue = document.getElementById('approval-queue');
       const themeSwitcher = document.getElementById('theme-switcher');
 
@@ -1840,6 +1841,10 @@ pub fn render_index_html() -> String {
       let lastUserPrompt = '';
       let userScrolledUpDuringStream = false;
       let lastMessageSeq = 0;
+      let activeStreamRunId = null;
+      let activeStreamChatId = null;
+      let processedEventSeqs = new Set();
+      let lastEventSeq = 0;
 
       let providers = [];
       let modelsByProviderId = {};
@@ -3013,6 +3018,10 @@ pub fn render_index_html() -> String {
       }
 
       function selectChat(chatId) {
+        if (chatId !== currentChatId) {
+          closeEventSource();
+          currentRunId = null;
+        }
         currentChatId = chatId;
         const chatList = Object.keys(chatsById).map(function(id) { return chatsById[id]; });
         renderChatList(chatList);
@@ -3080,10 +3089,7 @@ pub fn render_index_html() -> String {
 
       async function selectProject(projectId) {
         // Strictly isolate context when switching between projects
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
+        closeEventSource();
         currentProjectId = projectId || null;
         currentChatId = null;
         currentRunId = null;
@@ -3858,8 +3864,35 @@ pub fn render_index_html() -> String {
         }
       };
 
+      function closeEventSource() {
+        if (eventSource) {
+          try { eventSource.close(); } catch (e) {}
+          eventSource = null;
+        }
+        activeStreamRunId = null;
+        activeStreamChatId = null;
+        processedEventSeqs = new Set();
+        lastEventSeq = 0;
+      }
+
       function handleSSEEvent(event) {
+        // Ignore stale events from a previous run/conversation.
+        if (activeStreamRunId && event.target && event.target.url && event.target.url.indexOf(activeStreamRunId) === -1) {
+          return;
+        }
+        const seq = Number(event.lastEventId || 0);
+        if (seq > 0 && processedEventSeqs.has(seq)) {
+          return; // duplicate/replayed event
+        }
+        // Only process events for the active stream.
+        if (activeStreamChatId && currentChatId && activeStreamChatId !== currentChatId) {
+          return;
+        }
+        if (activeStreamRunId && currentRunId && activeStreamRunId !== currentRunId) {
+          return;
+        }
         const data = JSON.parse(event.data);
+        if (seq > 0) processedEventSeqs.add(seq);
         switch (event.type) {
           case 'message.delta':
             if (!activeAssistantMessageEl) {
@@ -3903,6 +3936,9 @@ pub fn render_index_html() -> String {
             }
             appendMessage('assistant', '[Run completed]');
             btnStop.disabled = true;
+            if (btnRetry) btnRetry.style.display = 'none';
+            closeEventSource();
+            currentRunId = null;
             break;
           case 'run.cancelled':
             if (activeAssistantMessageEl) {
@@ -3911,6 +3947,9 @@ pub fn render_index_html() -> String {
             }
             appendMessage('assistant', '[Run cancelled]');
             btnStop.disabled = true;
+            if (btnRetry) btnRetry.style.display = 'none';
+            closeEventSource();
+            currentRunId = null;
             break;
           case 'run.failed':
             if (activeAssistantMessageEl) {
@@ -3919,6 +3958,17 @@ pub fn render_index_html() -> String {
             }
             appendProblemNotice(data.error, data.retry_guidance, data.failure_category);
             btnStop.disabled = true;
+            if (btnRetry) {
+              btnRetry.style.display = '';
+              btnRetry.onclick = function() {
+                if (lastUserPrompt) {
+                  composerText.value = lastUserPrompt;
+                }
+                btnSend.click();
+              };
+            }
+            closeEventSource();
+            currentRunId = null;
             break;
         }
       }
@@ -3965,7 +4015,10 @@ pub fn render_index_html() -> String {
           const outcome = await res.json();
           if (outcome.run && outcome.run.id) {
             currentRunId = outcome.run.id;
-            if (eventSource) eventSource.close();
+            closeEventSource();
+            activeStreamRunId = currentRunId;
+            activeStreamChatId = currentChatId;
+            // reopen below
             eventSource = new EventSource(API_BASE + '/api/runs/' + encodeURIComponent(currentRunId) + '/events');
             eventSource.addEventListener('message.delta', handleSSEEvent);
             eventSource.addEventListener('tool.started', handleSSEEvent);
@@ -3976,6 +4029,12 @@ pub fn render_index_html() -> String {
             eventSource.addEventListener('run.completed', handleSSEEvent);
             eventSource.addEventListener('run.cancelled', handleSSEEvent);
             eventSource.addEventListener('run.failed', handleSSEEvent);
+            eventSource.onopen = function() {
+              if (reconnectBannerEl) reconnectBannerEl.style.display = 'none';
+            };
+            eventSource.onerror = function() {
+              if (reconnectBannerEl) reconnectBannerEl.style.display = '';
+            };
           }
         } catch (e) {
           appendProblemNotice(e.message, 'Review the error, then retry the message. Your prompt was preserved in the composer.', 'request_failed');
@@ -4386,5 +4445,16 @@ mod tests {
         assert!(html.contains("[data-theme=\"light\"]"));
         assert!(html.contains("[data-theme=\"dark\"]"));
         assert!(html.contains("@media (prefers-color-scheme: dark)"));
+    }
+
+    #[test]
+    fn test_streaming_agent_cleanup_and_deduplication_hooks_present() {
+        let html = render_index_html();
+        assert!(html.contains("function closeEventSource("));
+        assert!(html.contains("processedEventSeqs"));
+        assert!(html.contains("activeStreamRunId"));
+        assert!(html.contains("activeStreamChatId"));
+        assert!(html.contains("eventSource.onopen"));
+        assert!(html.contains("eventSource.onerror"));
     }
 }
