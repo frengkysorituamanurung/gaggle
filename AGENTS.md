@@ -2,6 +2,13 @@
 
 These instructions are automatically loaded by OpenCode in every session within the **Gaggle** repository.
 
+## 0. Local Execution Policy (Session Override)
+
+- **Do not run any local build, test, lint, format, or other execution commands** (including `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test`, `cargo build`, or scripts) in this repository.
+- Work is limited to **editing code and files only**. Verification and quality gates run in CI, not locally.
+- Use the provided GitHub token for all `gh`/GitHub operations; do not print or commit the token.
+- This policy takes precedence over the quality-gate commands listed elsewhere in this document.
+
 ## 1. Mandatory Skill Routing & Discovery
 
 Before planning, designing, or modifying any code in response to a user prompt, you **MUST** load the relevant canonical skill(s) from `.opencode/skills/<skill-id>/SKILL.md` using the `skill` tool:

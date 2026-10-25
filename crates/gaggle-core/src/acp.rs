@@ -122,7 +122,3 @@ mod tests {
         assert!(!transport.name().is_empty());
     }
 }
-```
-
-Wait derive Default on struct with Arc<Mutex> - I manually impl Default, but also `#[derive(Clone, Default)]` would require Default derive; I included derive Default and manual impl causing duplicate. Remove derive Default. Keep Clone. Edit.<|end|><|start|>start to=edit<|channel|>analysis <|constrain|>xml<|message|><rfl:parameter name="path">
-crates/gaggle-core/src/acp.rs

@@ -45,7 +45,8 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
 pub struct DownloadManager {
     client: reqwest::Client,
     progress_tx: mpsc::UnboundedSender<DownloadProgress>,
-    pub progress_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<DownloadProgress>>>>,}
+    pub progress_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<DownloadProgress>>>>,
+}
 
 impl DownloadManager {
     pub fn new() -> Self {
@@ -57,11 +58,7 @@ impl DownloadManager {
         }
     }
 
-    pub async fn download(
-        &self,
-        url: &str,
-        dest: PathBuf,
-    ) -> Result<PathBuf, DownloadError> {
+    pub async fn download(&self, url: &str, dest: PathBuf) -> Result<PathBuf, DownloadError> {
         validate_url(url)?;
 
         if let Some(parent) = dest.parent() {
@@ -127,9 +124,7 @@ impl DownloadManager {
         Ok(dest)
     }
 
-    pub fn take_progress_receiver(
-        &self,
-    ) -> Option<mpsc::UnboundedReceiver<DownloadProgress>> {
+    pub fn take_progress_receiver(&self) -> Option<mpsc::UnboundedReceiver<DownloadProgress>> {
         self.progress_rx.lock().ok()?.take()
     }
 }
