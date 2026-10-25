@@ -12,6 +12,9 @@ use gaggle_tools::{BuiltinToolExecutor, browser_tools, register_builtin_extensio
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
+
+static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
 async fn spawn_test_server() -> Result<(SocketAddr, tokio::task::JoinHandle<()>)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -95,6 +98,7 @@ async fn test_close_browser_marks_db_and_removes_profile() -> Result<()> {
         eprintln!("SKIP: Chromium not available");
         return Ok(());
     }
+    let _serial = TEST_LOCK.lock().await;
     let (pool, chat_id, session_id) = match setup().await {
         Ok(v) => v,
         Err(e) if e.to_string() == "skip" => return Ok(()),
@@ -122,6 +126,7 @@ async fn test_close_browser_session_with_pool() -> Result<()> {
         eprintln!("SKIP: Chromium not available");
         return Ok(());
     }
+    let _serial = TEST_LOCK.lock().await;
     let (pool, _chat_id, session_id) = match setup().await {
         Ok(v) => v,
         Err(e) if e.to_string() == "skip" => return Ok(()),
@@ -150,6 +155,7 @@ async fn test_close_all_browsers() -> Result<()> {
         eprintln!("SKIP: Chromium not available");
         return Ok(());
     }
+    let _serial = TEST_LOCK.lock().await;
     let (pool, _chat_id, session_id) = match setup().await {
         Ok(v) => v,
         Err(e) if e.to_string() == "skip" => return Ok(()),
