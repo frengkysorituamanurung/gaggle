@@ -619,11 +619,7 @@ pub async fn browser_extract(
 async fn close_active_browser(active: ActiveBrowser) {
     {
         let mut b = active.browser.lock().await;
-        let close_result = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            b.close(),
-        )
-        .await;
+        let close_result = tokio::time::timeout(std::time::Duration::from_secs(5), b.close()).await;
         if !matches!(close_result, Ok(Ok(_))) {
             let _ = b.kill().await;
         }
@@ -631,11 +627,7 @@ async fn close_active_browser(active: ActiveBrowser) {
         // the OS process may still be shutting down and holding files in the profile
         // directory. Wait for the process to exit (with a fallback kill) before
         // removing the directory.
-        let wait_result = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            b.wait(),
-        )
-        .await;
+        let wait_result = tokio::time::timeout(std::time::Duration::from_secs(10), b.wait()).await;
         if wait_result.is_err() {
             let _ = b.kill().await;
             let _ = b.wait().await;
