@@ -512,7 +512,7 @@ pub fn render_index_html() -> String {
     #details-panel {
       background: var(--bg-panel);
       border-left: var(--border-width) solid var(--border);
-      padding: var(--space-md);
+      padding: var(--space-sm);
       overflow-y: auto;
     }
     .file-list {
