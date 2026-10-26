@@ -447,6 +447,11 @@ pub fn render_index_html() -> String {
       color: var(--danger);
       display: none;
     }
+    .warning-banner {
+      border-color: var(--warning);
+      background: rgba(240, 140, 0, 0.12);
+      color: var(--warning);
+    }
     .error-banner.visible, .warning-banner.visible {
       display: block;
     }
