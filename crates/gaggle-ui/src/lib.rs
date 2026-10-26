@@ -3948,6 +3948,7 @@ pub fn render_index_html() -> String {
         processedEventSeqs = new Set();
         lastEventSeq = 0;
       }
+      window.addEventListener('beforeunload', closeEventSource);
 
       function handleSSEEvent(event) {
         // Ignore stale events from a previous run/conversation.
