@@ -18,6 +18,7 @@ pub struct ColorTokens {
     pub bg_app: &'static str,
     pub bg_panel: &'static str,
     pub bg_surface: &'static str,
+    pub bg_elevated: &'static str,
     pub text_primary: &'static str,
     pub text_muted: &'static str,
     pub accent: &'static str,
@@ -72,6 +73,7 @@ pub fn light_theme_tokens() -> DesignTokens {
             bg_app: "#f4f6f7",
             bg_panel: "#ffffff",
             bg_surface: "#e3e6ea",
+            bg_elevated: "#ffffff",
             text_primary: "#3f434b",
             text_muted: "#878787",
             accent: "#5c98f9",
@@ -120,6 +122,7 @@ pub fn dark_theme_tokens() -> DesignTokens {
             bg_app: "#22252a",
             bg_panel: "#3f434b",
             bg_surface: "#474e57",
+            bg_elevated: "#4a4f58",
             text_primary: "#ffffff",
             text_muted: "#878787",
             accent: "#7cacff",
@@ -168,6 +171,7 @@ pub fn aura_theme_tokens() -> DesignTokens {
             bg_app: "#15141b",
             bg_panel: "#1a1921",
             bg_surface: "#201e2b",
+            bg_elevated: "#262333",
             text_primary: "#edecee",
             text_muted: "#8a8282",
             accent: "#a277ff",
@@ -215,6 +219,7 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         "--bg-app: {bg_app};\n      \
          --bg-panel: {bg_panel};\n      \
          --bg-surface: {bg_surface};\n      \
+         --bg-elevated: {bg_elevated};\n      \
          --text-primary: {text_primary};\n      \
          --text-muted: {text_muted};\n      \
          --accent: {accent};\n      \
@@ -248,7 +253,7 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         bg_app = tokens.colors.bg_app,
         bg_panel = tokens.colors.bg_panel,
         bg_surface = tokens.colors.bg_surface,
-        text_primary = tokens.colors.text_primary,
+        bg_elevated = tokens.colors.bg_elevated,        text_primary = tokens.colors.text_primary,
         text_muted = tokens.colors.text_muted,
         accent = tokens.colors.accent,
         danger = tokens.colors.danger,
