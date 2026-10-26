@@ -29,8 +29,9 @@ Before planning, designing, or modifying any code in response to a user prompt, 
 | Structured `tracing`, redaction, metrics, actionable errors, diagnostics | `observability-reliability` |
 | Unit, integration, E2E, security, and fault-injection testing | `testing-qa` |
 | Documentation, ADRs, contributor guides, release & upgrade notes | `documentation-open-source` |
+| Any code, docs, config, or release change | `ponytail` |
 
-**Rule**: Do not skip loading the applicable skill(s) via the `skill` tool when working in its domain. Never invent skill contents.
+**Rule**: Do not skip loading the applicable skill(s) via the `skill` tool when working in its domain. For every change, also load and follow `ponytail`. Never invent skill contents.
 
 ---
 
