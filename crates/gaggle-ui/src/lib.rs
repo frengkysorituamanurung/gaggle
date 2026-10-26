@@ -3100,7 +3100,7 @@ pub fn render_index_html() -> String {
       function loadConversation(chatId) { return hydrateChatHistory(chatId); }
 
       async function apiFetch(path, options) {
-        const res = await apiFetch(path, options || {});
+        const res = await fetch(API_BASE + path, options || {});
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || ('HTTP ' + res.status));
