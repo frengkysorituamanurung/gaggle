@@ -486,6 +486,7 @@ pub struct SseTransport {
     timeout: Duration,
     next_id: AtomicI64,
     reader_handle: Option<tokio::task::JoinHandle<()>>,
+    #[allow(dead_code)]
     notification_tx: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
     notification_slot: Arc<std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<Value>>>>,
 }

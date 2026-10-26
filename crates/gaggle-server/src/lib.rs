@@ -1997,6 +1997,7 @@ fn parse_skill_frontmatter(content: &str) -> (String, String) {
     }
     (name, description)
 }
+async fn list_providers(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProviderStatusResponse>>, (StatusCode, String)> {
     let repo = ProviderRepository::new(state.pool);
