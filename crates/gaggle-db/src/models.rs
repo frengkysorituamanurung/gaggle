@@ -33,7 +33,7 @@ pub struct ProjectSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Provider {
     pub id: String,
-    pub kind: String, // "chatgpt"|"openrouter"|"openai"|"anthropic"|"deepseek"|"ollama"|"openai_compat"
+    pub kind: String, // "chatgpt"|"openrouter"|"openai"|"anthropic"|"deepseek"|"xai"|"google"|"azure"|"databricks"|"snowflake"|"ollama"|"openai_compat"
     pub name: String,
     pub base_url: Option<String>,
     pub auth_kind: String, // "oauth" | "api_key" | "none"

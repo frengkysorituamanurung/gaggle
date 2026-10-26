@@ -25,8 +25,9 @@ the UI/backend integration audit.
 ## UI and secondary screens
 
 - Skills and Apps screens are intentionally honest unavailable/planned states.
-  Skills are file-based instruction packs loaded from `.opencode/skills`; a
-  managed browser is planned. Apps/external application integrations are not yet
+  Skills are file-based instruction packs loaded from `.opencode/skills`; a managed
+  browser lists discovered skills, while install/uninstall and Apps integrations
+  are planned. Apps/external application integrations are not yet
   supported by the backend.
 - The UI is a single embedded HTML document rendered by the Rust server. There
   is no separate frontend build or hot-reload workflow.

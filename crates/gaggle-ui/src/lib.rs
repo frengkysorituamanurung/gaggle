@@ -1228,6 +1228,11 @@ pub fn render_index_html() -> String {
                     <option value="chatgpt">chatgpt</option>
                     <option value="openrouter">openrouter</option>
                     <option value="deepseek">deepseek</option>
+                    <option value="xai">xai</option>
+                    <option value="google">google</option>
+                    <option value="azure">azure</option>
+                    <option value="databricks">databricks</option>
+                    <option value="snowflake">snowflake</option>
                     <option value="ollama">ollama</option>
                     <option value="openai_compat">openai_compat</option>
                   </select>
@@ -1578,6 +1583,7 @@ pub fn render_index_html() -> String {
             <div class="settings-section">
               <h3>Skills</h3>
               <div class="empty-state">Skills are file-based instruction packs loaded from <span class="mono">.opencode/skills</span>. A managed skills browser is planned; no fake implementation is provided.</div>
+              <div id="secondary-skills-output"></div>
             </div>
           </section>
           <section class="settings-panel" id="panel-secondary-apps" role="tabpanel" aria-labelledby="tab-secondary-apps">
@@ -1738,7 +1744,7 @@ pub fn render_index_html() -> String {
       let quickSwitcherActiveIndex = 0;
       const NATIVE_EDITING_SHORTCUTS = ['a', 'c', 'v', 'x', 'y', 'z'];
 
-      const PROVIDER_KINDS = ['openai', 'anthropic', 'chatgpt', 'openrouter', 'deepseek', 'ollama', 'openai_compat'];
+      const PROVIDER_KINDS = ['openai', 'anthropic', 'chatgpt', 'openrouter', 'deepseek', 'xai', 'google', 'azure', 'databricks', 'snowflake', 'ollama', 'openai_compat'];
 
       // XSS-safe DOM element builder: never interprets strings as raw HTML
       function createEl(tag, attrs, children) {
@@ -2014,6 +2020,7 @@ pub fn render_index_html() -> String {
         loadSecondarySchedules();
         loadSecondaryExtensions();
         loadSecondarySessions();
+        loadSecondarySkills();
       }
 
       function closeSecondary() {
@@ -2581,6 +2588,28 @@ pub fn render_index_html() -> String {
           out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load sessions: ' + e.message }));
         }
       }
+
+      async function loadSecondarySkills() {
+        const out = document.getElementById('secondary-skills-output');
+        if (!out) return;
+        out.textContent = '';
+        out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Loading skills…' }));
+        try {
+          const items = await apiRequest('/api/skills');
+          out.textContent = '';
+          if (!Array.isArray(items) || items.length === 0) {
+            out.appendChild(createEl('div', { className: 'empty-state', textContent: 'No skills found under .opencode/skills.' }));
+            return;
+          }
+          items.forEach(function(s) {
+            out.appendChild(createEl('div', { className: 'action', textContent: (s.name || 'skill') + ' · ' + (s.description || '') }));
+          });
+        } catch (e) {
+          out.textContent = '';
+          out.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load skills: ' + e.message }));
+        }
+      }
+
 
       function parseMemoryTags(raw) {
         return String(raw || '')
