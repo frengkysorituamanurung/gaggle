@@ -502,7 +502,7 @@ pub fn render_index_html() -> String {
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: var(--space-md);
+      padding: var(--space-sm);
     }
     #composer {
       padding: var(--space-md);
