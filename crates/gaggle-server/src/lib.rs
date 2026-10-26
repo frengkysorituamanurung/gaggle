@@ -427,6 +427,7 @@ pub struct ChatGptOAuthStatusResponse {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
+        .route("/assets/{*path}", get(ui_asset_handler))
         .route("/api/health", get(health_handler))
         .route("/api/skills", get(list_skills))
         .route("/api/diagnostics", get(diagnostics_handler))
@@ -619,7 +620,36 @@ async fn shutdown_signal() {
 }
 
 async fn index_handler() -> Html<String> {
-    Html(gaggle_ui::render_index_html())
+    // Prefer the TypeScript UI build when it is available; otherwise keep the
+    // embedded Rust-rendered document as a fallback.
+    if let Ok(html) = std::fs::read_to_string("ui/dist/index.html") {
+        Html(html)
+    } else {
+        Html(gaggle_ui::render_index_html())
+    }
+}
+
+async fn ui_asset_handler(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> Result<axum::response::Response, axum::http::StatusCode> {
+    if path.contains("..") || path.contains('\\') {
+        return Err(axum::http::StatusCode::NOT_FOUND);
+    }
+    let file_path = std::path::PathBuf::from("ui/dist/assets").join(&path);
+    let bytes = std::fs::read(&file_path).map_err(|_| axum::http::StatusCode::NOT_FOUND)?;
+    let content_type = match file_path.extension().and_then(|s| s.to_str()) {
+        Some("js") | Some("mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("json") => "application/json",
+        _ => "application/octet-stream",
+    };
+    axum::response::Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(axum::body::Body::from(bytes))
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
