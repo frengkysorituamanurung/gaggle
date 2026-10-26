@@ -2,18 +2,27 @@ pub mod acp;
 pub mod agent_loop;
 pub mod code_mode;
 pub mod compaction;
+pub mod context_assembler;
+pub mod context_limit;
+pub mod observability;
 pub mod structured_summary;
 
-pub use compaction::{CompactionEngine, CompactionResult, should_compact};
+pub use compaction::{
+    COMPACTION_CONTINUATION_MARKER, CONTEXT_COMPACTION_CONTINUED, CONTEXT_COMPACTION_CONTINUATION_MARKER,
+    CONTINUATION_MARKER, CompactionEngine, CompactionResult, should_compact,
+};
+pub use context_limit::exceeds_context_limit;
 pub use structured_summary::{
     CompactionTemplates, FileActivity, StructuredSummary, Templates, auto_compact_threshold,
     format_message_for_compacting, render_template,
 };
-pub mod context_assembler;
+pub mod hooks;
+pub use hooks::{HookContext, HookDecision, HookEvent, HookManager, HookResult};
 pub mod credentials;
 pub mod diagnostics;
 pub mod errors;
-pub mod observability;
+pub mod operations;
+pub use operations::{Operation, OperationContext, OperationOutcome, OperationRunner};
 pub mod permission_engine;
 pub mod provider;
 pub mod provider_oauth;
@@ -23,10 +32,10 @@ pub mod subagent_manager;
 pub mod subagents;
 pub mod workspace_policy;
 
-pub use acp::{AcpError, AcpMessage, AcpResponse, AcpTransport, InMemoryAcpTransport};
+pub use acp::{AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport};
 pub use agent_loop::{
-    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, DEFAULT_MAX_AGENT_STEPS,
-    ToolExecutor,
+    ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, CompositeToolExecutor,
+    DEFAULT_MAX_AGENT_STEPS, MAX_TOOL_RESPONSE_CHARS, ToolExecutor,
 };
 pub use context_assembler::{
     AgentsDocument, AssembledContext, ContextAssembler, ContextAssemblyOptions,

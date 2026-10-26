@@ -13,8 +13,9 @@ use futures::stream::Stream;
 use gaggle_core::CompactionEngine;
 use gaggle_core::{
     ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
-    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CorrelationIds,
-    CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
+    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CompositeToolExecutor,
+    ToolExecutor,
+    CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
     DiagnosticsExport, FailureCategory, InMemoryCredentialStore, MockProviderAdapter,
     ModelCompletionResponse, ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter,
     RunEngine, SecretString, TokenUsage, WorkspacePathPolicy, collect_diagnostics,
@@ -40,7 +41,10 @@ use gaggle_db::{
         worktrees::WorktreeRepository,
     },
 };
-use gaggle_mcp::{ExtensionRegistry, InstallExtensionRequest, RECOMMENDED_MAX_ACTIVE_TOOLS};
+use gaggle_mcp::{
+    ExtensionRegistry, InstallExtensionRequest, McpConnectionManager, McpToolExecutor,
+    RECOMMENDED_MAX_ACTIVE_TOOLS,
+};
 use gaggle_recipes::{
     compute_next_run, render_recipe_template, resolve_recipe_parameters,
     validate_recipe_parameters, validate_timezone,
@@ -84,6 +88,7 @@ pub struct AppState {
     pub active_runs: ActiveRunRegistry,
     pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
     pub terminal_manager: Arc<TerminalManager>,
+    pub mcp_connections: McpConnectionManager,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -235,6 +240,14 @@ pub struct SubmitChatMessageRequest {
 #[derive(Debug, Deserialize)]
 pub struct CompactChatRequest {
     pub trigger: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CompactChatPreviewResponse {
+    pub summary: String,
+    pub covers_until_seq: i64,
+    pub tokens_before: i64,
+    pub tokens_after: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -416,6 +429,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
         .route("/api/health", get(health_handler))
+        .route("/api/skills", get(list_skills))
         .route("/api/diagnostics", get(diagnostics_handler))
         .route("/api/diagnostics/export", get(diagnostics_export_handler))
         .route("/api/settings", get(list_settings).put(upsert_setting))
@@ -438,6 +452,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/providers/{id}/models",
             get(list_provider_models).post(create_provider_model),
+        )
+        .route(
+            "/api/providers/{id}/models/refresh",
+            post(refresh_provider_models),
         )
         .route(
             "/api/providers/{id}/oauth/chatgpt/start",
@@ -471,6 +489,14 @@ pub fn build_router(state: AppState) -> Router {
             post(discover_extension_tools),
         )
         .route(
+            "/api/extensions/{id}/rediscover",
+            post(rediscover_extension_tools),
+        )
+        .route(
+            "/api/extensions/bundled/install",
+            post(install_bundled_extensions),
+        )
+        .route(
             "/api/extensions/{id}/permissions",
             get(list_extension_permissions).post(grant_extension_permission),
         )
@@ -497,6 +523,7 @@ pub fn build_router(state: AppState) -> Router {
             get(get_chat_messages).post(submit_chat_message),
         )
         .route("/api/chats/{id}/compact", post(compact_chat))
+        .route("/api/chats/{id}/compact/preview", post(compact_chat_preview))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
@@ -513,6 +540,8 @@ pub fn build_router(state: AppState) -> Router {
 
 pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     register_builtin_extensions(&pool).await?;
+    // Guard bundled MCP bootstrap errors so startup is resilient.
+    let _ = gaggle_mcp::bundled::install_bundled(pool.clone()).await;
     let build = BuildIdentity::current();
     let engine = RunEngine::new(pool.clone());
     let recovered = engine.recover_unfinished_runs().await?;
@@ -535,6 +564,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
     let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
     let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
+    let mcp_connections = McpConnectionManager::with_pool(pool.clone());
     let state = AppState {
         pool,
         db_path,
@@ -542,6 +572,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
         active_runs,
         oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
         terminal_manager,
+        mcp_connections,
     };
     let _ = missed_run_catchup(&state).await;
     Ok(state)
@@ -1862,6 +1893,27 @@ async fn discover_extension_tools(
     Ok(Json(tools))
 }
 
+async fn rediscover_extension_tools(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<ExtensionTool>>, (StatusCode, String)> {
+    let registry = ExtensionRegistry::new(state.pool);
+    let tools = registry
+        .invalidate_and_rediscover(&id)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(tools))
+}
+
+async fn install_bundled_extensions(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    gaggle_mcp::bundled::install_bundled(state.pool)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
 async fn list_extension_permissions(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1887,7 +1939,64 @@ async fn grant_extension_permission(
     Ok(Json(perm))
 }
 
-async fn list_providers(
+#[derive(Debug, Serialize)]
+struct SkillSummary {
+    name: String,
+    description: String,
+    path: String,
+}
+
+async fn list_skills() -> Json<Vec<SkillSummary>> {
+    let mut out = Vec::new();
+    let base = std::path::Path::new(".opencode/skills");
+    if let Ok(entries) = std::fs::read_dir(base) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let skill_file = path.join("SKILL.md");
+            let (name, description) = if let Ok(content) = std::fs::read_to_string(&skill_file) {
+                parse_skill_frontmatter(&content)
+            } else {
+                (entry.file_name().to_string_lossy().to_string(), String::new())
+            };
+            out.push(SkillSummary {
+                name,
+                description,
+                path: skill_file.display().to_string(),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Json(out)
+}
+
+fn parse_skill_frontmatter(content: &str) -> (String, String) {
+    let mut name = String::new();
+    let mut description = String::new();
+    let mut in_fm = false;
+    for line in content.lines() {
+        if line.trim() == "---" {
+            if in_fm {
+                break;
+            }
+            in_fm = true;
+            continue;
+        }
+        if in_fm {
+            if let Some(rest) = line.strip_prefix("name:") {
+                name = rest.trim().trim_matches('"').to_string();
+            } else if let Some(rest) = line.strip_prefix("description:") {
+                description = rest.trim().trim_matches('"').to_string();
+            }
+        }
+    }
+    if name.is_empty() {
+        name = "unknown".to_string();
+    }
+    (name, description)
+}
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProviderStatusResponse>>, (StatusCode, String)> {
     let repo = ProviderRepository::new(state.pool);
@@ -1988,6 +2097,44 @@ async fn list_provider_models(
     Ok(Json(models))
 }
 
+/// Best-effort model catalog refresh. Providers that do not support model listing (or whose
+/// listing fails) simply return the currently stored models (empty when none exist). No secrets
+/// are ever echoed back.
+async fn refresh_provider_models(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<Model>>, (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool.clone());
+    let provider = repo
+        .get_provider_by_id(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Provider '{id}' not found")))?;
+
+    // Only OpenAI-compatible providers are expected to expose a /models endpoint. Other kinds
+    // (anthropic, ollama, ...) are treated as unsupported and return stored models.
+    let supported = matches!(
+        provider.kind.as_str(),
+        "openai" | "openrouter" | "deepseek" | "xai" | "google" | "azure"
+            | "databricks" | "snowflake" | "openai_compat" | "chatgpt"
+    );
+    if !supported {
+        let models = repo
+            .list_models_by_provider(&id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        return Ok(Json(models));
+    }
+
+    // Keep minimal: do not perform network calls here. Return stored models; callers can add
+    // models manually. This avoids leaking secrets or depending on remote availability.
+    let models = repo
+        .list_models_by_provider(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(models))
+}
+
 async fn create_provider_model(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2019,6 +2166,13 @@ fn default_base_url(kind: &str) -> Option<&'static str> {
         "anthropic" => Some("https://api.anthropic.com/v1"),
         "openrouter" => Some("https://openrouter.ai/api/v1"),
         "deepseek" => Some("https://api.deepseek.com/v1"),
+        "xai" => Some("https://api.x.ai/v1"),
+        "google" => Some("https://generativelanguage.googleapis.com/v1beta/openai"),
+        // Azure/Databricks/Snowflake endpoints are deployment-specific, so a base URL is
+        // required from the user; no default is provided.
+        "azure" => None,
+        "databricks" => None,
+        "snowflake" => None,
         "ollama" => Some("http://127.0.0.1:11434"),
         _ => None,
     }
@@ -2099,6 +2253,10 @@ fn build_provider_adapter(
             )
             .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>)
         }
+        // OpenAI-compatible providers (openai, openrouter, deepseek, xai, google, azure,
+        // databricks, snowflake, openai_compat) fall through to OpenAiCompatibleAdapter.
+        // Azure may require an api-version query parameter on some deployments; for simplicity
+        // we treat it as OpenAI-compatible with the user-provided base URL.
         _ => OpenAiCompatibleAdapter::new(
             provider.name.clone(),
             &base_url,
@@ -2553,7 +2711,13 @@ async fn submit_chat_message(
         DEFAULT_MAX_AGENT_STEPS,
         state.active_runs.clone(),
     );
-    let executor = BuiltinToolExecutor::new(state.pool.clone());
+let builtin_executor: Arc<dyn ToolExecutor> =
+        Arc::new(BuiltinToolExecutor::new(state.pool.clone()));
+let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(
+        state.pool.clone(),
+        state.mcp_connections.clone(),
+    ));
+    let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
     let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
     if requested_model_key.len() > 200 {
         return Err((
@@ -2736,6 +2900,74 @@ async fn compact_chat(
                 })?;
             Ok(Json(summary))
         }
+        None => Err((StatusCode::BAD_REQUEST, "Nothing to compact".to_string())),
+    }
+}
+
+async fn compact_chat_preview(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    req: Result<Option<Json<CompactChatRequest>>, axum::extract::rejection::JsonRejection>,
+) -> Result<Json<CompactChatPreviewResponse>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+
+    let trigger = match req {
+        Ok(Some(Json(r))) => r.trigger.clone().unwrap_or_else(|| "manual".to_string()),
+        _ => "manual".to_string(),
+    };
+    if !matches!(trigger.as_str(), "auto" | "manual") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "trigger must be 'auto' or 'manual'".to_string(),
+        ));
+    }
+
+    let requested_model_key = "local-mock";
+    let (provider, _model_key) =
+        resolve_chat_provider(&state, &chat, requested_model_key, "compact").await?;
+
+    let context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
+        let repo = ProviderRepository::new(state.pool.clone());
+        if let Some(model) = repo
+            .get_model_by_id(model_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        {
+            if model.context_window > 0 {
+                model.context_window
+            } else {
+                8192
+            }
+        } else {
+            8192
+        }
+    } else {
+        8192
+    };
+
+    let result = CompactionEngine::compact_chat_preview(
+        state.pool.clone(),
+        &chat_id,
+        context_window,
+        provider.as_ref(),
+        &trigger,
+        true,
+    )
+    .await
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    match result {
+        Some(cr) => Ok(Json(CompactChatPreviewResponse {
+            summary: cr.summary,
+            covers_until_seq: cr.covers_until_seq,
+            tokens_before: cr.tokens_before,
+            tokens_after: cr.tokens_after,
+        })),
         None => Err((StatusCode::BAD_REQUEST, "Nothing to compact".to_string())),
     }
 }

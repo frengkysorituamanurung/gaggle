@@ -119,6 +119,23 @@ impl McpConnectionManager {
         Ok(())
     }
 
+    /// Run a health check across all cached connections.
+    ///
+    /// Returns a map of extension id -> healthy. Unhealthy connections are
+    /// removed from the cache.
+    pub async fn health_check_all(&self) -> std::collections::HashMap<String, bool> {
+        let ids: Vec<String> = {
+            let guard = self.clients.lock().await;
+            guard.keys().cloned().collect()
+        };
+        let mut out = std::collections::HashMap::new();
+        for id in ids {
+            let healthy = id.health(self).await;
+            out.insert(id, healthy);
+        }
+        out
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------

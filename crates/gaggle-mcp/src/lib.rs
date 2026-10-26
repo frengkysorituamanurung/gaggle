@@ -26,7 +26,9 @@ use tokio::{
 use tracing::warn;
 use url::Url;
 
+pub mod bundled;
 pub mod connection_manager;
+pub use bundled::{BUNDLED_MCP_SERVERS, BundledMcpServer, install_bundled};
 pub use connection_manager::McpConnectionManager;
 
 pub const RECOMMENDED_MAX_ACTIVE_TOOLS: usize = 25;
@@ -484,10 +486,16 @@ pub struct SseTransport {
     timeout: Duration,
     next_id: AtomicI64,
     reader_handle: Option<tokio::task::JoinHandle<()>>,
+    notification_tx: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    notification_slot: Arc<std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<Value>>>>,
 }
 
 impl SseTransport {
-    pub fn new(url: impl Into<String>, timeout: Duration) -> Result<Self> {
+    pub fn with_notification_tx(
+        url: impl Into<String>,
+        timeout: Duration,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    ) -> Result<Self> {
         let sse_url = validate_mcp_url(&url.into())?;
         let client = reqwest::Client::builder()
             .timeout(timeout)
@@ -498,12 +506,15 @@ impl SseTransport {
         let post_url = Arc::new(RwLock::new(sse_url.clone()));
         let pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let notification_slot =
+            Arc::new(std::sync::RwLock::new(notification_tx.clone()));
 
         // Spawn background reader.
         let client_c = client.clone();
         let sse_url_c = sse_url.clone();
         let post_url_c = post_url.clone();
         let pending_c = pending.clone();
+        let slot_c = notification_slot.clone();
         let handle = tokio::spawn(async move {
             let resp = match client_c
                 .get(&sse_url_c)
@@ -559,6 +570,19 @@ impl SseTransport {
                         }
                         continue;
                     }
+                    // Dispatch notifications: events lacking an id or carrying a method.
+                    if let Ok(value) = serde_json::from_str::<Value>(&data) {
+                        let is_notification =
+                            value.get("id").is_none() || value.get("method").is_some();
+                        if is_notification {
+                            if let Ok(guard) = slot_c.read() {
+                                if let Some(tx) = guard.as_ref() {
+                                    let _ = tx.send(value.clone());
+                                }
+                            }
+                        }
+                    }
+
                     // try parse JSON-RPC response
                     if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&data)
                         && let Some(idv) = resp.id.clone()
@@ -586,7 +610,29 @@ impl SseTransport {
             timeout,
             next_id: AtomicI64::new(1),
             reader_handle: Some(handle),
+            notification_tx,
+            notification_slot,
         })
+    }
+
+    pub fn new(url: impl Into<String>, timeout: Duration) -> Result<Self> {
+        Self::with_notification_tx(url, timeout, None)
+    }
+
+    pub fn new_with_notification_tx(
+        url: impl Into<String>,
+        timeout: Duration,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<Value>>,
+    ) -> Result<Self> {
+        Self::with_notification_tx(url, timeout, notification_tx)
+    }
+
+    pub fn subscribe_notifications(&self) -> tokio::sync::mpsc::UnboundedReceiver<Value> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        if let Ok(mut guard) = self.notification_slot.write() {
+            *guard = Some(tx);
+        }
+        rx
     }
 }
 
@@ -676,6 +722,10 @@ impl McpClient {
             transport,
             timeout: Duration::from_secs(120),
         }
+    }
+
+    pub async fn close(&self) -> Result<()> {
+        self.transport.close().await
     }
 
     pub async fn connect(config: McpServerConfig) -> Result<Self> {
@@ -837,8 +887,8 @@ impl McpClient {
         })
     }
 
-    pub async fn close(&self) -> Result<()> {
-        self.transport.close().await
+    pub async fn notify(&self, method: &str, params: Option<Value>) -> Result<()> {
+        self.transport.notify(method, params).await
     }
 
     pub fn transport(&self) -> Arc<dyn McpTransport> {
@@ -880,6 +930,13 @@ impl ExtensionRegistry {
         Self {
             pool: pool.clone(),
             connections: McpConnectionManager::new(),
+        }
+    }
+
+    pub fn with_connection_manager(pool: SqlitePool, connections: McpConnectionManager) -> Self {
+        Self {
+            pool: pool.clone(),
+            connections,
         }
     }
 
@@ -1092,6 +1149,12 @@ impl ExtensionRegistry {
         Ok(out)
     }
 
+    pub async fn invalidate_and_rediscover(&self, ext_id: &str) -> Result<Vec<ExtensionTool>> {
+        // Invalidate any cached connection so the next discovery reconnects.
+        let _ = self.connections.invalidate(ext_id).await;
+        self.discover_tools(ext_id).await
+    }
+
     pub async fn discover_tools_with_client(
         &self,
         extension_id: &str,
@@ -1148,6 +1211,13 @@ impl McpToolExecutor {
         Self {
             pool: pool.clone(),
             connections: McpConnectionManager::new(),
+        }
+    }
+
+    pub fn with_connection_manager(pool: SqlitePool, connections: McpConnectionManager) -> Self {
+        Self {
+            pool: pool.clone(),
+            connections,
         }
     }
 

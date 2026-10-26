@@ -2,6 +2,7 @@ use crate::{
     ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation,
     FailureCategory, PermissionDecision, PermissionEngine, ToolCallContext,
     context_assembler::DEFAULT_CONTEXT_WINDOW,
+    hooks::{HookContext, HookDecision, HookEvent, HookManager, HookResult},
     observability::{redact_log_text, summarize_tool_arguments},
     provider::{
         ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
@@ -21,7 +22,7 @@ use gaggle_db::{
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, RwLock,
         atomic::{AtomicBool, Ordering},
@@ -32,6 +33,11 @@ use tracing::Instrument;
 
 /// Default maximum agent loop iterations per run to prevent runaway tool-call loops.
 pub const DEFAULT_MAX_AGENT_STEPS: usize = 8;
+
+/// Maximum tool response size (in characters) before the result is spilled to a
+/// temporary file and replaced with a reference message (mirrors Goose
+/// `large_response_handler`).
+pub const MAX_TOOL_RESPONSE_CHARS: usize = 200_000;
 
 /// Thread-safe cooperative cancellation token for an active run.
 #[derive(Clone, Default)]
@@ -140,6 +146,60 @@ pub trait ToolExecutor: Send + Sync {
         tool_name: &str,
         args_json: &str,
     ) -> Result<String, String>;
+}
+
+/// Composite executor that routes tool calls to a built-in executor or an MCP
+/// executor based on the tool name. Built-in tools take precedence for the known
+/// `gaggle.*` namespaces; unknown names are forwarded to the MCP executor.
+pub struct CompositeToolExecutor {
+    builtin: Arc<dyn ToolExecutor>,
+    mcp: Option<Arc<dyn ToolExecutor>>,
+    builtin_prefixes: HashSet<String>,
+}
+
+impl CompositeToolExecutor {
+    pub fn new(builtin: Arc<dyn ToolExecutor>, mcp: Option<Arc<dyn ToolExecutor>>) -> Self {
+        let builtin_prefixes = [
+            "fs.", "git.", "shell.", "memory.", "web.", "browser.", "terminal.",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        Self {
+            builtin,
+            mcp,
+            builtin_prefixes,
+        }
+    }
+
+    fn is_builtin(&self, tool_name: &str) -> bool {
+        self.builtin_prefixes
+            .iter()
+            .any(|prefix| tool_name.starts_with(prefix))
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for CompositeToolExecutor {
+    async fn execute_tool(
+        &self,
+        run_id: &str,
+        chat: &Chat,
+        project_root: &str,
+        tool_name: &str,
+        args_json: &str,
+    ) -> Result<String, String> {
+        if self.is_builtin(tool_name) {
+            self.builtin
+                .execute_tool(run_id, chat, project_root, tool_name, args_json)
+                .await
+        } else if let Some(mcp) = &self.mcp {
+            mcp.execute_tool(run_id, chat, project_root, tool_name, args_json)
+                .await
+        } else {
+            Err(format!("No executor available for tool '{tool_name}'"))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -818,11 +878,48 @@ impl AgentRuntime {
                 "tool.started",
                 &serde_json::json!({
                     "tool_call_id": tc.id,
-                    "tool_name": proposed.tool_name
+                    "tool_name": proposed.tool_name,
+                    "label": proposed.tool_name,
+                    "approval_kind": crate::permission_engine::PermissionEngine::infer_approval_kind(&proposed.tool_name),
+                    "args_summary": summarize_tool_arguments(&proposed.tool_name, &proposed.arguments_json)
                 })
                 .to_string(),
             )
             .await?;
+
+let hook_manager = HookManager::new();
+        let pre_hook_payload = serde_json::from_str::<serde_json::Value>(&proposed.arguments_json)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        let pre_hook = hook_manager.emit(&HookContext {
+            event: HookEvent::PreToolUse,
+            run_id: Some(run_id.to_string()),
+            chat_id: Some(chat.id.clone()),
+            tool_name: Some(proposed.tool_name.clone()),
+            tool_call_id: Some(tc.id.clone()),
+            payload: pre_hook_payload,
+        });
+        if pre_hook.decision == HookDecision::Deny {
+            let msg = pre_hook
+                .message
+                .unwrap_or_else(|| "Blocked by hook".to_string());
+            let err_json = serde_json::json!({ "error": msg }).to_string();
+            run_repo
+                .update_tool_call_result(&tc.id, "error", Some(&err_json), 0)
+                .await?;
+            run_repo
+                .emit_event(
+                    run_id,
+                    "tool.failed",
+                    &serde_json::json!({
+                        "tool_call_id": tc.id,
+                        "tool_name": proposed.tool_name,
+                        "error": msg
+                    })
+                    .to_string(),
+                )
+                .await?;
+            return Ok(err_json);
+        }
 
         let started = Instant::now();
         let tool_span = CorrelationIds::for_chat(&chat.id)
@@ -843,6 +940,32 @@ impl AgentRuntime {
 
         match exec_res {
             Ok(result_json) => {
+                let result_bytes = result_json.len();
+                // Large-response spill: persist oversized tool output to a temp file
+                // and replace the in-context result with a reference message.
+                let stored_result = if result_bytes > MAX_TOOL_RESPONSE_CHARS {
+                    let spill_path = std::env::temp_dir().join(format!(
+                        "gaggle-tool-result-{}.json",
+                        tc.id
+                    ));
+                    match std::fs::write(&spill_path, &result_json) {
+                        Ok(()) => serde_json::json!({
+                            "spilled": true,
+                            "path": spill_path.display().to_string(),
+                            "original_bytes": result_bytes,
+                            "message": "Tool result was too large and was saved to the referenced file."
+                        })
+                        .to_string(),
+                        Err(err) => serde_json::json!({
+                            "spilled": false,
+                            "error": format!("failed to spill large tool result: {err}"),
+                            "truncated_preview": "Tool result too large to include inline."
+                        })
+                        .to_string(),
+                    }
+                } else {
+                    result_json
+                };
                 tracing::info!(
                     target: "gaggle.agent",
                     run_id = %run_id,
@@ -850,12 +973,12 @@ impl AgentRuntime {
                     tool_name = %proposed.tool_name,
                     step = step_index,
                     duration_ms,
-                    result_bytes = result_json.len(),
+                    result_bytes,
                     status = "ok",
                     "Tool call completed"
                 );
                 run_repo
-                    .update_tool_call_result(&tc.id, "ok", Some(&result_json), duration_ms)
+                    .update_tool_call_result(&tc.id, "ok", Some(&stored_result), duration_ms)
                     .await?;
                 run_repo
                     .emit_event(
@@ -864,12 +987,16 @@ impl AgentRuntime {
                         &serde_json::json!({
                             "tool_call_id": tc.id,
                             "tool_name": proposed.tool_name,
-                            "duration_ms": duration_ms
+                            "label": proposed.tool_name,
+                            "approval_kind": crate::permission_engine::PermissionEngine::infer_approval_kind(&proposed.tool_name),
+                            "duration_ms": duration_ms,
+                            "result_bytes": result_bytes,
+                            "spilled": stored_result.contains("\"spilled\":true") || stored_result.contains("\"spilled\": true")
                         })
                         .to_string(),
                     )
                     .await?;
-                Ok(result_json)
+                Ok(stored_result)
             }
             Err(err_str) => {
                 tracing::warn!(

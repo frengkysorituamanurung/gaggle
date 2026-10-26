@@ -96,6 +96,50 @@ impl AcpTransport for InMemoryAcpTransport {
     }
 }
 
+/// Minimal HTTP transport that POSTs an [`AcpMessage`] as JSON and parses an
+/// [`AcpResponse`] from the response body.
+#[derive(Clone)]
+pub struct HttpAcpTransport {
+    pub url: String,
+    pub client: reqwest::Client,
+}
+
+impl HttpAcpTransport {
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            client: reqwest::Client::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl AcpTransport for HttpAcpTransport {
+    async fn send(&self, msg: AcpMessage) -> Result<AcpResponse, AcpError> {
+        let response = self
+            .client
+            .post(&self.url)
+            .json(&msg)
+            .send()
+            .await
+            .map_err(|e| AcpError::Io(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(AcpError::Protocol(format!(
+                "HTTP status {}",
+                response.status()
+            )));
+        }
+        response
+            .json::<AcpResponse>()
+            .await
+            .map_err(|e| AcpError::Protocol(e.to_string()))
+    }
+
+    fn name(&self) -> &str {
+        "http"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

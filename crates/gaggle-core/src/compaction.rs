@@ -8,6 +8,7 @@
 use crate::{
     ModelCompletionRequest, ModelProviderAdapter, ProviderMessage,
     context_assembler::estimate_tokens,
+    context_limit::exceeds_context_limit,
     structured_summary::{
         CompactionTemplates, StructuredSummary, auto_compact_threshold,
         format_message_for_compacting, render_template,
@@ -42,12 +43,17 @@ pub struct CompactionResult {
 
 /// Evaluates whether a chat's token count has crossed its compaction threshold (default 0.75).
 pub fn should_compact(total_tokens: i64, context_window: i64, threshold: f64) -> bool {
-    if context_window <= 0 {
-        return false;
-    }
-    let ratio = (total_tokens as f64) / (context_window as f64);
-    ratio >= threshold
+    exceeds_context_limit(total_tokens, context_window, threshold)
 }
+
+/// Marker appended to compacted conversation summaries to signal continuation.
+pub const COMPACTION_CONTINUATION_MARKER: &str = "[Context compaction continued]";
+/// Alias for [`COMPACTION_CONTINUATION_MARKER`].
+pub const CONTEXT_COMPACTION_CONTINUED: &str = COMPACTION_CONTINUATION_MARKER;
+/// Alias for [`COMPACTION_CONTINUATION_MARKER`].
+pub const CONTEXT_COMPACTION_CONTINUATION_MARKER: &str = COMPACTION_CONTINUATION_MARKER;
+/// Alias for [`COMPACTION_CONTINUATION_MARKER`].
+pub const CONTINUATION_MARKER: &str = COMPACTION_CONTINUATION_MARKER;
 
 /// Engine that performs context compaction using the active provider.
 pub struct CompactionEngine {
@@ -93,6 +99,28 @@ impl CompactionEngine {
         let Some(provider) = self.provider.clone() else {
             return Ok(None);
         };
+        // Threshold gate using the context-limit helper (ratio + absolute cap).
+        let chat_repo = ChatRepository::new(self.pool.clone());
+        if let Ok(Some(chat)) = chat_repo.get_by_id(chat_id).await {
+            let rows = chat_repo
+                .list_messages_with_parts(chat_id, 500)
+                .await
+                .unwrap_or_default();
+            let mut total_tokens: i64 = 0;
+            for (message, parts) in &rows {
+                let content = render_parts(parts);
+                let content = content.trim();
+                if content.is_empty() || message.role == "system" {
+                    continue;
+                }
+                total_tokens += estimate_tokens(&message.role) + estimate_tokens(content);
+            }
+            let threshold =
+                auto_compact_threshold(context_window.max(0) as usize, chat.compact_threshold);
+            if !exceeds_context_limit(total_tokens, context_window, threshold) {
+                return Ok(None);
+            }
+        }
         Self::compact_chat(
             self.pool.clone(),
             chat_id,
@@ -142,15 +170,18 @@ impl CompactionEngine {
         .await
     }
 
-    /// Core implementation shared by all entry points.
-    pub async fn compact_chat(
+    /// Shared computation for compaction. Returns the generated summary and
+    /// accounting values. Persists to the database and adjusts token totals
+    /// unless `dry_run` is true.
+    async fn compute_summary(
         pool: SqlitePool,
         chat_id: &str,
         context_window: i64,
         provider: &dyn ModelProviderAdapter,
         trigger: &str,
         force: bool,
-    ) -> Result<Option<CompactionResult>> {
+        dry_run: bool,
+    ) -> Result<Option<(String, i64, i64, i64, Vec<(String, Option<String>)>)>> {
         let chat_repo = ChatRepository::new(pool.clone());
         let chat = chat_repo
             .get_by_id(chat_id)
@@ -161,7 +192,7 @@ impl CompactionEngine {
 
         // Separate system prompts (preserved verbatim) from summarizable history.
         let mut system_prompts: Vec<String> = Vec::new();
-        let mut summarizable: Vec<(i64, String)> = Vec::new();
+        let mut summarizable: Vec<(i64, String, String)> = Vec::new();
         let mut total_tokens: i64 = 0;
         for (message, parts) in &rows {
             let content = render_parts(parts);
@@ -175,7 +206,7 @@ impl CompactionEngine {
                 continue;
             }
             total_tokens += toks;
-            summarizable.push((message.seq, content));
+            summarizable.push((message.seq, message.role.clone(), content));
         }
 
         if summarizable.is_empty() {
@@ -188,7 +219,7 @@ impl CompactionEngine {
             return Ok(None);
         }
 
-        let covers_until_seq = summarizable.iter().map(|(seq, _)| *seq).max().unwrap_or(0);
+        let covers_until_seq = summarizable.iter().map(|(seq, _, _)| *seq).max().unwrap_or(0);
 
         let tokens_before = total_tokens;
 
@@ -208,12 +239,27 @@ impl CompactionEngine {
         .unwrap_or_default();
 
         // Build the summarization prompt using the ported compaction template.
+        // Tool request/response pairs are grouped so they are summarized as a unit.
+        let mut message_chunks: Vec<String> = Vec::new();
+        let mut i = 0;
+        while i < summarizable.len() {
+            if i + 1 < summarizable.len()
+                && summarizable[i].1 == "assistant"
+                && summarizable[i + 1].1 == "tool"
+            {
+                message_chunks.push(format!(
+                    "[tool pair seq {}-{}]\nassistant: {}\ntool: {}",
+                    summarizable[i].0, summarizable[i + 1].0, summarizable[i].2, summarizable[i + 1].2
+                ));
+                i += 2;
+            } else {
+                let (seq, role, content) = &summarizable[i];
+                message_chunks.push(format_message_for_compacting(*seq, role, content));
+                i += 1;
+            }
+        }
+        let messages_text = message_chunks.join("\n");
         let templates = CompactionTemplates::default();
-        let messages_text = summarizable
-            .iter()
-            .map(|(seq, content)| format_message_for_compacting(*seq, "history", content))
-            .collect::<Vec<_>>()
-            .join("\n");
         let mut prompt = render_template(
             &templates.compaction,
             &serde_json::json!({ "messages": messages_text }),
@@ -225,7 +271,7 @@ impl CompactionEngine {
                  Preserve all critical constraints, unresolved approvals, deny rules, security-relevant \
                  context, and important decisions. Do not invent facts.\n\n",
             );
-            for (seq, content) in &summarizable {
+            for (seq, _, content) in &summarizable {
                 fallback.push_str(&format!("[seq {}] {}\n", seq, content));
             }
             fallback
@@ -294,42 +340,112 @@ impl CompactionEngine {
 
         let tokens_after = estimate_tokens(&summary);
 
-        // Store summary.
-        let summary_repo = ChatSummaryRepository::new(pool.clone());
-        let stored = summary_repo
-            .create(
-                chat_id,
-                &summary,
-                covers_until_seq,
-                tokens_before,
-                tokens_after,
-                trigger,
-            )
-            .await?;
+        // Persist unless dry_run.
+        if !dry_run {
+            let summary_repo = ChatSummaryRepository::new(pool.clone());
+            let _stored = summary_repo
+                .create(
+                    chat_id,
+                    &summary,
+                    covers_until_seq,
+                    tokens_before,
+                    tokens_after,
+                    trigger,
+                )
+                .await?;
 
-        // Update token counts.
-        let reduction = tokens_before.saturating_sub(tokens_after);
-        let _ = chat_repo
-            .adjust_token_totals(chat_id, -reduction, completion.usage.output_tokens)
-            .await;
-        let _ = chat_repo
-            .adjust_token_totals(chat_id, completion.usage.input_tokens, 0)
-            .await;
+            // Update token counts.
+            let reduction = tokens_before.saturating_sub(tokens_after);
+            let _ = chat_repo
+                .adjust_token_totals(chat_id, -reduction, completion.usage.output_tokens)
+                .await;
+            let _ = chat_repo
+                .adjust_token_totals(chat_id, completion.usage.input_tokens, 0)
+                .await;
+        }
 
+        Ok(Some((summary, covers_until_seq, tokens_before, tokens_after, pending_approvals)))
+    }
+
+    /// Core implementation shared by all entry points.
+    pub async fn compact_chat(
+        pool: SqlitePool,
+        chat_id: &str,
+        context_window: i64,
+        provider: &dyn ModelProviderAdapter,
+        trigger: &str,
+        force: bool,
+    ) -> Result<Option<CompactionResult>> {
+        let computed = Self::compute_summary(
+            pool,
+            chat_id,
+            context_window,
+            provider,
+            trigger,
+            force,
+            false,
+        )
+        .await?;
+        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed else {
+            return Ok(None);
+        };
         let compacted_messages = vec![ProviderMessage {
             role: "system".to_string(),
-            content: format!("Conversation summary:\n{}", stored.summary),
+            content: format!(
+                "Conversation summary:\n{}\n\n{}",
+                summary, COMPACTION_CONTINUATION_MARKER
+            ),
             ..Default::default()
         }];
-
         Ok(Some(CompactionResult {
             messages: compacted_messages,
-            summary: stored.summary,
-            covers_until_seq: stored.covers_until_seq,
-            tokens_before: stored.tokens_before,
-            tokens_after: stored.tokens_after,
+            summary,
+            covers_until_seq,
+            tokens_before,
+            tokens_after,
             compacted: true,
-            trigger: stored.trigger,
+            trigger: trigger.to_string(),
+        }))
+    }
+
+    /// Dry-run variant that computes a summary without persisting it.
+    pub async fn compact_chat_preview(
+        pool: SqlitePool,
+        chat_id: &str,
+        context_window: i64,
+        provider: &dyn ModelProviderAdapter,
+        trigger: &str,
+        force: bool,
+    ) -> Result<Option<CompactionResult>> {
+        let computed = Self::compute_summary(
+            pool,
+            chat_id,
+            context_window,
+            provider,
+            trigger,
+            force,
+            true,
+        )
+        .await?;
+        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed else {
+            return Ok(None);
+        };
+        let compacted_messages = vec![ProviderMessage {
+            role: "system".to_string(),
+            content: format!(
+                "Conversation summary:\n{}\n\n{}",
+                summary, COMPACTION_CONTINUATION_MARKER
+            ),
+            ..Default::default()
+        }];
+        Ok(Some(CompactionResult {
+            messages: compacted_messages,
+            summary,
+            covers_until_seq,
+            tokens_before,
+            tokens_after,
+            compacted: true,
+            trigger: trigger.to_string(),
         }))
     }
 
