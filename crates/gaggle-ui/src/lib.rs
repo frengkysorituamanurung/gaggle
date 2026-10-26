@@ -340,7 +340,7 @@ pub fn render_index_html() -> String {
     }
     #app-shell {
       display: grid;
-      grid-template-columns: 260px minmax(0, 1fr) 340px;
+      grid-template-columns: 240px minmax(0, 1fr) 320px;
       height: 100vh;
       gap: 0;
     }
