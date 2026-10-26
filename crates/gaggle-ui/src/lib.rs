@@ -4080,12 +4080,11 @@ pub fn render_index_html() -> String {
         activeAssistantMessageEl = null;
 
         try {
-          const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
+          const res = await apiFetch('/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: prompt, model_key: selectedModelKey || 'local-mock' })
           });
-          if (!res.ok) throw new Error(await res.text());
           const outcome = await res.json();
           if (outcome.run && outcome.run.id) {
             currentRunId = outcome.run.id;
@@ -4126,7 +4125,7 @@ pub fn render_index_html() -> String {
       btnStop.addEventListener('click', async function() {
         if (!currentRunId) return;
         try {
-          await fetch(API_BASE + '/api/runs/' + encodeURIComponent(currentRunId) + '/cancel', { method: 'POST' });
+          await apiFetch('/api/runs/' + encodeURIComponent(currentRunId) + '/cancel', { method: 'POST' });
         } catch (e) {
           console.error('Cancel failed:', e);
         }
