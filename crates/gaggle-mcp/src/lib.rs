@@ -574,12 +574,11 @@ impl SseTransport {
                     if let Ok(value) = serde_json::from_str::<Value>(&data) {
                         let is_notification =
                             value.get("id").is_none() || value.get("method").is_some();
-                        if is_notification {
-                            if let Ok(guard) = slot_c.read() {
-                                if let Some(tx) = guard.as_ref() {
-                                    let _ = tx.send(value.clone());
-                                }
-                            }
+                        if is_notification
+                            && let Ok(guard) = slot_c.read()
+                            && let Some(tx) = guard.as_ref()
+                        {
+                            let _ = tx.send(value.clone());
                         }
                     }
 
