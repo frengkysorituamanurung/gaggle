@@ -24,6 +24,7 @@ pub struct ColorTokens {
     pub danger: &'static str,
     pub success: &'static str,
     pub border: &'static str,
+    pub focus: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +78,7 @@ pub fn light_theme_tokens() -> DesignTokens {
             danger: "#f94b4b",
             success: "#91cb80",
             border: "#e3e6ea",
+            focus: "#5c98f9",
         },
         typography: TypographyTokens {
             font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -124,6 +126,7 @@ pub fn dark_theme_tokens() -> DesignTokens {
             danger: "#ff6b6b",
             success: "#a3d795",
             border: "#3f434b",
+            focus: "#7cacff",
         },
         typography: TypographyTokens {
             font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -171,6 +174,7 @@ pub fn aura_theme_tokens() -> DesignTokens {
             danger: "#ff6767",
             success: "#61ffca",
             border: "#2d2b38",
+            focus: "#a277ff",
         },
         typography: TypographyTokens {
             font_ui: "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", monospace",
@@ -217,6 +221,7 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
          --danger: {danger};\n      \
          --success: {success};\n      \
          --border: {border};\n      \
+         --focus: {focus};\n      \
          --font-ui: {font_ui};\n      \
          --font-mono: {font_mono};\n      \
          --size-xs: {size_xs};\n      \
@@ -249,7 +254,7 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         danger = tokens.colors.danger,
         success = tokens.colors.success,
         border = tokens.colors.border,
-        font_ui = tokens.typography.font_ui,
+        focus = tokens.colors.focus,        font_ui = tokens.typography.font_ui,
         font_mono = tokens.typography.font_mono,
         size_xs = tokens.typography.size_xs,
         size_sm = tokens.typography.size_sm,
@@ -330,7 +335,7 @@ pub fn render_index_html() -> String {
       overflow: hidden;
     }
     :focus-visible {
-      outline: 2px solid var(--accent);
+      outline: 2px solid var(--focus);
       outline-offset: 2px;
     }
     #app-shell {
