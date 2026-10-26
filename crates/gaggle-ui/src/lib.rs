@@ -564,7 +564,7 @@ pub fn render_index_html() -> String {
       margin-bottom: 0.5rem;
     }
     .empty-state {
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-size: var(--size-sm);
       line-height: 1.5;
     }
