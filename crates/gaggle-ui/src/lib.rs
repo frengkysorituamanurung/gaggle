@@ -3078,6 +3078,15 @@ pub fn render_index_html() -> String {
       function restoreChatHistory(chatId) { return hydrateChatHistory(chatId); }
       function loadConversation(chatId) { return hydrateChatHistory(chatId); }
 
+      async function apiFetch(path, options) {
+        const res = await fetch(API_BASE + path, options || {});
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || ('HTTP ' + res.status));
+        }
+        return res;
+      }
+
       async function hydrateChatHistory(chatId) {
         messagesEl.textContent = '';
         lastMessageSeq = 0;
@@ -3088,13 +3097,8 @@ pub fn render_index_html() -> String {
         const loadingEl = createEl('div', { className: 'empty-state', textContent: 'Loading conversation history…' });
         messagesEl.appendChild(loadingEl);
         try {
-          const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(chatId) + '/messages');
+          const res = await apiFetch('/api/chats/' + encodeURIComponent(chatId) + '/messages');
           messagesEl.textContent = '';
-          if (!res.ok) {
-            const errText = await res.text();
-            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + (errText || res.status) }));
-            return;
-          }
           const data = await res.json();
           const msgs = data.messages || [];
           if (msgs.length === 0) {
@@ -3107,10 +3111,12 @@ pub fn render_index_html() -> String {
             });
           }
           try {
-            const approvalsRes = await fetch(API_BASE + '/api/approvals/pending');
-            if (approvalsRes.ok) {
+            try {
+              const approvalsRes = await apiFetch('/api/approvals/pending');
               const pending = await approvalsRes.json();
               pending.forEach(renderApprovalCard);
+            } catch (e) {
+              console.error('Failed to hydrate approvals:', e);
             }
           } catch (e) {
             console.error('Failed to hydrate approvals:', e);
