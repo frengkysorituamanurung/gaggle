@@ -1804,7 +1804,7 @@ pub fn render_index_html() -> String {
       }
 
       async function apiRequest(path, options) {
-        const res = await fetch(API_BASE + path, options);
+        const res = await apiFetch(path, options);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || ('Request failed with HTTP ' + res.status));
@@ -2979,7 +2979,7 @@ pub fn render_index_html() -> String {
           return;
         }
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/files');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(projectId) + '/files');
           if (!res.ok) {
             const errText = await res.text();
             workspaceFilesEl.appendChild(createEl('div', {
@@ -3016,7 +3016,7 @@ pub fn render_index_html() -> String {
         worktreesByChatId = {};
         if (!projectId) return;
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/worktrees');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(projectId) + '/worktrees');
           if (!res.ok) return;
           const list = await res.json();
           list.forEach(function(wt) {
@@ -3079,7 +3079,7 @@ pub fn render_index_html() -> String {
       function loadConversation(chatId) { return hydrateChatHistory(chatId); }
 
       async function apiFetch(path, options) {
-        const res = await fetch(API_BASE + path, options || {});
+        const res = await apiFetch(path, options || {});
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || ('HTTP ' + res.status));
@@ -3157,7 +3157,7 @@ pub fn render_index_html() -> String {
         await loadProjectWorktrees(currentProjectId);
 
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
           if (res.ok) {
             const chats = await res.json();
             chats.forEach(function(c) { chatsById[c.id] = c; });
@@ -3182,7 +3182,7 @@ pub fn render_index_html() -> String {
 
       async function loadProjects(preferredProjectId) {
         try {
-          const res = await fetch(API_BASE + '/api/projects');
+          const res = await apiFetch('/api/projects');
           if (!res.ok) return;
           const projects = await res.json();
           projectsById = {};
@@ -3244,7 +3244,7 @@ pub fn render_index_html() -> String {
         };
 
         try {
-          const res = await fetch(API_BASE + '/api/projects', {
+          const res = await apiFetch('/api/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -3278,7 +3278,7 @@ pub fn render_index_html() -> String {
         isCreatingChat = true;
         btnNewChat.disabled = true;
         try {
-          const res = await fetch(API_BASE + '/api/chats', {
+          const res = await apiFetch('/api/chats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3925,7 +3925,7 @@ pub fn render_index_html() -> String {
 
       window.__gaggle_decide = async function(approvalId, approved) {
         try {
-          const res = await fetch(API_BASE + '/api/approvals/' + encodeURIComponent(approvalId) + '/decide', {
+          const res = await apiFetch('/api/approvals/' + encodeURIComponent(approvalId) + '/decide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ approved: approved })
