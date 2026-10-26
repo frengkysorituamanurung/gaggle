@@ -358,7 +358,7 @@ pub fn render_index_html() -> String {
     #sidebar {
       background: var(--bg-panel);
       border-right: var(--border-width) solid var(--border);
-      padding: var(--space-md);
+      padding: var(--space-sm);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
