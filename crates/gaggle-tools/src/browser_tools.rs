@@ -124,8 +124,41 @@ pub fn validate_url(url: &str) -> Result<(), BrowserToolError> {
         "http" | "https" => {}
         other => return Err(BrowserToolError::BlockedScheme(other.to_string())),
     }
-    if parsed.host_str().is_none() {
-        return Err(BrowserToolError::InvalidUrl("missing host".to_string()));
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| BrowserToolError::InvalidUrl("missing host".to_string()))?;
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if ip.is_unspecified() || ip.is_multicast() {
+            return Err(BrowserToolError::BlockedScheme(
+                "unspecified/multicast".to_string(),
+            ));
+        }
+        // Block common private ranges and link-local.
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                if octets[0] == 10
+                    || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+                    || (octets[0] == 192 && octets[1] == 168)
+                    || (octets[0] == 169 && octets[1] == 254)
+                {
+                    return Err(BrowserToolError::BlockedScheme(
+                        "private/link-local".to_string(),
+                    ));
+                }
+            }
+            std::net::IpAddr::V6(v6) => {
+                if v6.is_unicast_link_local() {
+                    return Err(BrowserToolError::BlockedScheme("link-local".to_string()));
+                }
+            }
+        }
+    }
+    // Block cloud metadata hostnames.
+    if host.eq_ignore_ascii_case("metadata.google.internal")
+        || host.eq_ignore_ascii_case("metadata.azure.internal")
+    {
+        return Err(BrowserToolError::BlockedScheme("metadata".to_string()));
     }
     Ok(())
 }
@@ -170,7 +203,7 @@ async fn ensure_session(
             Err(e) => {
                 let _ = b.close().await;
                 handler_task.abort();
-                let _ = std::fs::remove_dir_all(&profile_dir);
+                remove_profile_dir(&profile_dir).await;
                 return Err(BrowserToolError::LaunchFailed(e.to_string()));
             }
         }
@@ -192,7 +225,7 @@ async fn ensure_session(
             let mut b = browser.lock().await;
             let _ = b.close().await;
             handler_task.abort();
-            let _ = std::fs::remove_dir_all(&profile_dir);
+            remove_profile_dir(&profile_dir).await;
             return Err(BrowserToolError::Database(e.to_string()));
         }
     };
@@ -584,12 +617,39 @@ pub async fn browser_extract(
 }
 
 async fn close_active_browser(active: ActiveBrowser) {
-    let mut b = active.browser.lock().await;
-    let _ = b.close().await;
+    {
+        let mut b = active.browser.lock().await;
+        let close_result = tokio::time::timeout(std::time::Duration::from_secs(5), b.close()).await;
+        if !matches!(close_result, Ok(Ok(_))) {
+            let _ = b.kill().await;
+        }
+        // `Browser::close` returns once Chromium acknowledges the close request, but
+        // the OS process may still be shutting down and holding files in the profile
+        // directory. Wait for the process to exit (with a fallback kill) before
+        // removing the directory.
+        let wait_result = tokio::time::timeout(std::time::Duration::from_secs(10), b.wait()).await;
+        if wait_result.is_err() {
+            let _ = b.kill().await;
+            let _ = b.wait().await;
+        }
+    }
     active.handler_task.abort();
-    let _ = std::fs::remove_dir_all(&active.profile_dir);
+    remove_profile_dir(&active.profile_dir).await;
     let repo = BrowserRepository::new(active.pool.clone());
     let _ = repo.close_session(&active.session_id).await;
+}
+
+async fn remove_profile_dir(path: &std::path::Path) {
+    for _ in 0..40 {
+        if !path.exists() {
+            return;
+        }
+        if std::fs::remove_dir_all(path).is_ok() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let _ = std::fs::remove_dir_all(path);
 }
 
 pub async fn close_browser(chat_id: &str) -> Result<(), BrowserToolError> {
@@ -617,7 +677,7 @@ pub async fn close_browser(chat_id: &str) -> Result<(), BrowserToolError> {
             if session.status != "closed" {
                 let _ = repo.close_session(&session.id).await;
             }
-            let _ = std::fs::remove_dir_all(&session.profile_dir);
+            remove_profile_dir(std::path::Path::new(&session.profile_dir)).await;
         }
     }
     Ok(())
@@ -661,7 +721,7 @@ pub async fn close_browser_session(session_id: &str) -> Result<(), BrowserToolEr
         let repo = BrowserRepository::new(pool);
         let _ = repo.close_session(session_id).await;
         if let Ok(Some(session)) = repo.get_session(session_id).await {
-            let _ = std::fs::remove_dir_all(&session.profile_dir);
+            remove_profile_dir(std::path::Path::new(&session.profile_dir)).await;
         }
     }
     Ok(())
@@ -703,7 +763,7 @@ pub async fn close_all_browsers() -> Result<(), BrowserToolError> {
             if session.status != "closed" {
                 let _ = repo.close_session(&session.id).await;
             }
-            let _ = std::fs::remove_dir_all(&session.profile_dir);
+            remove_profile_dir(std::path::Path::new(&session.profile_dir)).await;
         }
     }
     Ok(())
@@ -727,7 +787,7 @@ pub async fn close_all_browsers_with_pool(pool: &SqlitePool) -> Result<(), Brows
         if session.status != "closed" {
             let _ = repo.close_session(&session.id).await;
         }
-        let _ = std::fs::remove_dir_all(&session.profile_dir);
+        remove_profile_dir(std::path::Path::new(&session.profile_dir)).await;
     }
     Ok(())
 }

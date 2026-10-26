@@ -257,7 +257,7 @@ impl PermissionEngine {
         Ok(())
     }
 
-    fn infer_approval_kind(tool_name: &str) -> String {
+    pub fn infer_approval_kind(tool_name: &str) -> String {
         if tool_name.starts_with("shell") {
             "shell".to_string()
         } else if tool_name.starts_with("browser") {
