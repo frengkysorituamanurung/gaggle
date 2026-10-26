@@ -484,7 +484,7 @@ pub fn render_index_html() -> String {
     }
     .chat-item-meta {
       font-size: var(--size-xs);
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-family: var(--font-mono);
     }
     #main-workspace {
