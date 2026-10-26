@@ -21,9 +21,12 @@ pub struct ColorTokens {
     pub bg_elevated: &'static str,
     pub text_primary: &'static str,
     pub text_muted: &'static str,
+    pub text_secondary: &'static str,
     pub accent: &'static str,
     pub danger: &'static str,
     pub success: &'static str,
+    pub warning: &'static str,
+    pub info: &'static str,
     pub border: &'static str,
     pub focus: &'static str,
 }
@@ -76,9 +79,12 @@ pub fn light_theme_tokens() -> DesignTokens {
             bg_elevated: "#ffffff",
             text_primary: "#3f434b",
             text_muted: "#878787",
+            text_secondary: "#5f6368",
             accent: "#5c98f9",
             danger: "#f94b4b",
             success: "#91cb80",
+            warning: "#f08c00",
+            info: "#5c98f9",
             border: "#e3e6ea",
             focus: "#5c98f9",
         },
@@ -125,9 +131,12 @@ pub fn dark_theme_tokens() -> DesignTokens {
             bg_elevated: "#4a4f58",
             text_primary: "#ffffff",
             text_muted: "#878787",
+            text_secondary: "#b8bcc2",
             accent: "#7cacff",
             danger: "#ff6b6b",
             success: "#a3d795",
+            warning: "#f08c00",
+            info: "#7cacff",
             border: "#3f434b",
             focus: "#7cacff",
         },
@@ -174,9 +183,12 @@ pub fn aura_theme_tokens() -> DesignTokens {
             bg_elevated: "#262333",
             text_primary: "#edecee",
             text_muted: "#8a8282",
+            text_secondary: "#b8a8a8",
             accent: "#a277ff",
             danger: "#ff6767",
             success: "#61ffca",
+            warning: "#ffca61",
+            info: "#a277ff",
             border: "#2d2b38",
             focus: "#a277ff",
         },
@@ -222,9 +234,12 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
          --bg-elevated: {bg_elevated};\n      \
          --text-primary: {text_primary};\n      \
          --text-muted: {text_muted};\n      \
+         --text-secondary: {text_secondary};\n      \
          --accent: {accent};\n      \
          --danger: {danger};\n      \
          --success: {success};\n      \
+         --warning: {warning};\n      \
+         --info: {info};\n      \
          --border: {border};\n      \
          --focus: {focus};\n      \
          --font-ui: {font_ui};\n      \
@@ -255,10 +270,11 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         bg_surface = tokens.colors.bg_surface,
         bg_elevated = tokens.colors.bg_elevated,        text_primary = tokens.colors.text_primary,
         text_muted = tokens.colors.text_muted,
-        accent = tokens.colors.accent,
+        text_secondary = tokens.colors.text_secondary,        accent = tokens.colors.accent,
         danger = tokens.colors.danger,
         success = tokens.colors.success,
-        border = tokens.colors.border,
+        warning = tokens.colors.warning,
+        info = tokens.colors.info,        border = tokens.colors.border,
         focus = tokens.colors.focus,        font_ui = tokens.typography.font_ui,
         font_mono = tokens.typography.font_mono,
         size_xs = tokens.typography.size_xs,
