@@ -3978,6 +3978,16 @@ pub fn render_index_html() -> String {
       }
       window.addEventListener('beforeunload', closeEventSource);
 
+      function finalizeRun() {
+        if (activeAssistantMessageEl) {
+          activeAssistantMessageEl.classList.remove('streaming-cursor');
+          activeAssistantMessageEl = null;
+        }
+        if (btnStop) btnStop.disabled = true;
+        closeEventSource();
+        currentRunId = null;
+      }
+
       function handleSSEEvent(event) {
         // Ignore stale events from a previous run/conversation.
         if (activeStreamRunId && event.target && event.target.url && event.target.url.indexOf(activeStreamRunId) === -1) {
@@ -4033,34 +4043,18 @@ pub fn render_index_html() -> String {
             renderApprovalCard(data);
             break;
           case 'run.completed':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendMessage('assistant', '[Run completed]');
-            btnStop.disabled = true;
             if (btnRetry) btnRetry.style.display = 'none';
-            closeEventSource();
-            currentRunId = null;
             break;
           case 'run.cancelled':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendMessage('assistant', '[Run cancelled]');
-            btnStop.disabled = true;
             if (btnRetry) btnRetry.style.display = 'none';
-            closeEventSource();
-            currentRunId = null;
             break;
           case 'run.failed':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendProblemNotice(data.error, data.retry_guidance, data.failure_category);
-            btnStop.disabled = true;
             if (btnRetry) {
               btnRetry.style.display = '';
               btnRetry.onclick = function() {
@@ -4070,8 +4064,6 @@ pub fn render_index_html() -> String {
                 btnSend.click();
               };
             }
-            closeEventSource();
-            currentRunId = null;
             break;
         }
       }
