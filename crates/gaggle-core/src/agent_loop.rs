@@ -2,7 +2,7 @@ use crate::{
     ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation,
     FailureCategory, PermissionDecision, PermissionEngine, ToolCallContext,
     context_assembler::DEFAULT_CONTEXT_WINDOW,
-    hooks::{HookContext, HookDecision, HookEvent, HookManager, HookResult},
+    hooks::{HookContext, HookDecision, HookEvent, HookManager},
     observability::{redact_log_text, summarize_tool_arguments},
     provider::{
         ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
