@@ -544,7 +544,7 @@ pub fn render_index_html() -> String {
     }
     .composer-input {
       width: 100%;
-      min-height: 80px;
+      min-height: 72px;
       border: var(--border-width) solid var(--border);
       border-radius: var(--radius-md);
       padding: 0.75rem;
