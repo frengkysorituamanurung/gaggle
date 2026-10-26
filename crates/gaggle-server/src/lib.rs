@@ -14,11 +14,10 @@ use gaggle_core::CompactionEngine;
 use gaggle_core::{
     ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
     BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CompositeToolExecutor,
-    ToolExecutor,
     CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
     DiagnosticsExport, FailureCategory, InMemoryCredentialStore, MockProviderAdapter,
     ModelCompletionResponse, ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter,
-    RunEngine, SecretString, TokenUsage, WorkspacePathPolicy, collect_diagnostics,
+    RunEngine, SecretString, TokenUsage, ToolExecutor, WorkspacePathPolicy, collect_diagnostics,
     export_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
@@ -523,7 +522,10 @@ pub fn build_router(state: AppState) -> Router {
             get(get_chat_messages).post(submit_chat_message),
         )
         .route("/api/chats/{id}/compact", post(compact_chat))
-        .route("/api/chats/{id}/compact/preview", post(compact_chat_preview))
+        .route(
+            "/api/chats/{id}/compact/preview",
+            post(compact_chat_preview),
+        )
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
@@ -1959,7 +1961,10 @@ async fn list_skills() -> Json<Vec<SkillSummary>> {
             let (name, description) = if let Ok(content) = std::fs::read_to_string(&skill_file) {
                 parse_skill_frontmatter(&content)
             } else {
-                (entry.file_name().to_string_lossy().to_string(), String::new())
+                (
+                    entry.file_name().to_string_lossy().to_string(),
+                    String::new(),
+                )
             };
             out.push(SkillSummary {
                 name,
@@ -2116,8 +2121,16 @@ async fn refresh_provider_models(
     // (anthropic, ollama, ...) are treated as unsupported and return stored models.
     let supported = matches!(
         provider.kind.as_str(),
-        "openai" | "openrouter" | "deepseek" | "xai" | "google" | "azure"
-            | "databricks" | "snowflake" | "openai_compat" | "chatgpt"
+        "openai"
+            | "openrouter"
+            | "deepseek"
+            | "xai"
+            | "google"
+            | "azure"
+            | "databricks"
+            | "snowflake"
+            | "openai_compat"
+            | "chatgpt"
     );
     if !supported {
         let models = repo
@@ -2712,9 +2725,9 @@ async fn submit_chat_message(
         DEFAULT_MAX_AGENT_STEPS,
         state.active_runs.clone(),
     );
-let builtin_executor: Arc<dyn ToolExecutor> =
+    let builtin_executor: Arc<dyn ToolExecutor> =
         Arc::new(BuiltinToolExecutor::new(state.pool.clone()));
-let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(
+    let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(
         state.pool.clone(),
         state.mcp_connections.clone(),
     ));

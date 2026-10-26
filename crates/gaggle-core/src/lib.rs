@@ -8,8 +8,9 @@ pub mod observability;
 pub mod structured_summary;
 
 pub use compaction::{
-    COMPACTION_CONTINUATION_MARKER, CONTEXT_COMPACTION_CONTINUED, CONTEXT_COMPACTION_CONTINUATION_MARKER,
-    CONTINUATION_MARKER, CompactionEngine, CompactionResult, should_compact,
+    COMPACTION_CONTINUATION_MARKER, CONTEXT_COMPACTION_CONTINUATION_MARKER,
+    CONTEXT_COMPACTION_CONTINUED, CONTINUATION_MARKER, CompactionEngine, CompactionResult,
+    should_compact,
 };
 pub use context_limit::exceeds_context_limit;
 pub use structured_summary::{
@@ -32,7 +33,9 @@ pub mod subagent_manager;
 pub mod subagents;
 pub mod workspace_policy;
 
-pub use acp::{AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport};
+pub use acp::{
+    AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport,
+};
 pub use agent_loop::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, CompositeToolExecutor,
     DEFAULT_MAX_AGENT_STEPS, MAX_TOOL_RESPONSE_CHARS, ToolExecutor,

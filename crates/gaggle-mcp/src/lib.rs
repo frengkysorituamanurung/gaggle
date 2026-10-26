@@ -507,8 +507,7 @@ impl SseTransport {
         let post_url = Arc::new(RwLock::new(sse_url.clone()));
         let pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let notification_slot =
-            Arc::new(std::sync::RwLock::new(notification_tx.clone()));
+        let notification_slot = Arc::new(std::sync::RwLock::new(notification_tx.clone()));
 
         // Spawn background reader.
         let client_c = client.clone();

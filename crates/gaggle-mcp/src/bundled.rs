@@ -1,6 +1,6 @@
+use crate::{ExtensionRegistry, InstallExtensionRequest};
 use anyhow::Result;
 use gaggle_db::repositories::extensions::ExtensionRepository;
-use crate::{ExtensionRegistry, InstallExtensionRequest};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::collections::HashSet;

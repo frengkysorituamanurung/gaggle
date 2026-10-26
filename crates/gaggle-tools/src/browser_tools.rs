@@ -124,13 +124,17 @@ pub fn validate_url(url: &str) -> Result<(), BrowserToolError> {
         "http" | "https" => {}
         other => return Err(BrowserToolError::BlockedScheme(other.to_string())),
     }
-    let host = parsed.host_str().ok_or_else(|| BrowserToolError::InvalidUrl("missing host".to_string()))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| BrowserToolError::InvalidUrl("missing host".to_string()))?;
     if host.eq_ignore_ascii_case("localhost") {
         return Err(BrowserToolError::BlockedScheme("localhost".to_string()));
     }
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
-            return Err(BrowserToolError::BlockedScheme("loopback/unspecified/multicast".to_string()));
+            return Err(BrowserToolError::BlockedScheme(
+                "loopback/unspecified/multicast".to_string(),
+            ));
         }
         // Block common private ranges and link-local.
         match ip {
@@ -141,7 +145,9 @@ pub fn validate_url(url: &str) -> Result<(), BrowserToolError> {
                     || (octets[0] == 192 && octets[1] == 168)
                     || (octets[0] == 169 && octets[1] == 254)
                 {
-                    return Err(BrowserToolError::BlockedScheme("private/link-local".to_string()));
+                    return Err(BrowserToolError::BlockedScheme(
+                        "private/link-local".to_string(),
+                    ));
                 }
             }
             std::net::IpAddr::V6(v6) => {

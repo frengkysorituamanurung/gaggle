@@ -160,7 +160,13 @@ pub struct CompositeToolExecutor {
 impl CompositeToolExecutor {
     pub fn new(builtin: Arc<dyn ToolExecutor>, mcp: Option<Arc<dyn ToolExecutor>>) -> Self {
         let builtin_prefixes = [
-            "fs.", "git.", "shell.", "memory.", "web.", "browser.", "terminal.",
+            "fs.",
+            "git.",
+            "shell.",
+            "memory.",
+            "web.",
+            "browser.",
+            "terminal.",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -887,7 +893,7 @@ impl AgentRuntime {
             )
             .await?;
 
-let hook_manager = HookManager::new();
+        let hook_manager = HookManager::new();
         let pre_hook_payload = serde_json::from_str::<serde_json::Value>(&proposed.arguments_json)
             .unwrap_or_else(|_| serde_json::json!({}));
         let pre_hook = hook_manager.emit(&HookContext {
@@ -944,10 +950,8 @@ let hook_manager = HookManager::new();
                 // Large-response spill: persist oversized tool output to a temp file
                 // and replace the in-context result with a reference message.
                 let stored_result = if result_bytes > MAX_TOOL_RESPONSE_CHARS {
-                    let spill_path = std::env::temp_dir().join(format!(
-                        "gaggle-tool-result-{}.json",
-                        tc.id
-                    ));
+                    let spill_path =
+                        std::env::temp_dir().join(format!("gaggle-tool-result-{}.json", tc.id));
                     match std::fs::write(&spill_path, &result_json) {
                         Ok(()) => serde_json::json!({
                             "spilled": true,

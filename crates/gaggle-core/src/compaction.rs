@@ -219,7 +219,11 @@ impl CompactionEngine {
             return Ok(None);
         }
 
-        let covers_until_seq = summarizable.iter().map(|(seq, _, _)| *seq).max().unwrap_or(0);
+        let covers_until_seq = summarizable
+            .iter()
+            .map(|(seq, _, _)| *seq)
+            .max()
+            .unwrap_or(0);
 
         let tokens_before = total_tokens;
 
@@ -249,7 +253,10 @@ impl CompactionEngine {
             {
                 message_chunks.push(format!(
                     "[tool pair seq {}-{}]\nassistant: {}\ntool: {}",
-                    summarizable[i].0, summarizable[i + 1].0, summarizable[i].2, summarizable[i + 1].2
+                    summarizable[i].0,
+                    summarizable[i + 1].0,
+                    summarizable[i].2,
+                    summarizable[i + 1].2
                 ));
                 i += 2;
             } else {
@@ -364,7 +371,13 @@ impl CompactionEngine {
                 .await;
         }
 
-        Ok(Some((summary, covers_until_seq, tokens_before, tokens_after, pending_approvals)))
+        Ok(Some((
+            summary,
+            covers_until_seq,
+            tokens_before,
+            tokens_after,
+            pending_approvals,
+        )))
     }
 
     /// Core implementation shared by all entry points.
@@ -386,7 +399,8 @@ impl CompactionEngine {
             false,
         )
         .await?;
-        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed else {
+        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed
+        else {
             return Ok(None);
         };
         let compacted_messages = vec![ProviderMessage {
@@ -427,7 +441,8 @@ impl CompactionEngine {
             true,
         )
         .await?;
-        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed else {
+        let Some((summary, covers_until_seq, tokens_before, tokens_after, _pending)) = computed
+        else {
             return Ok(None);
         };
         let compacted_messages = vec![ProviderMessage {
