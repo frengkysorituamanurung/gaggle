@@ -76,6 +76,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ prompt, model_key }),
       }),
+    compact: (id: string, trigger?: string) =>
+      apiFetch<T.CompactChatPreviewResponse | T.Chat>(`/api/chats/${id}/compact`, {
+        method: "POST",
+        body: JSON.stringify({ trigger }),
+      }),
+    compactPreview: (id: string, trigger?: string) =>
+      apiFetch<T.CompactChatPreviewResponse>(`/api/chats/${id}/compact/preview`, {
+        method: "POST",
+        body: JSON.stringify({ trigger }),
+      }),
+    export: (id: string) => apiFetch<T.ChatExportBundle>(`/api/chats/${id}/export`),
+    startRun: (id: string, prompt: string, model_key?: string) =>
+      apiFetch<{ run_id: string }>(`/api/chats/${id}/runs`, {
+        method: "POST",
+        body: JSON.stringify({ prompt, model_key }),
+      }),
   },
   runs: {
     cancel: (id: string) => apiFetch<T.Run>(`/api/runs/${id}/cancel`, { method: "POST" }),
@@ -124,6 +140,13 @@ export const api = {
       apiFetch<T.Memory[]>(
         `/api/memories${project_id ? `?project_id=${encodeURIComponent(project_id)}` : ""}`,
       ),
+    create: (req: { project_id: string; kind: string; title: string; content: string; tags?: string[]; pinned?: boolean }) =>
+      apiFetch<T.Memory>("/api/memories", { method: "POST", body: JSON.stringify(req) }),
+    get: (id: string) => apiFetch<T.Memory>(`/api/memories/${id}`),
+    update: (id: string, patch: Partial<T.Memory>) =>
+      apiFetch<T.Memory>(`/api/memories/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<void>(`/api/memories/${id}`, { method: "DELETE" }),
+    export: () => fetch("/api/memories/export").then((r) => r.blob()),
   },
   diagnostics: () => apiFetch<Record<string, unknown>>("/api/diagnostics"),
 };

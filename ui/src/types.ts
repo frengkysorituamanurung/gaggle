@@ -226,4 +226,72 @@ export type ChatMessagesResponse = {
   message_parts: MessagePart[];
 };
 
+export type CompactChatPreviewResponse = {
+  summary: string;
+  covers_until_seq: number;
+  tokens_before: number;
+  tokens_after: number;
+};
+
+export type ChatExportBundle = {
+  chat: Chat;
+  messages: Message[];
+  message_parts: MessagePart[];
+};
+
+export type FsEntry = {
+  relative_path: string;
+  is_dir: boolean;
+  size_bytes: number;
+};
+
+export type GitFileStatus = {
+  path: string;
+  index_status: string;
+  worktree_status: string;
+  untracked: boolean;
+};
+
+export type GitWorkspaceStatus = {
+  is_git_repo: boolean;
+  branch: string | null;
+  is_clean: boolean;
+  changed_files: GitFileStatus[];
+};
+
+export type GitDiffOutput = {
+  is_git_repo: boolean;
+  patch: string;
+  truncated: boolean;
+};
+
+export type Worktree = {
+  id: string;
+  project_id: string;
+  chat_id: string;
+  path: string;
+  branch: string;
+  base_ref: string;
+  base_commit: string;
+  status: string;
+  created_at: number;
+};
+
+export type CommandRule = {
+  id: string;
+  project_id: string | null;
+  pattern: string;
+  match_kind: string;
+  action: string;
+  created_at: number;
+};
+
+export type ToolPermissionStatus = {
+  extension_tool_id: string;
+  extension_name: string;
+  tool_name: string;
+  is_read_only: boolean;
+  level: string | null;
+};
+
 export type Health = { status: string; service: string };

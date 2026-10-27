@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type * as T from "../types";
+import { Button } from "../components/ui/Button";
 
 export default function ExtensionsScreen() {
   const [inv, setInv] = useState<T.ExtensionsInventory | null>(null);
@@ -13,7 +14,10 @@ export default function ExtensionsScreen() {
   useEffect(refresh, []);
   return (
     <div className="p-6 h-full overflow-y-auto">
-      <h2 className="text-xl font-semibold text-text-primary mb-4">Extensions</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-text-primary">Extensions</h2>
+        <Button size="sm" variant="secondary" onClick={async () => { await fetch("/api/extensions/bundled/install", { method: "POST" }); refresh(); }}>Install Bundled</Button>
+      </div>
       {loading && <div className="text-text-secondary text-sm">Loading…</div>}
       {error && <div className="text-danger text-sm">{error}</div>}
       {inv && (

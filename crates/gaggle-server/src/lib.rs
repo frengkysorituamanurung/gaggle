@@ -528,6 +528,7 @@ pub fn build_router(state: AppState) -> Router {
             post(compact_chat_preview),
         )
         .route("/api/chats/{id}/export", get(export_chat))
+        .route("/api/chats/{id}/runs", post(start_chat_run))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
         .route("/api/worktrees/{id}/merge", post(merge_worktree))
@@ -2860,6 +2861,87 @@ async fn submit_chat_message(
     );
 
     Ok(Json(outcome))
+}
+
+#[derive(Debug, Serialize)]
+struct StartRunResponse {
+    run_id: String,
+}
+
+async fn start_chat_run(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    Json(req): Json<SubmitChatMessageRequest>,
+) -> Result<Json<StartRunResponse>, (StatusCode, String)> {
+    let runtime = AgentRuntime::new_with_active_runs(
+        state.pool.clone(),
+        DEFAULT_MAX_AGENT_STEPS,
+        state.active_runs.clone(),
+    );
+    let builtin_executor: Arc<dyn ToolExecutor> =
+        Arc::new(BuiltinToolExecutor::new(state.pool.clone()));
+    let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(
+        state.pool.clone(),
+        state.mcp_connections.clone(),
+    ));
+    let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
+
+    let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
+    let requested_model_key = if requested_model_key.is_empty() { "local-mock" } else { requested_model_key };
+
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+
+    let (provider, model_key) = resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt)
+        .await
+        .map_err(|(status, message)| (status, message))?;
+
+    // Persist user message + create run up front so we can return run_id and stream.
+    let user_msg = chat_repo
+        .append_message(&chat_id, None, "user", &req.prompt)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let run_repo = RunRepository::new(state.pool.clone());
+    let run = run_repo
+        .create(&chat_id, Some(&user_msg.id), chat.model_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let run_id = run.id.clone();
+
+    let pool = state.pool.clone();
+    let active_runs = state.active_runs.clone();
+    let mcp_connections = state.mcp_connections.clone();
+    let chat_id_clone = chat_id.clone();
+    let prompt_clone = req.prompt.clone();
+    let model_key_clone = model_key.clone();
+    let user_msg_id = user_msg.id.clone();
+    let run_id_clone = run_id.clone();
+    tokio::spawn(async move {
+        let runtime = AgentRuntime::new_with_active_runs(pool.clone(), DEFAULT_MAX_AGENT_STEPS, active_runs.clone());
+        let cancel_token = gaggle_core::CancellationToken::new();
+        let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor::new(pool.clone()));
+        let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(pool.clone(), mcp_connections.clone()));
+        let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
+        let provider = provider;
+        let _ = runtime
+            .run_turn_with_precreated(
+                &chat_id_clone,
+                &prompt_clone,
+                &model_key_clone,
+                provider.as_ref(),
+                &executor,
+                &cancel_token,
+                Some(run_id_clone.clone()),
+                Some(user_msg_id),
+            )
+            .await;
+    });
+
+    Ok(Json(StartRunResponse { run_id }))
 }
 
 fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {

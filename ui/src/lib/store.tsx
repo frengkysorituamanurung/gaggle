@@ -9,7 +9,8 @@ export type Screen =
   | "scheduler"
   | "settings";
 
-type Theme = "light" | "dark";
+import { applyThemeTokens } from "../theme/theme-tokens";
+type Theme = "light" | "dark" | "aura";
 
 type AppState = {
   theme: Theme;
@@ -37,7 +38,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [chatId, setChatId] = useState<string | null>(null);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    applyThemeTokens(theme);
     localStorage.setItem("gaggle.theme", theme);
   }, [theme]);
 

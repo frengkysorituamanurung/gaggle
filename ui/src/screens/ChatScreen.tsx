@@ -7,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { AutoTextarea } from "../components/ui/AutoTextarea";
 import { ToolCallCard } from "../components/ToolCallCard";
 import { ThinkingBlock } from "../components/ThinkingBlock";
+import { defineMessages, useIntl } from "../i18n";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -19,6 +20,8 @@ export default function ChatScreen() {
   const [modelKey, setModelKey] = useState<string>("local-mock");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectPath, setNewProjectPath] = useState("");
@@ -100,20 +103,38 @@ export default function ChatScreen() {
     setDraft("");
     setSending(true);
     setError(null);
+    setStreamingText("");
     try {
-      const outcome = await api.chats.submit(chatId, prompt, modelKey);
-      if (outcome.outcome === "failed") {
-        setError(outcome.error || "Run failed");
-      }
+      const { run_id } = await api.chats.startRun(chatId, prompt, modelKey);
+      setCurrentRunId(run_id);
+      await new Promise<void>((resolve) => {
+        const es = new EventSource(api.runs.eventsUrl(run_id));
+        let acc = "";
+        es.addEventListener("message.delta", (ev) => {
+          try {
+            const d = JSON.parse((ev as MessageEvent).data);
+            acc += d.text || "";
+            setStreamingText(acc);
+          } catch { /* ignore */ }
+        });
+        const finish = () => { es.close(); setCurrentRunId(null); resolve(); };
+        es.addEventListener("run.completed", () => finish());
+        es.addEventListener("run.cancelled", () => finish());
+        es.addEventListener("run.failed", (ev) => {
+          try { setError(JSON.parse((ev as MessageEvent).data)?.error || "Run failed"); } catch { setError("Run failed"); }
+          finish();
+        });
+        es.onerror = () => { /* keep open until terminal */ };
+      });
+      setStreamingText("");
       const r = await api.chats.messages(chatId);
       setMessages(r.messages);
       setParts(r.message_parts);
-      if (outcome.run) {
-        api.chats.get(chatId).then(setChat).catch(() => {});
-      }
+      api.chats.get(chatId).then(setChat).catch(() => {});
     } catch (e) {
       setError(String(e));
       setDraft(prompt);
+      setStreamingText("");
     } finally {
       setSending(false);
     }
@@ -130,7 +151,7 @@ export default function ChatScreen() {
           <h3 className="font-medium text-text-primary">New Project</h3>
           <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
           <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
-          <Button variant="primary" onClick={createProject}>Create Project</Button>
+          <Button variant="default" onClick={createProject}>Create Project</Button>
           {error && <div className="text-text-danger text-sm">{error}</div>}
         </div>
       </div>
@@ -152,6 +173,30 @@ export default function ChatScreen() {
           ))}
         </select>
         <Button variant="secondary" size="sm" onClick={createChat}>+ New Chat</Button>
+        {chatId && (
+          <>
+            <Button variant="secondary" size="sm" onClick={async () => {
+              try {
+                const preview = await api.chats.compactPreview(chatId);
+                if (confirm(`Compact chat? Tokens ${preview.tokens_before} -> ${preview.tokens_after}`)) {
+                  await api.chats.compact(chatId);
+                  const r = await api.chats.messages(chatId);
+                  setMessages(r.messages); setParts(r.message_parts);
+                }
+              } catch (e) { setError(String(e)); }
+            }}>Compact</Button>
+            <Button variant="secondary" size="sm" onClick={async () => {
+              try {
+                const bundle = await api.chats.export(chatId);
+                const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `chat-${chatId}.json`; a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) { setError(String(e)); }
+            }}>Export</Button>
+          </>
+        )}
         <div className="flex-1" />
         <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
           <option value="local-mock">local-mock</option>
@@ -205,7 +250,19 @@ export default function ChatScreen() {
             )}
           </div>
         ))}
-        {sending && <div className="text-text-secondary text-sm">Generating response…</div>}
+        {streamingText && (
+          <div className="relative mt-4 animate-in fade-in duration-150">
+            <div className="text-xs uppercase tracking-wide text-text-tertiary mb-1">assistant</div>
+            <div className="goose-message flex w-[90%] justify-start min-w-0">
+              <div className="flex flex-col w-full min-w-0">
+                <div className="agent-message-bubble w-full">
+                  <Markdown text={streamingText} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {sending && !streamingText && <div className="text-text-secondary text-sm">Generating response…</div>}
         {error && <div className="text-text-danger text-sm mt-2">{error}</div>}
       </div>
       {chatId && (
@@ -235,7 +292,10 @@ export default function ChatScreen() {
               ))}
             </select>
             <div className="flex-1" />
-            <Button variant="primary" size="sm" onClick={send} disabled={sending || !draft.trim()}>
+            {currentRunId && (
+              <Button variant="destructive" size="sm" onClick={async () => { try { await api.runs.cancel(currentRunId); } catch { /* ignore */ } }}>Cancel</Button>
+            )}
+            <Button variant="default" size="sm" onClick={send} disabled={sending || !draft.trim()}>
               Send
             </Button>
           </div>
