@@ -3,6 +3,8 @@ import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
 import Markdown from "../components/Markdown";
+import { Button } from "../components/ui/Button";
+import { Input, Textarea } from "../components/ui/Input";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -126,7 +128,7 @@ export default function ChatScreen() {
           <h3 className="font-medium text-text">New Project</h3>
           <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
           <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
-          <button className="px-3 py-2 rounded-md bg-accent text-background font-medium hover:bg-accent-hover" onClick={createProject}>Create Project</button>
+          <Button variant="primary" onClick={createProject}>Create Project</Button>
           {error && <div className="text-danger text-sm">{error}</div>}
         </div>
       </div>
@@ -147,7 +149,7 @@ export default function ChatScreen() {
             <option key={c.id} value={c.id}>{c.title}</option>
           ))}
         </select>
-        <button className="px-3 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-sm" onClick={createChat}>+ New Chat</button>
+        <Button variant="secondary" size="sm" onClick={createChat}>+ New Chat</Button>
         <div className="flex-1" />
         <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
           <option value="local-mock">local-mock</option>
@@ -211,8 +213,8 @@ export default function ChatScreen() {
       {chatId && (
         <div className="border-t border-border p-3 bg-background">
           <div className="flex gap-2 items-end">
-            <textarea
-              className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-text resize-y min-h-[60px]"
+            <Textarea
+              className="flex-1 rounded-xl min-h-[60px]"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Message Gaggle… (Enter to send, Shift+Enter for newline)"
@@ -224,9 +226,9 @@ export default function ChatScreen() {
               }}
               disabled={sending}
             />
-            <button className="px-4 py-2 rounded-xl bg-accent text-background font-medium hover:bg-accent-hover disabled:opacity-50" onClick={send} disabled={sending || !draft.trim()}>
+            <Button variant="primary" size="lg" onClick={send} disabled={sending || !draft.trim()}>
               Send
-            </button>
+            </Button>
           </div>
         </div>
       )}
