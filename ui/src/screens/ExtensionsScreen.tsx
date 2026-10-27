@@ -16,7 +16,7 @@ export default function ExtensionsScreen() {
     <div className="p-6 h-full overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-text-primary">Extensions</h2>
-        <Button size="sm" variant="secondary" onClick={async () => { await fetch("/api/extensions/bundled/install", { method: "POST" }); refresh(); }}>Install Bundled</Button>
+        <Button size="sm" variant="secondary" onClick={async () => { await api.extensions.installBundled(); refresh(); }}>Install Bundled</Button>
       </div>
       {loading && <div className="text-text-secondary text-sm">Loading…</div>}
       {error && <div className="text-danger text-sm">{error}</div>}

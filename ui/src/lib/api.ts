@@ -181,6 +181,9 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ enabled: enabled ? 1 : 0 }),
       }),
+    installBundled: () => apiFetch<void>("/api/extensions/bundled/install", { method: "POST" }),
+    discover: (id: string) => apiFetch<T.Extension>(`/api/extensions/${id}/discover`, { method: "POST" }),
+    rediscover: (id: string) => apiFetch<T.Extension>(`/api/extensions/${id}/rediscover`, { method: "POST" }),
   },
   recipes: () => apiFetch<T.Recipe[]>("/api/recipes"),
   schedules: (project_id?: string) =>
