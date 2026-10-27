@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
+import { api } from "../lib/api";
 
 export default function TerminalScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -12,9 +13,8 @@ export default function TerminalScreen() {
 
   const create = async () => {
     try {
-      const res = await fetch("/api/terminal-sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      const data = await res.json();
-      const id = data.id || data.session_id;
+      const data = await api.terminal.create({});
+      const id = data.id || data.session_id || data.terminal_session_id;
       setSessionId(id);
       // connect websocket
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -28,13 +28,13 @@ export default function TerminalScreen() {
   const send = async () => {
     if (!sessionId || !input) return;
     try {
-      await fetch(`/api/terminal-sessions/${sessionId}/input`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: input + "\n" }) });
+      await api.terminal.input(sessionId, input + "\n");
       setInput("");
     } catch (e) { setError(String(e)); }
   };
 
   const close = async () => {
-    if (sessionId) await fetch(`/api/terminal-sessions/${sessionId}`, { method: "DELETE" });
+    if (sessionId) await api.terminal.close(sessionId);
     wsRef.current?.close();
     setSessionId(null); setOutput("");
   };
