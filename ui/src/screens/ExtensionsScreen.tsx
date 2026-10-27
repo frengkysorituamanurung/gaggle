@@ -12,27 +12,27 @@ export default function ExtensionsScreen() {
   };
   useEffect(refresh, []);
   return (
-    <div className="content">
-      <h2>Extensions</h2>
-      {loading && <div className="loading">Loading…</div>}
-      {error && <div className="error-banner">{error}</div>}
+    <div className="p-6 h-full overflow-y-auto">
+      <h2 className="text-xl font-semibold text-text mb-4">Extensions</h2>
+      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
+      {error && <div className="text-danger text-sm">{error}</div>}
       {inv && (
         <>
-          <p style={{ color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+          <p className="text-sm text-text-secondary">
             Active tools: {inv.active_tool_count} / recommended {inv.recommended_max_active_tools}
             {inv.exceeds_recommended_tool_limit && " (exceeds recommended)"}
           </p>
-          <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+          <div className="grid gap-3 mt-3">
             {inv.extensions.map((e) => (
-              <div key={e.id} className="card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div key={e.id} className="bg-surface border border-border rounded-xl p-4">
+                <div className="flex items-center justify-between">
                   <div>
-                    <strong>{e.name}</strong>
-                    <span className="badge" style={{ marginLeft: 8 }}>{e.kind}</span>
-                    <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>{e.description}</div>
+                    <span className="font-medium text-text">{e.name}</span>
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary">{e.kind}</span>
+                    <div className="text-xs text-text-muted">{e.description}</div>
                   </div>
                   <button
-                    className="btn"
+                    className="px-3 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-sm"
                     onClick={async () => {
                       await api.extensions.setEnabled(e.id, !e.enabled);
                       refresh();
@@ -41,11 +41,9 @@ export default function ExtensionsScreen() {
                     {e.enabled ? "Disable" : "Enable"}
                   </button>
                 </div>
-                <div style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                  Tools: {e.tool_count}
-                </div>
+                <div className="mt-2 text-sm text-text-secondary">Tools: {e.tool_count}</div>
                 {e.tools.length > 0 && (
-                  <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--text-xs)" }}>
+                  <ul className="mt-1 pl-5 text-xs text-text-secondary">
                     {e.tools.map((t) => (
                       <li key={t.tool_name}>{t.tool_name} {t.is_read_only ? "(read-only)" : ""}</li>
                     ))}

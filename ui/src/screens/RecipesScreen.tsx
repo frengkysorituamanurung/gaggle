@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
 
 export default function RecipesScreen() {
-  const { projectId } = useApp();
   const [recipes, setRecipes] = useState<T.Recipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,22 +10,21 @@ export default function RecipesScreen() {
     api.recipes().then(setRecipes).catch((e) => setError(String(e))).finally(() => setLoading(false));
   }, []);
   return (
-    <div className="content">
-      <h2>Recipes</h2>
-      {loading && <div className="loading">Loading…</div>}
-      {error && <div className="error-banner">{error}</div>}
-      {recipes.length === 0 && !loading && <div className="empty-state">No recipes available.</div>}
-      <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+    <div className="p-6 h-full overflow-y-auto">
+      <h2 className="text-xl font-semibold text-text mb-4">Recipes</h2>
+      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
+      {error && <div className="text-danger text-sm">{error}</div>}
+      {recipes.length === 0 && !loading && <div className="text-text-secondary text-center py-12">No recipes available.</div>}
+      <div className="grid gap-3 mt-3">
         {recipes.map((r) => (
-          <div key={r.id} className="card">
-            <strong>{r.title}</strong>
-            <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>{r.name}</div>
-            {r.description && <p style={{ margin: "4px 0 0", color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>{r.description}</p>}
-            {r.prompt && <pre style={{ marginTop: 8 }}>{r.prompt}</pre>}
+          <div key={r.id} className="bg-surface border border-border rounded-xl p-4">
+            <div className="font-medium text-text">{r.title}</div>
+            <div className="text-xs text-text-muted">{r.name}</div>
+            {r.description && <p className="mt-1 text-sm text-text-secondary">{r.description}</p>}
+            {r.prompt && <pre className="mt-2 text-xs bg-code-bg p-2 rounded-md overflow-x-auto">{r.prompt}</pre>}
           </div>
         ))}
       </div>
-      {!projectId && <p className="empty-state">Select a project in Chat to run recipes.</p>}
     </div>
   );
 }

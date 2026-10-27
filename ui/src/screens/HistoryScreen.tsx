@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
 
 export default function HistoryScreen() {
-  const { setScreen, setChatId, projectId, setProjectId } = useApp();
+  const navigate = useNavigate();
+  const { setChatId, projectId, setProjectId } = useApp();
   const [projects, setProjects] = useState<T.ProjectStatus[]>([]);
   const [chats, setChats] = useState<T.Chat[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,7 +26,7 @@ export default function HistoryScreen() {
 
   const open = (c: T.Chat) => {
     setChatId(c.id);
-    setScreen("chat");
+    navigate("/chat");
   };
 
   const rename = async (c: T.Chat) => {
@@ -35,32 +37,42 @@ export default function HistoryScreen() {
   };
 
   return (
-    <div className="content">
-      <h2>Session History</h2>
-      <div style={{ marginBottom: 12 }}>
-        <select className="select" style={{ width: 240 }} value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
+    <div className="p-6 h-full overflow-y-auto">
+      <h2 className="text-xl font-semibold text-text mb-4">Session History</h2>
+      <div className="mb-4">
+        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
-      {loading && <div className="loading">Loading…</div>}
-      {chats.length === 0 && !loading && <div className="empty-state">No chats yet.</div>}
-      <table className="table">
-        <thead><tr><th>Title</th><th>Mode</th><th>Permission</th><th>Updated</th><th></th></tr></thead>
-        <tbody>
-          {chats.map((c) => (
-            <tr key={c.id}>
-              <td>{c.title}</td>
-              <td>{c.mode}</td>
-              <td>{c.permission_mode}</td>
-              <td>{new Date(c.updated_at).toLocaleString()}</td>
-              <td>
-                <button className="btn" onClick={() => open(c)}>Open</button>{" "}
-                <button className="btn" onClick={() => rename(c)}>Rename</button>
-              </td>
+      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
+      {chats.length === 0 && !loading && <div className="text-text-secondary text-center py-12">No chats yet.</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-text-secondary">
+              <th className="text-left py-2 px-3">Title</th>
+              <th className="text-left py-2 px-3">Mode</th>
+              <th className="text-left py-2 px-3">Permission</th>
+              <th className="text-left py-2 px-3">Updated</th>
+              <th className="text-left py-2 px-3"></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {chats.map((c) => (
+              <tr key={c.id} className="border-b border-border">
+                <td className="py-2 px-3 text-text">{c.title}</td>
+                <td className="py-2 px-3 text-text-secondary">{c.mode}</td>
+                <td className="py-2 px-3 text-text-secondary">{c.permission_mode}</td>
+                <td className="py-2 px-3 text-text-secondary">{new Date(c.updated_at).toLocaleString()}</td>
+                <td className="py-2 px-3">
+                  <button className="px-2 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-xs mr-1" onClick={() => open(c)}>Open</button>
+                  <button className="px-2 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-xs" onClick={() => rename(c)}>Rename</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

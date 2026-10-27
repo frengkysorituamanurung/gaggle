@@ -10,17 +10,17 @@ export default function SkillsScreen() {
     api.skills().then(setSkills).catch((e) => setError(String(e))).finally(() => setLoading(false));
   }, []);
   return (
-    <div className="content">
-      <h2>Skills</h2>
-      {loading && <div className="loading">Loading…</div>}
-      {error && <div className="error-banner">{error}</div>}
-      {skills.length === 0 && !loading && <div className="empty-state">No skills found.</div>}
-      <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+    <div className="p-6 h-full overflow-y-auto">
+      <h2 className="text-xl font-semibold text-text mb-4">Skills</h2>
+      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
+      {error && <div className="text-danger text-sm">{error}</div>}
+      {skills.length === 0 && !loading && <div className="text-text-secondary text-center py-12">No skills found.</div>}
+      <div className="grid gap-3 mt-3">
         {skills.map((s) => (
-          <div key={s.path} className="card">
-            <strong>{s.name}</strong>
-            <p style={{ margin: "4px 0 0", color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>{s.description}</p>
-            <div style={{ marginTop: 4, fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>{s.path}</div>
+          <div key={s.path} className="bg-surface border border-border rounded-xl p-4">
+            <div className="font-medium text-text">{s.name}</div>
+            <p className="mt-1 text-sm text-text-secondary">{s.description}</p>
+            <div className="mt-2 text-xs text-text-muted">{s.path}</div>
           </div>
         ))}
       </div>

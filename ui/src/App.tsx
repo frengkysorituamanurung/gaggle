@@ -1,4 +1,5 @@
-import { AppProvider, useApp } from "./lib/store";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AppProvider } from "./lib/store";
 import Sidebar from "./components/Sidebar";
 import ChatScreen from "./screens/ChatScreen";
 import HistoryScreen from "./screens/HistoryScreen";
@@ -9,18 +10,20 @@ import SchedulerScreen from "./screens/SchedulerScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 
 function Shell() {
-  const { screen } = useApp();
   return (
     <div className="flex h-screen w-screen gap-2 bg-background p-2 overflow-hidden">
       <Sidebar />
       <main className="flex-1 min-w-0 overflow-hidden rounded-xl">
-        {screen === "chat" && <ChatScreen />}
-        {screen === "history" && <HistoryScreen />}
-        {screen === "skills" && <SkillsScreen />}
-        {screen === "recipes" && <RecipesScreen />}
-        {screen === "extensions" && <ExtensionsScreen />}
-        {screen === "scheduler" && <SchedulerScreen />}
-        {screen === "settings" && <SettingsScreen />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<ChatScreen />} />
+          <Route path="/history" element={<HistoryScreen />} />
+          <Route path="/skills" element={<SkillsScreen />} />
+          <Route path="/recipes" element={<RecipesScreen />} />
+          <Route path="/extensions" element={<ExtensionsScreen />} />
+          <Route path="/scheduler" element={<SchedulerScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
+        </Routes>
       </main>
     </div>
   );
@@ -29,7 +32,9 @@ function Shell() {
 export default function App() {
   return (
     <AppProvider>
-      <Shell />
+      <BrowserRouter>
+        <Shell />
+      </BrowserRouter>
     </AppProvider>
   );
 }
