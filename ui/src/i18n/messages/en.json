@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Home",
+  "navigation.recipes": "Recipes",
+  "navigation.skills": "Skills",
+  "navigation.extensions": "Extensions",
+  "navigation.scheduler": "Scheduler",
+  "navigation.memories": "Memories",
+  "navigation.permissions": "Permissions",
+  "navigation.workspace": "Workspace",
+  "navigation.terminal": "Terminal",
+  "navigation.sessionHistory": "Session History",
+  "navigation.chats": "Chats",
+  "navigation.noRecentChats": "No recent chats",
+  "navigation.settings": "Settings",
+  "app.toastNotifications": "Toast notifications",
+  "common.loading": "Loading...",
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "common.close": "Close"
+}

@@ -427,6 +427,7 @@ pub struct ChatGptOAuthStatusResponse {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index_handler))
+        .route("/assets/{*path}", get(ui_asset_handler))
         .route("/api/health", get(health_handler))
         .route("/api/skills", get(list_skills))
         .route("/api/diagnostics", get(diagnostics_handler))
@@ -527,6 +528,7 @@ pub fn build_router(state: AppState) -> Router {
             post(compact_chat_preview),
         )
         .route("/api/chats/{id}/export", get(export_chat))
+        .route("/api/chats/{id}/runs", post(start_chat_run))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
         .route("/api/worktrees/{id}/diff", get(worktree_git_diff))
         .route("/api/worktrees/{id}/merge", post(merge_worktree))
@@ -619,7 +621,36 @@ async fn shutdown_signal() {
 }
 
 async fn index_handler() -> Html<String> {
-    Html(gaggle_ui::render_index_html())
+    // Prefer the TypeScript UI build when it is available; otherwise keep the
+    // embedded Rust-rendered document as a fallback.
+    if let Ok(html) = std::fs::read_to_string("ui/dist/index.html") {
+        Html(html)
+    } else {
+        Html(gaggle_ui::render_index_html())
+    }
+}
+
+async fn ui_asset_handler(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> Result<axum::response::Response, axum::http::StatusCode> {
+    if path.contains("..") || path.contains('\\') {
+        return Err(axum::http::StatusCode::NOT_FOUND);
+    }
+    let file_path = std::path::PathBuf::from("ui/dist/assets").join(&path);
+    let bytes = std::fs::read(&file_path).map_err(|_| axum::http::StatusCode::NOT_FOUND)?;
+    let content_type = match file_path.extension().and_then(|s| s.to_str()) {
+        Some("js") | Some("mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("json") => "application/json",
+        _ => "application/octet-stream",
+    };
+    axum::response::Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(axum::body::Body::from(bytes))
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
@@ -2830,6 +2861,84 @@ async fn submit_chat_message(
     );
 
     Ok(Json(outcome))
+}
+
+#[derive(Debug, Serialize)]
+struct StartRunResponse {
+    run_id: String,
+}
+
+async fn start_chat_run(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    Json(req): Json<SubmitChatMessageRequest>,
+) -> Result<Json<StartRunResponse>, (StatusCode, String)> {
+    let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
+    let requested_model_key = if requested_model_key.is_empty() {
+        "local-mock"
+    } else {
+        requested_model_key
+    };
+
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+
+    let (provider, model_key) =
+        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt).await?;
+
+    // Persist user message + create run up front so we can return run_id and stream.
+    let user_msg = chat_repo
+        .append_message(&chat_id, None, "user", &req.prompt)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let run_repo = RunRepository::new(state.pool.clone());
+    let run = run_repo
+        .create(&chat_id, Some(&user_msg.id), chat.model_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let run_id = run.id.clone();
+
+    let pool = state.pool.clone();
+    let active_runs = state.active_runs.clone();
+    let mcp_connections = state.mcp_connections.clone();
+    let chat_id_clone = chat_id.clone();
+    let prompt_clone = req.prompt.clone();
+    let model_key_clone = model_key.clone();
+    let user_msg_id = user_msg.id.clone();
+    let run_id_clone = run_id.clone();
+    tokio::spawn(async move {
+        let runtime = AgentRuntime::new_with_active_runs(
+            pool.clone(),
+            DEFAULT_MAX_AGENT_STEPS,
+            active_runs.clone(),
+        );
+        let cancel_token = gaggle_core::CancellationToken::new();
+        let builtin_executor: Arc<dyn ToolExecutor> =
+            Arc::new(BuiltinToolExecutor::new(pool.clone()));
+        let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(
+            McpToolExecutor::with_connection_manager(pool.clone(), mcp_connections.clone()),
+        );
+        let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
+        let provider = provider;
+        let _ = runtime
+            .run_turn_with_precreated(
+                &chat_id_clone,
+                &prompt_clone,
+                &model_key_clone,
+                provider.as_ref(),
+                &executor,
+                &cancel_token,
+                Some(run_id_clone.clone()),
+                Some(user_msg_id),
+            )
+            .await;
+    });
+
+    Ok(Json(StartRunResponse { run_id }))
 }
 
 fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
