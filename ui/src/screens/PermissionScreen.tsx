@@ -16,19 +16,15 @@ export default function PermissionScreen() {
 
   const refresh = () => {
     if (!projectId) return;
-    apiFetchGet<T.CommandRule[]>(`/api/projects/${projectId}/command-rules`).then(setRules).catch((e) => setError(String(e)));
-    apiFetchGet<T.ToolPermissionStatus[]>(`/api/projects/${projectId}/tool-permissions`).then(setToolPerms).catch(() => {});
+    api.projects.commandRules(projectId).then(setRules).catch((e) => setError(String(e)));
+    api.projects.toolPermissions(projectId).then(setToolPerms).catch(() => {});
   };
   useEffect(refresh, [projectId]);
 
   const addRule = async () => {
     if (!projectId || !pattern.trim()) return;
     try {
-      await fetch(`/api/projects/${projectId}/command-rules`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pattern: pattern.trim(), action }),
-      });
+      await api.projects.createCommandRule(projectId, { pattern: pattern.trim(), action });
       setPattern("");
       refresh();
     } catch (e) { setError(String(e)); }
@@ -108,10 +104,4 @@ export default function PermissionScreen() {
       )}
     </div>
   );
-}
-
-async function apiFetchGet<T>(path: string): Promise<T> {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
