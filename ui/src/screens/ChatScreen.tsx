@@ -6,6 +6,7 @@ import Markdown from "../components/Markdown";
 import { Button } from "../components/ui/Button";
 import { AutoTextarea } from "../components/ui/AutoTextarea";
 import { ToolCallCard } from "../components/ToolCallCard";
+import { ThinkingBlock } from "../components/ThinkingBlock";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -194,12 +195,7 @@ export default function ChatScreen() {
                         return <ToolCallCard key={p.id} kind="tool_result" content={p.content} />;
                       }
                       if (p.kind === "reasoning") {
-                        return (
-                          <details key={p.id} className="mt-2 text-sm text-text-secondary">
-                            <summary>Reasoning</summary>
-                            <pre className="text-xs overflow-x-auto">{p.content}</pre>
-                          </details>
-                        );
+                        return <ThinkingBlock key={p.id} content={p.content} />;
                       }
                       return null;
                     })}
