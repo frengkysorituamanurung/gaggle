@@ -11,7 +11,7 @@ import SettingsScreen from "./screens/SettingsScreen";
 
 function Shell() {
   return (
-    <div className="flex h-screen w-screen gap-2 bg-background p-2 overflow-hidden">
+    <div className="flex h-screen w-screen gap-2 bg-background-primary p-2 overflow-hidden">
       <Sidebar />
       <main className="flex-1 min-w-0 overflow-hidden rounded-xl pt-8">
         <Routes>

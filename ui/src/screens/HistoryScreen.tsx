@@ -38,9 +38,9 @@ export default function HistoryScreen() {
 
   return (
     <div className="p-6 h-full overflow-y-auto">
-      <h2 className="text-xl font-semibold text-text mb-4">Session History</h2>
+      <h2 className="text-xl font-semibold text-text-primary mb-4">Session History</h2>
       <div className="mb-4">
-        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
+        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
@@ -49,7 +49,7 @@ export default function HistoryScreen() {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-text-secondary">
+            <tr className="border-b border-border-primary text-text-secondary">
               <th className="text-left py-2 px-3">Title</th>
               <th className="text-left py-2 px-3">Mode</th>
               <th className="text-left py-2 px-3">Permission</th>
@@ -59,14 +59,14 @@ export default function HistoryScreen() {
           </thead>
           <tbody>
             {chats.map((c) => (
-              <tr key={c.id} className="border-b border-border">
-                <td className="py-2 px-3 text-text">{c.title}</td>
+              <tr key={c.id} className="border-b border-border-primary">
+                <td className="py-2 px-3 text-text-primary">{c.title}</td>
                 <td className="py-2 px-3 text-text-secondary">{c.mode}</td>
                 <td className="py-2 px-3 text-text-secondary">{c.permission_mode}</td>
                 <td className="py-2 px-3 text-text-secondary">{new Date(c.updated_at).toLocaleString()}</td>
                 <td className="py-2 px-3">
-                  <button className="px-2 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-xs mr-1" onClick={() => open(c)}>Open</button>
-                  <button className="px-2 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-xs" onClick={() => rename(c)}>Rename</button>
+                  <button className="px-2 py-1 rounded-md border border-border-primary bg-background-primary hover:bg-surface-2 text-text-primary text-xs mr-1" onClick={() => open(c)}>Open</button>
+                  <button className="px-2 py-1 rounded-md border border-border-primary bg-background-primary hover:bg-surface-2 text-text-primary text-xs" onClick={() => rename(c)}>Rename</button>
                 </td>
               </tr>
             ))}

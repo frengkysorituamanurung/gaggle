@@ -44,23 +44,23 @@ export default function SettingsScreen() {
     refresh();
   };
 
-  const inputCls = "w-full px-3 py-2 rounded-md border border-border bg-background text-text text-sm";
+  const inputCls = "w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm";
 
   return (
     <div className="p-6 h-full overflow-y-auto">
-      <h2 className="text-xl font-semibold text-text mb-4">Settings</h2>
+      <h2 className="text-xl font-semibold text-text-primary mb-4">Settings</h2>
       {error && <div className="text-danger text-sm mb-2">{error}</div>}
 
-      <section className="bg-surface border border-border rounded-xl p-4 mb-4">
-        <h3 className="font-medium text-text mb-2">Appearance</h3>
+      <section className="bg-surface border border-border-primary rounded-xl p-4 mb-4">
+        <h3 className="font-medium text-text-primary mb-2">Appearance</h3>
         <div className="flex gap-2">
-          <button className={`px-3 py-2 rounded-md border border-border text-sm ${theme === "light" ? "bg-accent text-background" : "bg-background text-text hover:bg-surface-2"}`} onClick={() => setTheme("light")}>Light</button>
-          <button className={`px-3 py-2 rounded-md border border-border text-sm ${theme === "dark" ? "bg-accent text-background" : "bg-background text-text hover:bg-surface-2"}`} onClick={() => setTheme("dark")}>Dark</button>
+          <button className={`px-3 py-2 rounded-md border border-border-primary text-sm ${theme === "light" ? "bg-accent text-background" : "bg-background-primary text-text-primary hover:bg-surface-2"}`} onClick={() => setTheme("light")}>Light</button>
+          <button className={`px-3 py-2 rounded-md border border-border-primary text-sm ${theme === "dark" ? "bg-accent text-background" : "bg-background-primary text-text-primary hover:bg-surface-2"}`} onClick={() => setTheme("dark")}>Dark</button>
         </div>
       </section>
 
-      <section className="bg-surface border border-border rounded-xl p-4 mb-4">
-        <h3 className="font-medium text-text mb-2">Providers</h3>
+      <section className="bg-surface border border-border-primary rounded-xl p-4 mb-4">
+        <h3 className="font-medium text-text-primary mb-2">Providers</h3>
         <div className="flex flex-col gap-2">
           <input className={inputCls} placeholder="Name" value={pName} onChange={(e) => setPName(e.target.value)} />
           <select className={inputCls} value={pKind} onChange={(e) => setPKind(e.target.value)}>
@@ -79,8 +79,8 @@ export default function SettingsScreen() {
         </div>
         <div className="mt-3">
           {providers.map((p) => (
-            <div key={p.provider.id} className="py-2 border-b border-border last:border-0">
-              <span className="font-medium text-text">{p.provider.name}</span>{" "}
+            <div key={p.provider.id} className="py-2 border-b border-border-primary last:border-0">
+              <span className="font-medium text-text-primary">{p.provider.name}</span>{" "}
               <span className="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary">{p.provider.kind}</span>
               <div className="text-xs text-text-secondary">secret configured: {p.has_configured_secret ? "yes" : "no"}</div>
             </div>
@@ -88,12 +88,12 @@ export default function SettingsScreen() {
         </div>
       </section>
 
-      <section className="bg-surface border border-border rounded-xl p-4 mb-4">
-        <h3 className="font-medium text-text mb-2">Pending Approvals</h3>
+      <section className="bg-surface border border-border-primary rounded-xl p-4 mb-4">
+        <h3 className="font-medium text-text-primary mb-2">Pending Approvals</h3>
         {approvals.length === 0 && <div className="text-text-secondary text-sm">No pending approvals.</div>}
         {approvals.map((a) => (
-          <div key={a.id} className="bg-surface-2 border border-border rounded-xl p-3 mt-2">
-            <div className="text-text"><strong>{a.kind}</strong> — {a.summary}</div>
+          <div key={a.id} className="bg-surface-2 border border-border-primary rounded-xl p-3 mt-2">
+            <div className="text-text-primary"><strong>{a.kind}</strong> — {a.summary}</div>
             {a.command && <pre className="mt-1 text-xs bg-code-bg p-2 rounded-md overflow-x-auto">{a.command}</pre>}
             {a.cwd && <div className="text-xs text-text-secondary">cwd: {a.cwd}</div>}
             <div className="flex gap-2 mt-2">
@@ -104,19 +104,19 @@ export default function SettingsScreen() {
         ))}
       </section>
 
-      <section className="bg-surface border border-border rounded-xl p-4">
-        <h3 className="font-medium text-text mb-2">Settings (raw)</h3>
+      <section className="bg-surface border border-border-primary rounded-xl p-4">
+        <h3 className="font-medium text-text-primary mb-2">Settings (raw)</h3>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-text-secondary">
+            <tr className="border-b border-border-primary text-text-secondary">
               <th className="text-left py-2 px-3">Key</th>
               <th className="text-left py-2 px-3">Value</th>
             </tr>
           </thead>
           <tbody>
             {settings.map((s) => (
-              <tr key={s.key} className="border-b border-border">
-                <td className="py-2 px-3 text-text">{s.key}</td>
+              <tr key={s.key} className="border-b border-border-primary">
+                <td className="py-2 px-3 text-text-primary">{s.key}</td>
                 <td className="py-2 px-3"><code className="text-xs">{s.value}</code></td>
               </tr>
             ))}

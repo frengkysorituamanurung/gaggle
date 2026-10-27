@@ -11,16 +11,16 @@ export default function SkillsScreen() {
   }, []);
   return (
     <div className="p-6 h-full overflow-y-auto">
-      <h2 className="text-xl font-semibold text-text mb-4">Skills</h2>
+      <h2 className="text-xl font-semibold text-text-primary mb-4">Skills</h2>
       {loading && <div className="text-text-secondary text-sm">Loading…</div>}
       {error && <div className="text-danger text-sm">{error}</div>}
       {skills.length === 0 && !loading && <div className="text-text-secondary text-center py-12">No skills found.</div>}
       <div className="grid gap-3 mt-3">
         {skills.map((s) => (
-          <div key={s.path} className="bg-surface border border-border rounded-xl p-4">
-            <div className="font-medium text-text">{s.name}</div>
+          <div key={s.path} className="bg-surface border border-border-primary rounded-xl p-4">
+            <div className="font-medium text-text-primary">{s.name}</div>
             <p className="mt-1 text-sm text-text-secondary">{s.description}</p>
-            <div className="mt-2 text-xs text-text-muted">{s.path}</div>
+            <div className="mt-2 text-xs text-text-tertiary">{s.path}</div>
           </div>
         ))}
       </div>

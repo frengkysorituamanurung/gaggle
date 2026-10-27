@@ -13,7 +13,7 @@ export default function ExtensionsScreen() {
   useEffect(refresh, []);
   return (
     <div className="p-6 h-full overflow-y-auto">
-      <h2 className="text-xl font-semibold text-text mb-4">Extensions</h2>
+      <h2 className="text-xl font-semibold text-text-primary mb-4">Extensions</h2>
       {loading && <div className="text-text-secondary text-sm">Loading…</div>}
       {error && <div className="text-danger text-sm">{error}</div>}
       {inv && (
@@ -24,15 +24,15 @@ export default function ExtensionsScreen() {
           </p>
           <div className="grid gap-3 mt-3">
             {inv.extensions.map((e) => (
-              <div key={e.id} className="bg-surface border border-border rounded-xl p-4">
+              <div key={e.id} className="bg-surface border border-border-primary rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="font-medium text-text">{e.name}</span>
+                    <span className="font-medium text-text-primary">{e.name}</span>
                     <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary">{e.kind}</span>
-                    <div className="text-xs text-text-muted">{e.description}</div>
+                    <div className="text-xs text-text-tertiary">{e.description}</div>
                   </div>
                   <button
-                    className="px-3 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-sm"
+                    className="px-3 py-1 rounded-md border border-border-primary bg-background-primary hover:bg-surface-2 text-text-primary text-sm"
                     onClick={async () => {
                       await api.extensions.setEnabled(e.id, !e.enabled);
                       refresh();

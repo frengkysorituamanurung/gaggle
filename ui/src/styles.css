@@ -54,6 +54,9 @@
   --color-text-secondary: var(--color-text-secondary);
   --color-text-tertiary: var(--color-text-muted);
   --color-text-inverse: var(--color-bg);
+  --color-text-danger: var(--color-danger);
+  --color-text-warning: var(--color-warning);
+  --color-text-success: var(--color-success);
   --color-border-primary: var(--color-border);
   --color-border-secondary: var(--color-border);
   --color-border-tertiary: var(--color-border);
