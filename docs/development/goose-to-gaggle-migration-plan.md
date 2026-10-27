@@ -1,5 +1,8 @@
 # Goose → Gaggle Migration Plan
 
+> Note: The UI section and Phase G are superseded by
+> `docs/development/ui-typescript-rewrite-plan.md`.
+
 This plan translates capabilities from the vendored Block Goose reference
 (`goose/`) into Gaggle's local-first, project-centric architecture. It is a
 **migration roadmap**, not a single implementation task. Each phase is sized to
