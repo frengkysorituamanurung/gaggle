@@ -2888,9 +2888,7 @@ async fn start_chat_run(
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
 
     let (provider, model_key) =
-        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt)
-            .await
-            .map_err(|(status, message)| (status, message))?;
+        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt).await?;
 
     // Persist user message + create run up front so we can return run_id and stream.
     let user_msg = chat_repo

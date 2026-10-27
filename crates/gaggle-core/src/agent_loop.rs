@@ -287,6 +287,7 @@ impl AgentRuntime {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_turn_with_precreated(
         &self,
         chat_id: &str,
