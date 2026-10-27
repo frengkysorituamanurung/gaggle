@@ -12,7 +12,6 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<T.Message[]>([]);
   const [parts, setParts] = useState<T.MessagePart[]>([]);
   const [models, setModels] = useState<T.Model[]>([]);
-  const [providers, setProviders] = useState<T.ProviderStatus[]>([]);
   const [modelKey, setModelKey] = useState<string>("local-mock");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -28,16 +27,13 @@ export default function ChatScreen() {
 
   useEffect(() => {
     refreshProjects().catch((e) => setError(String(e)));
-    api.providers.list().then(setProviders).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!projectId) return;
     api.projectChats(projectId).then(setChats).catch(() => {});
-    // load models from first provider
     (async () => {
       const ps = await api.providers.list();
-      setProviders(ps);
       const allModels: T.Model[] = [];
       for (const p of ps) {
         try {
@@ -105,12 +101,10 @@ export default function ChatScreen() {
       if (outcome.outcome === "failed") {
         setError(outcome.error || "Run failed");
       }
-      // refresh messages
       const r = await api.chats.messages(chatId);
       setMessages(r.messages);
       setParts(r.message_parts);
       if (outcome.run) {
-        // refresh chat
         api.chats.get(chatId).then(setChat).catch(() => {});
       }
     } catch (e) {
@@ -123,104 +117,102 @@ export default function ChatScreen() {
 
   const partsFor = (msgId: string) => parts.filter((p) => p.message_id === msgId);
 
-  const currentProject = projects.find((p) => p.id === projectId);
-
   if (!projects.length) {
     return (
-      <div className="content">
-        <h2>Welcome to Gaggle</h2>
-        <p className="empty-state">Register a project to start chatting.</p>
-        <div className="card" style={{ maxWidth: 480, margin: "0 auto" }}>
-          <h3>New Project</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            <input className="input" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-            <input className="input" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
-            <button className="btn primary" onClick={createProject}>Create Project</button>
-          </div>
-          {error && <div className="error-banner" style={{ marginTop: 8 }}>{error}</div>}
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+        <h2 className="text-xl font-semibold text-text">Welcome to Gaggle</h2>
+        <p className="text-text-secondary">Register a project to start chatting.</p>
+        <div className="w-full max-w-md bg-surface border border-border rounded-xl p-4 flex flex-col gap-2">
+          <h3 className="font-medium text-text">New Project</h3>
+          <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+          <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
+          <button className="px-3 py-2 rounded-md bg-accent text-background font-medium hover:bg-accent-hover" onClick={createProject}>Create Project</button>
+          {error && <div className="text-danger text-sm">{error}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div className="topbar">
-        <select className="select" style={{ width: 200 }} value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-background">
+        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <select className="select" style={{ width: 220 }} value={chatId || ""} onChange={(e) => setChatId(e.target.value || null)}>
+        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={chatId || ""} onChange={(e) => setChatId(e.target.value || null)}>
           <option value="">— select chat —</option>
           {chats.map((c) => (
             <option key={c.id} value={c.id}>{c.title}</option>
           ))}
         </select>
-        <button className="btn" onClick={createChat}>+ New Chat</button>
-        <div style={{ flex: 1 }} />
-        <select className="select" style={{ width: 220 }} value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
+        <button className="px-3 py-1 rounded-md border border-border bg-background hover:bg-surface-2 text-text text-sm" onClick={createChat}>+ New Chat</button>
+        <div className="flex-1" />
+        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
           <option value="local-mock">local-mock</option>
           {models.map((m) => (
             <option key={m.id} value={m.model_key}>{m.display_name}</option>
           ))}
         </select>
       </div>
-      <div className="content">
-        {!chatId && <div className="empty-state">Select or create a chat to begin.</div>}
+      <div className="flex-1 overflow-y-auto p-6">
+        {!chatId && <div className="text-center text-text-secondary py-12">Select or create a chat to begin.</div>}
         {chatId && messages.length === 0 && (
-          <div className="empty-state">
-            <h2>{chat?.title || "New Chat"}</h2>
+          <div className="text-center text-text-secondary py-12">
+            <h2 className="text-lg font-semibold text-text">{chat?.title || "New Chat"}</h2>
             <p>Send a message to start the conversation.</p>
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`message ${m.role}`}>
-            <div className="message-role">{m.role}</div>
-            {partsFor(m.id).map((p) => {
-              if (p.kind === "text") {
-                return m.role === "assistant" ? (
-                  <Markdown key={p.id} text={p.content || ""} />
-                ) : (
-                  <div key={p.id} className="message-body">{p.content}</div>
-                );
-              }
-              if (p.kind === "tool_call") {
-                return (
-                  <div key={p.id} className="card" style={{ marginTop: 8, fontSize: "var(--text-sm)" }}>
-                    <strong>Tool call</strong>
-                    <pre>{p.content}</pre>
-                  </div>
-                );
-              }
-              if (p.kind === "tool_result") {
-                return (
-                  <div key={p.id} className="card" style={{ marginTop: 8, fontSize: "var(--text-sm)" }}>
-                    <strong>Tool result</strong>
-                    <pre>{p.content}</pre>
-                  </div>
-                );
-              }
-              if (p.kind === "reasoning") {
-                return (
-                  <details key={p.id} style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                    <summary>Reasoning</summary>
-                    <pre>{p.content}</pre>
-                  </details>
-                );
-              }
-              return null;
-            })}
+          <div key={m.id} className={`mb-4 ${m.role === "user" ? "flex justify-end" : ""}`}>
+            <div className="text-xs uppercase tracking-wide text-text-muted mb-1">{m.role}</div>
+            <div className={m.role === "user" ? "bg-surface px-3 py-2 rounded-xl max-w-[80%] inline-block" : ""}>
+              {partsFor(m.id).map((p) => {
+                if (p.kind === "text") {
+                  return m.role === "assistant" ? (
+                    <Markdown key={p.id} text={p.content || ""} />
+                  ) : (
+                    <div key={p.id}>{p.content}</div>
+                  );
+                }
+                if (p.kind === "tool_call") {
+                  return (
+                    <div key={p.id} className="mt-2 p-2 rounded-md bg-surface-2 border border-border text-sm">
+                      <strong>Tool call</strong>
+                      <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
+                    </div>
+                  );
+                }
+                if (p.kind === "tool_result") {
+                  return (
+                    <div key={p.id} className="mt-2 p-2 rounded-md bg-surface-2 border border-border text-sm">
+                      <strong>Tool result</strong>
+                      <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
+                    </div>
+                  );
+                }
+                if (p.kind === "reasoning") {
+                  return (
+                    <details key={p.id} className="mt-2 text-sm text-text-secondary">
+                      <summary>Reasoning</summary>
+                      <pre className="text-xs overflow-x-auto">{p.content}</pre>
+                    </details>
+                  );
+                }
+                return null;
+              })}
+            </div>
           </div>
         ))}
-        {sending && <div className="loading">Generating response…</div>}
-        {error && <div className="error-banner">{error}</div>}
+        {sending && <div className="text-text-secondary text-sm">Generating response…</div>}
+        {error && <div className="text-danger text-sm mt-2">{error}</div>}
       </div>
       {chatId && (
-        <div className="composer">
-          <div className="composer-row">
+        <div className="border-t border-border p-3 bg-background">
+          <div className="flex gap-2 items-end">
             <textarea
-              className="textarea"
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-background text-text resize-y min-h-[60px]"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Message Gaggle… (Enter to send, Shift+Enter for newline)"
@@ -232,7 +224,7 @@ export default function ChatScreen() {
               }}
               disabled={sending}
             />
-            <button className="btn primary" onClick={send} disabled={sending || !draft.trim()}>
+            <button className="px-4 py-2 rounded-xl bg-accent text-background font-medium hover:bg-accent-hover disabled:opacity-50" onClick={send} disabled={sending || !draft.trim()}>
               Send
             </button>
           </div>
