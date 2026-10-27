@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../lib/store";
 import type * as T from "../types";
+import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 
@@ -15,10 +16,10 @@ export default function WorkspaceScreen() {
 
   const refresh = () => {
     if (!projectId) return;
-    fetch(`/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`).then((r) => r.json()).then(setFiles).catch((e) => setError(String(e)));
-    fetch(`/api/projects/${projectId}/git-status`).then((r) => r.json()).then(setGitStatus).catch(() => {});
-    fetch(`/api/projects/${projectId}/diff`).then((r) => r.json()).then(setDiff).catch(() => {});
-    fetch(`/api/projects/${projectId}/worktrees`).then((r) => r.json()).then(setWorktrees).catch(() => {});
+    api.projects.files(projectId, path).then(setFiles).catch((e) => setError(String(e)));
+    api.projects.gitStatus(projectId).then(setGitStatus).catch(() => {});
+    api.projects.diff(projectId).then(setDiff).catch(() => {});
+    api.projects.worktrees(projectId).then(setWorktrees).catch(() => {});
   };
   useEffect(refresh, [projectId, path]);
 

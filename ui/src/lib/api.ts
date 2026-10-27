@@ -54,6 +54,28 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ name, root_path, vcs_kind }),
       }),
+    update: (id: string, patch: Partial<T.Project>) =>
+      apiFetch<T.ProjectStatus>(`/api/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    files: (id: string, path = "") =>
+      apiFetch<T.FsEntry[]>(`/api/projects/${id}/files${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+    gitStatus: (id: string) => apiFetch<T.GitWorkspaceStatus>(`/api/projects/${id}/git-status`),
+    diff: (id: string) => apiFetch<T.GitDiffOutput>(`/api/projects/${id}/diff`),
+    worktrees: (id: string) => apiFetch<T.Worktree[]>(`/api/projects/${id}/worktrees`),
+    commandRules: (id: string) => apiFetch<T.CommandRule[]>(`/api/projects/${id}/command-rules`),
+    createCommandRule: (id: string, req: { pattern: string; action: string; match_kind?: string }) =>
+      apiFetch<T.CommandRule>(`/api/projects/${id}/command-rules`, {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
+    toolPermissions: (id: string) => apiFetch<T.ToolPermissionStatus[]>(`/api/projects/${id}/tool-permissions`),
+    setToolPermission: (id: string, extension_tool_id: string, level: string) =>
+      apiFetch<T.ToolPermissionStatus>(`/api/projects/${id}/tool-permissions`, {
+        method: "PUT",
+        body: JSON.stringify({ extension_tool_id, level }),
+      }),
   },
   projectChats: (id: string) => apiFetch<T.Chat[]>(`/api/projects/${id}/chats`),
   chats: {
@@ -92,6 +114,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ prompt, model_key }),
       }),
+  },
+  worktrees: {
+    gitStatus: (id: string) => apiFetch<T.GitWorkspaceStatus>(`/api/worktrees/${id}/git-status`),
+    diff: (id: string) => apiFetch<T.GitDiffOutput>(`/api/worktrees/${id}/diff`),
+    merge: (id: string) => apiFetch<void>(`/api/worktrees/${id}/merge`, { method: "POST" }),
+    discard: (id: string) => apiFetch<void>(`/api/worktrees/${id}/discard`, { method: "POST" }),
   },
   runs: {
     cancel: (id: string) => apiFetch<T.Run>(`/api/runs/${id}/cancel`, { method: "POST" }),
