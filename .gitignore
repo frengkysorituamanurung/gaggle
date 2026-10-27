@@ -3,6 +3,9 @@ dist/
 ui/node_modules/
 ui/tsconfig.tsbuildinfo
 ui/dist/
+desktop/
+desktop-app/src-tauri/target/
+desktop-app/src-tauri/gen/
 *.db
 *.db-shm
 *.db-wal
