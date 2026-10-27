@@ -213,8 +213,8 @@ export default function ChatScreen() {
         {error && <div className="text-text-danger text-sm mt-2">{error}</div>}
       </div>
       {chatId && (
-        <div className="border-t border-border-primary p-3 bg-background-primary">
-          <div className="flex gap-2 items-end">
+        <div className="border-t border-border-primary bg-background-primary">
+          <div className="px-3 pt-3">
             <AutoTextarea
               className="flex-1"
               minRows={1}
@@ -230,7 +230,16 @@ export default function ChatScreen() {
               }}
               disabled={sending}
             />
-            <Button variant="primary" size="lg" onClick={send} disabled={sending || !draft.trim()}>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-xs" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
+              <option value="local-mock">local-mock</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.model_key}>{m.display_name}</option>
+              ))}
+            </select>
+            <div className="flex-1" />
+            <Button variant="primary" size="sm" onClick={send} disabled={sending || !draft.trim()}>
               Send
             </Button>
           </div>

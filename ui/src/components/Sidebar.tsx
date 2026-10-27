@@ -3,14 +3,24 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
+import {
+  MessageSquarePlus,
+  BookOpen,
+  Puzzle,
+  Plug,
+  Clock,
+  History,
+  Settings,
+  PanelLeft,
+} from "lucide-react";
 
-const NAV_ITEMS: { path: string; label: string; icon: string }[] = [
-  { path: "/chat", label: "New Chat", icon: "💬" },
-  { path: "/recipes", label: "Recipes", icon: "📜" },
-  { path: "/skills", label: "Skills", icon: "🧩" },
-  { path: "/extensions", label: "Extensions", icon: "🔌" },
-  { path: "/scheduler", label: "Scheduler", icon: "⏰" },
-  { path: "/history", label: "Session History", icon: "🗂" },
+const NAV_ITEMS: { path: string; label: string; icon: any }[] = [
+  { path: "/chat", label: "New Chat", icon: MessageSquarePlus },
+  { path: "/recipes", label: "Recipes", icon: BookOpen },
+  { path: "/skills", label: "Skills", icon: Puzzle },
+  { path: "/extensions", label: "Extensions", icon: Plug },
+  { path: "/scheduler", label: "Scheduler", icon: Clock },
+  { path: "/history", label: "Session History", icon: History },
 ];
 
 export default function Sidebar() {
@@ -34,6 +44,7 @@ export default function Sidebar() {
           <div className="px-2 flex flex-col gap-0.5">
             {NAV_ITEMS.map((n) => {
               const active = location.pathname === n.path;
+              const Icon = n.icon;
               return (
                 <button
                   key={n.path}
@@ -45,7 +56,7 @@ export default function Sidebar() {
                       : "text-text-primary hover:bg-background-tertiary/60"
                   }`}
                 >
-                  <span className="w-5 h-5 flex-shrink-0 text-text-secondary text-center">{n.icon}</span>
+                  <Icon className="w-5 h-5 flex-shrink-0 text-text-secondary" />
                   {!collapsed && <span className="text-left flex-1 truncate">{n.label}</span>}
                 </button>
               );
@@ -91,7 +102,7 @@ export default function Sidebar() {
                   : "text-text-primary hover:bg-background-tertiary/60"
               }`}
             >
-              <span className="w-5 h-5 flex-shrink-0 text-text-secondary text-center">⚙️</span>
+              <Settings className="w-5 h-5 flex-shrink-0 text-text-secondary" />
               {!collapsed && <span className="text-left flex-1 truncate">Settings</span>}
             </button>
             {!collapsed && (

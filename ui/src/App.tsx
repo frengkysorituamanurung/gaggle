@@ -13,7 +13,7 @@ function Shell() {
   return (
     <div className="flex h-screen w-screen gap-2 bg-background p-2 overflow-hidden">
       <Sidebar />
-      <main className="flex-1 min-w-0 overflow-hidden rounded-xl">
+      <main className="flex-1 min-w-0 overflow-hidden rounded-xl pt-8">
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<ChatScreen />} />
