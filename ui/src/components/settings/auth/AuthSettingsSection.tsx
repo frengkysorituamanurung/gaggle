@@ -22,7 +22,7 @@ export default function AuthSettingsSection() {
             {p.provider.kind === "chatgpt" && (
               <Button size="sm" variant="secondary" onClick={async () => {
                 try {
-                  const r = await (await fetch(`/api/providers/${p.provider.id}/oauth/chatgpt/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+                  const r = await api.providers.startChatgptOAuth(p.provider.id);
                   if (r.authorization_url) window.open(r.authorization_url, "_blank");
                 } catch { /* ignore */ }
               }}>Sign in</Button>

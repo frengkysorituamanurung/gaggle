@@ -171,6 +171,7 @@ export const api = {
       }),
     models: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models`),
     refreshModels: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models/refresh`, { method: "POST" }),
+    startChatgptOAuth: (id: string) => apiFetch<{ authorization_url: string }>(`/api/providers/${id}/oauth/chatgpt/start`, { method: "POST", body: "{}" }),
     createModel: (id: string, req: {
       model_key: string;
       display_name: string;
@@ -199,10 +200,28 @@ export const api = {
     rediscover: (id: string) => apiFetch<T.Extension>(`/api/extensions/${id}/rediscover`, { method: "POST" }),
   },
   recipes: () => apiFetch<T.Recipe[]>("/api/recipes"),
+  recipe: {
+    get: (id: string) => apiFetch<T.Recipe>(`/api/recipes/${id}`),
+    create: (req: Partial<T.Recipe> & { name: string; title: string }) =>
+      apiFetch<T.Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(req) }),
+    update: (id: string, patch: Partial<T.Recipe>) =>
+      apiFetch<T.Recipe>(`/api/recipes/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<void>(`/api/recipes/${id}`, { method: "DELETE" }),
+    execute: (id: string, params?: Record<string, unknown>) =>
+      apiFetch<T.AgentLoopOutcome>(`/api/recipes/${id}/execute`, { method: "POST", body: JSON.stringify(params || {}) }),
+  },
   schedules: (project_id?: string) =>
     apiFetch<T.Schedule[]>(
       `/api/schedules${project_id ? `?project_id=${encodeURIComponent(project_id)}` : ""}`,
     ),
+  schedule: {
+    get: (id: string) => apiFetch<T.Schedule>(`/api/schedules/${id}`),
+    create: (req: { recipe_id: string; project_id?: string | null; cron_expr: string; timezone?: string; param_values?: string | null; enabled?: number }) =>
+      apiFetch<T.Schedule>("/api/schedules", { method: "POST", body: JSON.stringify(req) }),
+    update: (id: string, patch: Partial<T.Schedule>) =>
+      apiFetch<T.Schedule>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<void>(`/api/schedules/${id}`, { method: "DELETE" }),
+  },
   memories: {
     list: (project_id?: string) =>
       apiFetch<T.Memory[]>(
