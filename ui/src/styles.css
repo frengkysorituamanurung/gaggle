@@ -1,5 +1,26 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* Cash Sans (Goose) */
+@font-face {
+  font-family: 'Cash Sans';
+  src: url(https://cash-f.squarecdn.com/static/fonts/cashsans/woff2/CashSans-Regular.woff2) format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Cash Sans';
+  src: url(https://cash-f.squarecdn.com/static/fonts/cashsans/woff2/CashSans-Medium.woff2) format('woff2');
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Cash Sans';
+  src: url(https://cash-f.squarecdn.com/static/fonts/cashsans/woff2/CashSans-Bold.woff2) format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+
 @plugin "@tailwindcss/typography";
 
 @theme {
@@ -21,6 +42,8 @@
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-sans);
 
   /* Goose semantic aliases */
   --color-background-primary: var(--color-bg);
@@ -50,8 +73,8 @@
   --color-warning: #fbcd44;
   --color-success: #91cb80;
   --color-code-bg: #f4f6f7;
+  --font-sans: 'Cash Sans', system-ui, -apple-system, sans-serif;
 
-  --font-sans: "Inter", "SF Pro Text", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 
   --text-xs: 12px;
@@ -103,6 +126,7 @@
   --color-warning: #ffd966;
   --color-success: #a3d795;
   --color-code-bg: #1a1a1d;
+  --font-sans: 'Cash Sans', system-ui, -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
