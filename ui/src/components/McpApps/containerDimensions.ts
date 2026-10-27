@@ -1,0 +1,1 @@
+export const containerDimensions = { inline: { width: "100%", height: "auto" }, pip: { width: 320, height: 240 }, fullscreen: { width: "100vw", height: "100vh" } };

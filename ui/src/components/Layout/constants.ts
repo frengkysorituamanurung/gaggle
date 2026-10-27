@@ -1,0 +1,9 @@
+export const NAV_DIMENSIONS = { NAV_WIDTH: 240 };
+
+export const Z_INDEX = {
+  HEADER: 100,
+  DROPDOWN: 200,
+  MODAL: 300,
+  TOAST: 400,
+  DROPDOWN_ABOVE_OVERLAY: 10001,
+};

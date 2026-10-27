@@ -2,12 +2,10 @@
 
 These instructions are automatically loaded by OpenCode in every session within the **Gaggle** repository.
 
-## 0. Local Execution Policy (Session Override)
+## 0. Execution Policy
 
-- **Do not run any local build, test, lint, format, or other execution commands** (including `cargo fmt`, `cargo clippy`, `cargo check`, `cargo test`, `cargo build`, or scripts) in this repository.
-- Work is limited to **editing code and files only**. Verification and quality gates run in CI, not locally.
 - Use the provided GitHub token for all `gh`/GitHub operations; do not print or commit the token.
-- This policy takes precedence over the quality-gate commands listed elsewhere in this document.
+- Quality gates may be run locally when explicitly requested by the user.
 
 ## 1. Mandatory Skill Routing & Discovery
 
@@ -29,8 +27,9 @@ Before planning, designing, or modifying any code in response to a user prompt, 
 | Structured `tracing`, redaction, metrics, actionable errors, diagnostics | `observability-reliability` |
 | Unit, integration, E2E, security, and fault-injection testing | `testing-qa` |
 | Documentation, ADRs, contributor guides, release & upgrade notes | `documentation-open-source` |
+| Any code, docs, config, or release change | `ponytail` |
 
-**Rule**: Do not skip loading the applicable skill(s) via the `skill` tool when working in its domain. Never invent skill contents.
+**Rule**: Do not skip loading the applicable skill(s) via the `skill` tool when working in its domain. For every change, also load and follow `ponytail`. Never invent skill contents.
 
 ---
 

@@ -1,0 +1,17 @@
+[package]
+name = "gaggle-desktop"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["full"] }
+gaggle-server = { path = "../../crates/gaggle-server" }
+gaggle-db = { path = "../../crates/gaggle-db" }
+anyhow = "1"
+axum = "0.8"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[workspace]

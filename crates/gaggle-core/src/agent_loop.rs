@@ -274,6 +274,31 @@ impl AgentRuntime {
         tool_executor: &dyn ToolExecutor,
         cancel_token: &CancellationToken,
     ) -> Result<AgentLoopOutcome> {
+        self.run_turn_with_precreated(
+            chat_id,
+            user_prompt,
+            model_key,
+            provider,
+            tool_executor,
+            cancel_token,
+            None,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_turn_with_precreated(
+        &self,
+        chat_id: &str,
+        user_prompt: &str,
+        model_key: &str,
+        provider: &dyn ModelProviderAdapter,
+        tool_executor: &dyn ToolExecutor,
+        cancel_token: &CancellationToken,
+        precreated_run_id: Option<String>,
+        precreated_user_msg_id: Option<String>,
+    ) -> Result<AgentLoopOutcome> {
         let span = CorrelationIds::for_chat(chat_id).span("agent.run");
         self.run_turn_inner(
             chat_id,
@@ -282,6 +307,8 @@ impl AgentRuntime {
             provider,
             tool_executor,
             cancel_token,
+            precreated_run_id,
+            precreated_user_msg_id,
         )
         .instrument(span)
         .await
@@ -297,6 +324,8 @@ impl AgentRuntime {
         provider: &dyn ModelProviderAdapter,
         tool_executor: &dyn ToolExecutor,
         cancel_token: &CancellationToken,
+        precreated_run_id: Option<String>,
+        precreated_user_msg_id: Option<String>,
     ) -> Result<AgentLoopOutcome> {
         let chat_repo = ChatRepository::new(self.pool.clone());
         let proj_repo = ProjectRepository::new(self.pool.clone());
@@ -340,13 +369,25 @@ impl AgentRuntime {
             .assemble(chat_id, user_prompt)
             .await?;
 
-        // 2. Persist user message and create durable run
-        let user_msg = chat_repo
-            .append_message(chat_id, None, "user", user_prompt)
-            .await?;
-        let run = run_repo
-            .create(chat_id, Some(&user_msg.id), chat.model_id.as_deref())
-            .await?;
+        // 2. Persist user message and create durable run (or reuse precreated)
+        let user_msg_id: String = if let Some(uid) = precreated_user_msg_id.clone() {
+            uid
+        } else {
+            let m = chat_repo
+                .append_message(chat_id, None, "user", user_prompt)
+                .await?;
+            m.id
+        };
+        let run = if let Some(rid) = precreated_run_id.clone() {
+            run_repo
+                .get_run_by_id(&rid)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("precreated run not found"))?
+        } else {
+            run_repo
+                .create(chat_id, Some(&user_msg_id), chat.model_id.as_deref())
+                .await?
+        };
         self.active_runs
             .register_token(&run.id, cancel_token.clone());
         let _run_registration = RunRegistrationGuard {
@@ -372,7 +413,7 @@ impl AgentRuntime {
                 "run.started",
                 &serde_json::json!({
                     "chat_id": chat_id,
-                    "trigger_message_id": user_msg.id,
+                    "trigger_message_id": user_msg_id,
                     "model_key": model_key
                 })
                 .to_string(),

@@ -18,12 +18,17 @@ pub struct ColorTokens {
     pub bg_app: &'static str,
     pub bg_panel: &'static str,
     pub bg_surface: &'static str,
+    pub bg_elevated: &'static str,
     pub text_primary: &'static str,
     pub text_muted: &'static str,
+    pub text_secondary: &'static str,
     pub accent: &'static str,
     pub danger: &'static str,
     pub success: &'static str,
+    pub warning: &'static str,
+    pub info: &'static str,
     pub border: &'static str,
+    pub focus: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,12 +76,17 @@ pub fn light_theme_tokens() -> DesignTokens {
             bg_app: "#f4f6f7",
             bg_panel: "#ffffff",
             bg_surface: "#e3e6ea",
+            bg_elevated: "#ffffff",
             text_primary: "#3f434b",
             text_muted: "#878787",
+            text_secondary: "#5f6368",
             accent: "#5c98f9",
             danger: "#f94b4b",
             success: "#91cb80",
+            warning: "#f08c00",
+            info: "#5c98f9",
             border: "#e3e6ea",
+            focus: "#5c98f9",
         },
         typography: TypographyTokens {
             font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -118,12 +128,17 @@ pub fn dark_theme_tokens() -> DesignTokens {
             bg_app: "#22252a",
             bg_panel: "#3f434b",
             bg_surface: "#474e57",
+            bg_elevated: "#4a4f58",
             text_primary: "#ffffff",
             text_muted: "#878787",
+            text_secondary: "#b8bcc2",
             accent: "#7cacff",
             danger: "#ff6b6b",
             success: "#a3d795",
+            warning: "#f08c00",
+            info: "#7cacff",
             border: "#3f434b",
+            focus: "#7cacff",
         },
         typography: TypographyTokens {
             font_ui: "'Cash Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -165,12 +180,17 @@ pub fn aura_theme_tokens() -> DesignTokens {
             bg_app: "#15141b",
             bg_panel: "#1a1921",
             bg_surface: "#201e2b",
+            bg_elevated: "#262333",
             text_primary: "#edecee",
             text_muted: "#8a8282",
+            text_secondary: "#b8a8a8",
             accent: "#a277ff",
             danger: "#ff6767",
             success: "#61ffca",
+            warning: "#ffca61",
+            info: "#a277ff",
             border: "#2d2b38",
+            focus: "#a277ff",
         },
         typography: TypographyTokens {
             font_ui: "ui-monospace, \"SFMono-Regular\", \"Menlo\", \"Cascadia Mono\", monospace",
@@ -211,12 +231,17 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         "--bg-app: {bg_app};\n      \
          --bg-panel: {bg_panel};\n      \
          --bg-surface: {bg_surface};\n      \
+         --bg-elevated: {bg_elevated};\n      \
          --text-primary: {text_primary};\n      \
          --text-muted: {text_muted};\n      \
+         --text-secondary: {text_secondary};\n      \
          --accent: {accent};\n      \
          --danger: {danger};\n      \
          --success: {success};\n      \
+         --warning: {warning};\n      \
+         --info: {info};\n      \
          --border: {border};\n      \
+         --focus: {focus};\n      \
          --font-ui: {font_ui};\n      \
          --font-mono: {font_mono};\n      \
          --size-xs: {size_xs};\n      \
@@ -243,12 +268,17 @@ pub fn format_css_variables(tokens: &DesignTokens) -> String {
         bg_app = tokens.colors.bg_app,
         bg_panel = tokens.colors.bg_panel,
         bg_surface = tokens.colors.bg_surface,
+        bg_elevated = tokens.colors.bg_elevated,
         text_primary = tokens.colors.text_primary,
         text_muted = tokens.colors.text_muted,
+        text_secondary = tokens.colors.text_secondary,
         accent = tokens.colors.accent,
         danger = tokens.colors.danger,
         success = tokens.colors.success,
+        warning = tokens.colors.warning,
+        info = tokens.colors.info,
         border = tokens.colors.border,
+        focus = tokens.colors.focus,
         font_ui = tokens.typography.font_ui,
         font_mono = tokens.typography.font_mono,
         size_xs = tokens.typography.size_xs,
@@ -330,12 +360,12 @@ pub fn render_index_html() -> String {
       overflow: hidden;
     }
     :focus-visible {
-      outline: 2px solid var(--accent);
+      outline: 2px solid var(--focus);
       outline-offset: 2px;
     }
     #app-shell {
       display: grid;
-      grid-template-columns: 260px minmax(0, 1fr) 340px;
+      grid-template-columns: 240px minmax(0, 1fr) 320px;
       height: 100vh;
       gap: 0;
     }
@@ -353,7 +383,7 @@ pub fn render_index_html() -> String {
     #sidebar {
       background: var(--bg-panel);
       border-right: var(--border-width) solid var(--border);
-      padding: var(--space-md);
+      padding: var(--space-sm);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -421,6 +451,11 @@ pub fn render_index_html() -> String {
       color: var(--danger);
       display: none;
     }
+    .warning-banner {
+      border-color: var(--warning);
+      background: rgba(240, 140, 0, 0.12);
+      color: var(--warning);
+    }
     .error-banner.visible, .warning-banner.visible {
       display: block;
     }
@@ -453,7 +488,7 @@ pub fn render_index_html() -> String {
     }
     .chat-item-meta {
       font-size: var(--size-xs);
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-family: var(--font-mono);
     }
     #main-workspace {
@@ -497,7 +532,7 @@ pub fn render_index_html() -> String {
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: var(--space-md);
+      padding: var(--space-sm);
     }
     #composer {
       padding: var(--space-md);
@@ -507,7 +542,7 @@ pub fn render_index_html() -> String {
     #details-panel {
       background: var(--bg-panel);
       border-left: var(--border-width) solid var(--border);
-      padding: var(--space-md);
+      padding: var(--space-sm);
       overflow-y: auto;
     }
     .file-list {
@@ -533,13 +568,13 @@ pub fn render_index_html() -> String {
       margin-bottom: 0.5rem;
     }
     .empty-state {
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-size: var(--size-sm);
       line-height: 1.5;
     }
     .composer-input {
       width: 100%;
-      min-height: 80px;
+      min-height: 72px;
       border: var(--border-width) solid var(--border);
       border-radius: var(--radius-md);
       padding: 0.75rem;
@@ -1794,7 +1829,7 @@ pub fn render_index_html() -> String {
       }
 
       async function apiRequest(path, options) {
-        const res = await fetch(API_BASE + path, options);
+        const res = await apiFetch(path, options);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || ('Request failed with HTTP ' + res.status));
@@ -2969,7 +3004,7 @@ pub fn render_index_html() -> String {
           return;
         }
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/files');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(projectId) + '/files');
           if (!res.ok) {
             const errText = await res.text();
             workspaceFilesEl.appendChild(createEl('div', {
@@ -3006,7 +3041,7 @@ pub fn render_index_html() -> String {
         worktreesByChatId = {};
         if (!projectId) return;
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(projectId) + '/worktrees');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(projectId) + '/worktrees');
           if (!res.ok) return;
           const list = await res.json();
           list.forEach(function(wt) {
@@ -3068,6 +3103,22 @@ pub fn render_index_html() -> String {
       function restoreChatHistory(chatId) { return hydrateChatHistory(chatId); }
       function loadConversation(chatId) { return hydrateChatHistory(chatId); }
 
+      async function apiFetch(path, options) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+        const opts = Object.assign({}, options || {}, { signal: controller.signal });
+        try {
+          const res = await fetch(API_BASE + path, opts);
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || ('HTTP ' + res.status));
+          }
+          return res;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+
       async function hydrateChatHistory(chatId) {
         messagesEl.textContent = '';
         lastMessageSeq = 0;
@@ -3078,13 +3129,8 @@ pub fn render_index_html() -> String {
         const loadingEl = createEl('div', { className: 'empty-state', textContent: 'Loading conversation history…' });
         messagesEl.appendChild(loadingEl);
         try {
-          const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(chatId) + '/messages');
+          const res = await apiFetch('/api/chats/' + encodeURIComponent(chatId) + '/messages');
           messagesEl.textContent = '';
-          if (!res.ok) {
-            const errText = await res.text();
-            messagesEl.appendChild(createEl('div', { className: 'empty-state', textContent: 'Unable to load conversation history: ' + (errText || res.status) }));
-            return;
-          }
           const data = await res.json();
           const msgs = data.messages || [];
           if (msgs.length === 0) {
@@ -3097,10 +3143,12 @@ pub fn render_index_html() -> String {
             });
           }
           try {
-            const approvalsRes = await fetch(API_BASE + '/api/approvals/pending');
-            if (approvalsRes.ok) {
+            try {
+              const approvalsRes = await apiFetch('/api/approvals/pending');
               const pending = await approvalsRes.json();
               pending.forEach(renderApprovalCard);
+            } catch (e) {
+              console.error('Failed to hydrate approvals:', e);
             }
           } catch (e) {
             console.error('Failed to hydrate approvals:', e);
@@ -3141,7 +3189,7 @@ pub fn render_index_html() -> String {
         await loadProjectWorktrees(currentProjectId);
 
         try {
-          const res = await fetch(API_BASE + '/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
+          const res = await apiFetch('/api/projects/' + encodeURIComponent(currentProjectId) + '/chats');
           if (res.ok) {
             const chats = await res.json();
             chats.forEach(function(c) { chatsById[c.id] = c; });
@@ -3166,7 +3214,7 @@ pub fn render_index_html() -> String {
 
       async function loadProjects(preferredProjectId) {
         try {
-          const res = await fetch(API_BASE + '/api/projects');
+          const res = await apiFetch('/api/projects');
           if (!res.ok) return;
           const projects = await res.json();
           projectsById = {};
@@ -3228,7 +3276,7 @@ pub fn render_index_html() -> String {
         };
 
         try {
-          const res = await fetch(API_BASE + '/api/projects', {
+          const res = await apiFetch('/api/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -3262,7 +3310,7 @@ pub fn render_index_html() -> String {
         isCreatingChat = true;
         btnNewChat.disabled = true;
         try {
-          const res = await fetch(API_BASE + '/api/chats', {
+          const res = await apiFetch('/api/chats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3909,7 +3957,7 @@ pub fn render_index_html() -> String {
 
       window.__gaggle_decide = async function(approvalId, approved) {
         try {
-          const res = await fetch(API_BASE + '/api/approvals/' + encodeURIComponent(approvalId) + '/decide', {
+          const res = await apiFetch('/api/approvals/' + encodeURIComponent(approvalId) + '/decide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ approved: approved })
@@ -3931,6 +3979,17 @@ pub fn render_index_html() -> String {
         activeStreamChatId = null;
         processedEventSeqs = new Set();
         lastEventSeq = 0;
+      }
+      window.addEventListener('beforeunload', closeEventSource);
+
+      function finalizeRun() {
+        if (activeAssistantMessageEl) {
+          activeAssistantMessageEl.classList.remove('streaming-cursor');
+          activeAssistantMessageEl = null;
+        }
+        if (btnStop) btnStop.disabled = true;
+        closeEventSource();
+        currentRunId = null;
       }
 
       function handleSSEEvent(event) {
@@ -3988,34 +4047,18 @@ pub fn render_index_html() -> String {
             renderApprovalCard(data);
             break;
           case 'run.completed':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendMessage('assistant', '[Run completed]');
-            btnStop.disabled = true;
             if (btnRetry) btnRetry.style.display = 'none';
-            closeEventSource();
-            currentRunId = null;
             break;
           case 'run.cancelled':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendMessage('assistant', '[Run cancelled]');
-            btnStop.disabled = true;
             if (btnRetry) btnRetry.style.display = 'none';
-            closeEventSource();
-            currentRunId = null;
             break;
           case 'run.failed':
-            if (activeAssistantMessageEl) {
-              activeAssistantMessageEl.classList.remove('streaming-cursor');
-              activeAssistantMessageEl = null;
-            }
+            finalizeRun();
             appendProblemNotice(data.error, data.retry_guidance, data.failure_category);
-            btnStop.disabled = true;
             if (btnRetry) {
               btnRetry.style.display = '';
               btnRetry.onclick = function() {
@@ -4025,8 +4068,6 @@ pub fn render_index_html() -> String {
                 btnSend.click();
               };
             }
-            closeEventSource();
-            currentRunId = null;
             break;
         }
       }
@@ -4064,12 +4105,11 @@ pub fn render_index_html() -> String {
         activeAssistantMessageEl = null;
 
         try {
-          const res = await fetch(API_BASE + '/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
+          const res = await apiFetch('/api/chats/' + encodeURIComponent(currentChatId) + '/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: prompt, model_key: selectedModelKey || 'local-mock' })
           });
-          if (!res.ok) throw new Error(await res.text());
           const outcome = await res.json();
           if (outcome.run && outcome.run.id) {
             currentRunId = outcome.run.id;
@@ -4110,7 +4150,7 @@ pub fn render_index_html() -> String {
       btnStop.addEventListener('click', async function() {
         if (!currentRunId) return;
         try {
-          await fetch(API_BASE + '/api/runs/' + encodeURIComponent(currentRunId) + '/cancel', { method: 'POST' });
+          await apiFetch('/api/runs/' + encodeURIComponent(currentRunId) + '/cancel', { method: 'POST' });
         } catch (e) {
           console.error('Cancel failed:', e);
         }
