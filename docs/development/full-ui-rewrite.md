@@ -1,75 +1,74 @@
-# Gaggle Full UI Rewrite Audit
+# Full UI Rewrite — Gaggle
 
-## Current architecture
+## Current architecture discovered
 
-- Backend: Rust workspace with `gaggle-server` (Axum), `gaggle-ui` (embedded HTML/CSS/JS), `gaggle-core`, `gaggle-db`, `gaggle-tools`, `gaggle-mcp`, `gaggle-recipes`.
-- UI delivery: `crates/gaggle-ui/src/lib.rs::render_index_html()` returns one self-contained HTML document. `index_handler()` in `crates/gaggle-server/src/lib.rs` serves it at `/`.
-- Backend API: REST/SSE under `/api/*` (projects, chats, messages, providers, models, settings, extensions, recipes, schedules, memories, approvals, runs, worktrees, diagnostics).
-- Persistence: SQLite via `gaggle-db`, migrations, repositories.
-- Agent runtime: bounded loop, streaming, approvals, cancellation, checkpoints in `gaggle-core`.
-- Desktop packaging: launcher starts Axum server and opens browser/app-mode window. No Electron.
+- Gaggle is a Rust workspace (axum server + SQLite) serving a React/Vite SPA from `ui/dist`.
+- Backend exposes REST/SSE at `/api/*`; static assets at `/assets/*`.
+- No desktop framework; browser-based local UI.
+- Chat flow: `POST /api/chats/{id}/messages` runs agent synchronously and returns `AgentLoopOutcome`; SSE at `/api/runs/{id}/events`.
+- Persistence: SQLite with migrations; projects, chats, messages/parts, runs, approvals, providers/models, extensions, recipes, schedules, memories, settings.
 
-## Current UI limitations
+## Existing UI limitations
 
-- Single large embedded HTML/JS document (~4,500 lines).
-- UI logic is an IIFE with global state and direct fetch calls.
-- Styling is hand-written CSS with design tokens in Rust.
-- Some controls are partially wired to backend APIs.
-- No separate frontend build pipeline or TypeScript project.
-- Limited automated UI tests; embedded JS syntax checked by `.github/scripts/check-ui-embedded.sh`.
+- Previous scaffold was a single placeholder screen.
+- No design system, navigation, or backend integration.
 
-## Backend capabilities available
+## Actual backend capabilities mapped
 
-- Project/workspace CRUD and files/git/worktrees.
-- Chat/session creation, messages, compact, export.
-- Provider/model CRUD, OAuth, active model selection.
-- Settings, permissions, command rules.
-- Extensions/MCP discovery and permissions.
-- Recipes, schedules, memories.
-- Approvals, runs, cancellation, SSE events.
-- Diagnostics export.
-- Browser/PTY/worktree tools.
+| UI operation | Backend capability |
+|---|---|
+| Create project | POST /api/projects |
+| List projects | GET /api/projects |
+| Create chat | POST /api/chats |
+| Get chat | GET /api/chats/{id} |
+| Update chat | PATCH /api/chats/{id} |
+| List project chats | GET /api/projects/{id}/chats |
+| Get messages | GET /api/chats/{id}/messages |
+| Submit message | POST /api/chats/{id}/messages |
+| Cancel run | POST /api/runs/{id}/cancel |
+| Stream events | GET /api/runs/{id}/events (SSE) |
+| Pending approvals | GET /api/approvals/pending |
+| Decide approval | POST /api/approvals/{id}/decide |
+| Providers/models | GET/POST /api/providers, GET /api/providers/{id}/models |
+| Settings | GET/PUT /api/settings |
+| Skills | GET /api/skills |
+| Extensions inventory | GET /api/extensions/inventory |
+| Recipes | GET /api/recipes |
+| Schedules | GET /api/schedules |
+| Diagnostics | GET /api/diagnostics |
 
-## Integration compatibility gaps
+## New UI architecture implemented
 
-- No typed frontend service layer; UI calls fetch directly.
-- No frontend build/test pipeline.
-- No component-level tests.
-- Some secondary screens are partial.
-- Event handling is manual and must be hardened for session switching.
+- React 19 + Vite + TypeScript SPA in `ui/`.
+- Design tokens in `ui/src/styles.css` (light/dark).
+- App shell: sidebar navigation + main content (`ui/src/App.tsx`, `Sidebar.tsx`).
+- Shared components: Markdown renderer.
+- Screens: Chat, History, Skills, Recipes, Extensions, Scheduler, Settings.
+- Integration layer: `ui/src/lib/api.ts` typed fetch adapter; `ui/src/lib/store.tsx` app state.
+- Chat flow uses real backend; messages/parts rendered; approvals manageable in Settings.
 
-## Proposed target architecture
+## Rust backend changes
 
-Keep Gaggle's existing architecture. Improve the embedded HTML UI incrementally:
+- None required; only formatting fix in `crates/gaggle-ui/src/lib.rs`.
 
-- Centralize design tokens and reusable CSS classes.
-- Add a small typed service layer in the embedded JS.
-- Harden event subscription cleanup.
-- Complete settings, diagnostics, memory, recipe, schedule, and worktree panels.
-- Add browser-level smoke tests for critical flows.
-- Keep Rust backend as source of truth.
+## Database changes
 
-A full TypeScript/Electron rewrite is explicitly out of scope per the migration plan.
+- None.
 
-## Implementation phases
+## Skills used
 
-1. Audit and compatibility mapping.
-2. UI foundation: tokens, layout, shared components.
-3. Backend integration hardening.
-4. Complete chat workflow.
-5. Remaining screens.
-6. Stabilization and tests.
+- ponytail, architecture, gaggle-architecture, rust-engineering, ui-ux, database-sqlite, gaggle-db-schema, agent-runtime, security, testing-qa, observability-reliability, product-manager, research-thinking, skills-and-extensions, provider-integrations, documentation-open-source, performance-cross-platform, git-workflows.
 
-## Risk mitigation
+## Verification
 
-- Preserve backend security boundaries.
-- Keep changes small and verifiable.
-- Run fmt/clippy/tests in CI.
-- Do not remove working functionality.
+- `npm run build` in `ui/`: success (tsc + vite).
+- Server smoke: `gaggle serve` serves new index; project/chat/message flow returns completed outcome and persisted messages.
+- `cargo fmt --all -- --check`: pass.
 
-## Testing strategy
+## Incomplete features / blockers
 
-- Rust unit/integration tests.
-- Embedded JS syntax check.
-- Browser smoke tests for critical flows.
-- Manual verification of chat, approvals, settings, and persistence.
+- Token-level streaming: backend runs synchronously in submit handler; SSE events are recorded but client receives final outcome only. True incremental streaming would require an async run-start endpoint (backend change).
+- Run resumption after approval: backend has no resume endpoint; approvals can be decided but run does not auto-continue.
+- Scheduler create/edit not implemented in UI (read-only list).
+- Provider model refresh/create-model not wired beyond provider creation.
+- No frontend test harness configured.

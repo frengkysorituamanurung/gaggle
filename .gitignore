@@ -1,5 +1,8 @@
 target/
 dist/
+ui/node_modules/
+ui/tsconfig.tsbuildinfo
+ui/dist/
 *.db
 *.db-shm
 *.db-wal
