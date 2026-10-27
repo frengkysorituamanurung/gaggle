@@ -1,20 +1,37 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useApp } from "../lib/store";
 import { api } from "../lib/api";
+import { subscribeToRunEvents } from "../lib/runEvents";
 import type * as T from "../types";
 import Markdown from "../components/Markdown";
 import { Button } from "../components/ui/Button";
-import { AutoTextarea } from "../components/ui/AutoTextarea";
+import { ChatInput } from "../components/ChatInput";
 import { ToolCallCard } from "../components/ToolCallCard";
+import { ToolApprovalCard } from "../components/ToolApprovalCard";
 import { ThinkingBlock } from "../components/ThinkingBlock";
 import { defineMessages, useIntl } from "../i18n";
 
+const messages = defineMessages({
+  title: { id: "chat.title", defaultMessage: "Chat" },
+});
+
+type ToolEventState = {
+  tool_call_id: string;
+  tool_name?: string;
+  label?: string;
+  status?: string;
+  duration_ms?: number;
+  error?: string;
+  result_bytes?: number;
+};
+
 export default function ChatScreen() {
+  const intl = useIntl();
   const { projectId, setProjectId, chatId, setChatId } = useApp();
   const [projects, setProjects] = useState<T.ProjectStatus[]>([]);
   const [chats, setChats] = useState<T.Chat[]>([]);
   const [chat, setChat] = useState<T.Chat | null>(null);
-  const [messages, setMessages] = useState<T.Message[]>([]);
+  const [messagesList, setMessagesList] = useState<T.Message[]>([]);
   const [parts, setParts] = useState<T.MessagePart[]>([]);
   const [models, setModels] = useState<T.Model[]>([]);
   const [modelKey, setModelKey] = useState<string>("local-mock");
@@ -23,8 +40,14 @@ export default function ChatScreen() {
   const [streamingText, setStreamingText] = useState("");
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toolEvents, setToolEvents] = useState<Record<string, ToolEventState>>({});
+  const [pendingApproval, setPendingApproval] = useState<T.Approval | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectPath, setNewProjectPath] = useState("");
+
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const refreshProjects = async () => {
     const ps = await api.projects.list();
@@ -54,18 +77,26 @@ export default function ChatScreen() {
     })();
   }, [projectId]);
 
+  const loadChat = async (id: string) => {
+    try {
+      const c = await api.chats.get(id);
+      setChat(c);
+      const r = await api.chats.messages(id);
+      setMessagesList(r.messages);
+      setParts(r.message_parts);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   useEffect(() => {
     if (!chatId) {
       setChat(null);
-      setMessages([]);
+      setMessagesList([]);
       setParts([]);
       return;
     }
-    api.chats.get(chatId).then(setChat).catch(() => {});
-    api.chats.messages(chatId).then((r) => {
-      setMessages(r.messages);
-      setParts(r.message_parts);
-    }).catch(() => {});
+    loadChat(chatId).catch(() => {});
   }, [chatId]);
 
   const createProject = async () => {
@@ -97,6 +128,15 @@ export default function ChatScreen() {
     }
   };
 
+  const finalizeRun = async () => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+    setSending(false);
+    setCurrentRunId(null);
+    setRunStatus(null);
+    if (chatId) await loadChat(chatId);
+  };
+
   const send = async () => {
     if (!chatId || !draft.trim() || sending) return;
     const prompt = draft;
@@ -104,203 +144,278 @@ export default function ChatScreen() {
     setSending(true);
     setError(null);
     setStreamingText("");
+    setToolEvents({});
+    setPendingApproval(null);
+    setRunStatus("running");
     try {
       const { run_id } = await api.chats.startRun(chatId, prompt, modelKey);
       setCurrentRunId(run_id);
-      await new Promise<void>((resolve) => {
-        const es = new EventSource(api.runs.eventsUrl(run_id));
-        let acc = "";
-        es.addEventListener("message.delta", (ev) => {
-          try {
-            const d = JSON.parse((ev as MessageEvent).data);
-            acc += d.text || "";
-            setStreamingText(acc);
-          } catch { /* ignore */ }
-        });
-        const finish = () => { es.close(); setCurrentRunId(null); resolve(); };
-        es.addEventListener("run.completed", () => finish());
-        es.addEventListener("run.cancelled", () => finish());
-        es.addEventListener("run.failed", (ev) => {
-          try { setError(JSON.parse((ev as MessageEvent).data)?.error || "Run failed"); } catch { setError("Run failed"); }
-          finish();
-        });
-        es.onerror = () => { /* keep open until terminal */ };
+      unsubscribeRef.current = subscribeToRunEvents(run_id, {
+        "message.delta": (ev) => {
+          const text = (ev.payload.text as string) || "";
+          setStreamingText((prev) => prev + text);
+        },
+        "tool.started": (ev) => {
+          const id = (ev.payload.tool_call_id as string) || String(Date.now());
+          setToolEvents((prev) => ({
+            ...prev,
+            [id]: {
+              tool_call_id: id,
+              tool_name: ev.payload.tool_name as string,
+              label: (ev.payload.label as string) || (ev.payload.tool_name as string),
+              status: "running",
+            },
+          }));
+        },
+        "tool.completed": (ev) => {
+          const id = (ev.payload.tool_call_id as string) || "";
+          setToolEvents((prev) => ({
+            ...prev,
+            [id]: {
+              ...prev[id],
+              tool_call_id: id,
+              tool_name: prev[id]?.tool_name || (ev.payload.tool_name as string),
+              label: prev[id]?.label || (ev.payload.label as string) || (ev.payload.tool_name as string),
+              status: "completed",
+              duration_ms: ev.payload.duration_ms as number,
+            },
+          }));
+        },
+        "tool.failed": (ev) => {
+          const id = (ev.payload.tool_call_id as string) || "";
+          setToolEvents((prev) => ({
+            ...prev,
+            [id]: {
+              ...prev[id],
+              tool_call_id: id,
+              tool_name: prev[id]?.tool_name || (ev.payload.tool_name as string),
+              label: prev[id]?.label || (ev.payload.tool_name as string),
+              status: "failed",
+              error: ev.payload.error as string,
+            },
+          }));
+        },
+        "approval.requested": (ev) => {
+          setPendingApproval({
+            id: (ev.payload.approval_id as string) || "",
+            tool_call_id: (ev.payload.tool_call_id as string) || "",
+            kind: "tool",
+            summary: (ev.payload.summary as string) || "",
+            command: (ev.payload.command as string) || null,
+            cwd: (ev.payload.cwd as string) || null,
+            status: "pending",
+            decided_by_device: null,
+            remember_rule_id: null,
+            decided_at: null,
+            created_at: Date.now(),
+          });
+          setRunStatus("waiting_approval");
+        },
+        "run.completed": async () => {
+          setRunStatus("completed");
+          await finalizeRun();
+        },
+        "run.failed": async (ev) => {
+          setError((ev.payload.error as string) || "Run failed");
+          setRunStatus("failed");
+          await finalizeRun();
+        },
+        "run.cancelled": async () => {
+          setRunStatus("cancelled");
+          await finalizeRun();
+        },
       });
-      setStreamingText("");
-      const r = await api.chats.messages(chatId);
-      setMessages(r.messages);
-      setParts(r.message_parts);
-      api.chats.get(chatId).then(setChat).catch(() => {});
     } catch (e) {
       setError(String(e));
-      setDraft(prompt);
-      setStreamingText("");
-    } finally {
       setSending(false);
+      setRunStatus(null);
     }
   };
 
-  const partsFor = (msgId: string) => parts.filter((p) => p.message_id === msgId);
+  const cancel = async () => {
+    if (!currentRunId) return;
+    try {
+      await api.runs.cancel(currentRunId);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
-  if (!projects.length) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
-        <h2 className="text-xl font-semibold text-text-primary">Welcome to Gaggle</h2>
-        <p className="text-text-secondary">Register a project to start chatting.</p>
-        <div className="w-full max-w-md bg-background-secondary border border-border-primary rounded-xl p-4 flex flex-col gap-2">
-          <h3 className="font-medium text-text-primary">New Project</h3>
-          <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-          <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
-          <Button variant="default" onClick={createProject}>Create Project</Button>
-          {error && <div className="text-text-danger text-sm">{error}</div>}
-        </div>
-      </div>
-    );
+  const decideApproval = async (approved: boolean, remember?: { pattern: string; matchKind: string }) => {
+    if (!pendingApproval) return;
+    try {
+      await api.approvals.decide(pendingApproval.id, approved, {
+        project_id: projectId || undefined,
+        remember_pattern: remember?.pattern,
+        remember_match_kind: remember?.matchKind,
+      });
+      setPendingApproval(null);
+      // The backend does not auto-resume the run; reload current state.
+      if (chatId) await loadChat(chatId);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      unsubscribeRef.current?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messagesList, streamingText, toolEvents, pendingApproval]);
+
+  const partsByMessage = new Map<string, T.MessagePart[]>();
+  for (const p of parts) {
+    const list = partsByMessage.get(p.message_id) || [];
+    list.push(p);
+    partsByMessage.set(p.message_id, list);
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border-primary bg-background-primary">
-        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border-primary">
+        <h1 className="text-lg font-semibold text-text-primary">{intl.formatMessage(messages.title)}</h1>
+        <select
+          className="ml-2 px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm"
+          value={projectId || ""}
+          onChange={(e) => setProjectId(e.target.value)}
+        >
           {projects.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={chatId || ""} onChange={(e) => setChatId(e.target.value || null)}>
-          <option value="">— select chat —</option>
+        <select
+          className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm"
+          value={chatId || ""}
+          onChange={(e) => setChatId(e.target.value)}
+        >
+          <option value="">Select chat</option>
           {chats.map((c) => (
             <option key={c.id} value={c.id}>{c.title}</option>
           ))}
         </select>
-        <Button variant="secondary" size="sm" onClick={createChat}>+ New Chat</Button>
-        {chatId && (
-          <>
-            <Button variant="secondary" size="sm" onClick={async () => {
-              try {
-                const preview = await api.chats.compactPreview(chatId);
-                if (confirm(`Compact chat? Tokens ${preview.tokens_before} -> ${preview.tokens_after}`)) {
-                  await api.chats.compact(chatId);
-                  const r = await api.chats.messages(chatId);
-                  setMessages(r.messages); setParts(r.message_parts);
-                }
-              } catch (e) { setError(String(e)); }
-            }}>Compact</Button>
-            <Button variant="secondary" size="sm" onClick={async () => {
-              try {
-                const bundle = await api.chats.export(chatId);
-                const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url; a.download = `chat-${chatId}.json`; a.click();
-                URL.revokeObjectURL(url);
-              } catch (e) { setError(String(e)); }
-            }}>Export</Button>
-          </>
-        )}
-        <div className="flex-1" />
-        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
-          <option value="local-mock">local-mock</option>
-          {models.map((m) => (
+        <Button size="sm" variant="secondary" onClick={createChat}>New chat</Button>
+        <select
+          className="ml-auto px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm"
+          value={modelKey}
+          onChange={(e) => setModelKey(e.target.value)}
+        >
+          {models.length === 0 ? <option value="local-mock">local-mock</option> : models.map((m) => (
             <option key={m.id} value={m.model_key}>{m.display_name}</option>
           ))}
         </select>
       </div>
-      <div className="flex-1 overflow-y-auto p-6">
-        {!chatId && <div className="text-center text-text-secondary py-12">Select or create a chat to begin.</div>}
-        {chatId && messages.length === 0 && (
-          <div className="text-center text-text-secondary py-12">
-            <h2 className="text-lg font-semibold text-text-primary">{chat?.title || "New Chat"}</h2>
-            <p>Send a message to start the conversation.</p>
-          </div>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className="relative mt-4 animate-in fade-in duration-150">
-            <div className="text-xs uppercase tracking-wide text-text-tertiary mb-1">{m.role}</div>
-            {m.role === "user" ? (
-              <div className="message flex justify-end w-full">
-                <div className="flex-col max-w-[85%] w-fit">
-                  <div className="user-message-bubble flex bg-text-primary text-background-primary rounded-xl py-2.5 px-4">
-                    {partsFor(m.id).map((p) => {
-                      if (p.kind === "text") return <div key={p.id}>{p.content}</div>;
-                      return null;
-                    })}
-                  </div>
-                </div>
+
+      {projects.length === 0 && (
+        <div className="px-4 py-3 border-b border-border-primary flex gap-2 items-center">
+          <input
+            className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm"
+            placeholder="Project name"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+          />
+          <input
+            className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm"
+            placeholder="Project root path"
+            value={newProjectPath}
+            onChange={(e) => setNewProjectPath(e.target.value)}
+          />
+          <Button size="sm" onClick={createProject}>Create project</Button>
+        </div>
+      )}
+
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+        {messagesList.map((m) => {
+          const messageParts = (partsByMessage.get(m.id) || []).sort((a, b) => a.idx - b.idx);
+          return (
+            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] rounded-lg px-3 py-2 ${m.role === "user" ? "bg-background-tertiary text-text-primary" : "bg-background-secondary text-text-primary"}`}>
+                {messageParts.map((p) => {
+                  if (p.kind === "text") {
+                    return <Markdown key={p.id} text={p.content || ""} />;
+                  }
+                  if (p.kind === "reasoning") {
+                    return <ThinkingBlock key={p.id} content={p.content} />;
+                  }
+                  if (p.kind === "tool_call") {
+                    let label = "Tool call";
+                    try {
+                      const parsed = JSON.parse(p.content || "{}");
+                      label = parsed.tool_name || parsed.name || label;
+                    } catch {
+                      /* ignore */
+                    }
+                    return <ToolCallCard key={p.id} label={label} content={p.content} />;
+                  }
+                  if (p.kind === "tool_result") {
+                    return <ToolCallCard key={p.id} label="Tool result" content={p.content} />;
+                  }
+                  if (p.kind === "attachment") {
+                    return <div key={p.id} className="text-xs text-text-secondary">Attachment: {p.content}</div>;
+                  }
+                  return null;
+                })}
+                {messageParts.length === 0 && m.role === "assistant" && (
+                  <span className="text-text-secondary text-sm">(empty)</span>
+                )}
               </div>
-            ) : (
-              <div className="goose-message flex w-[90%] justify-start min-w-0">
-                <div className="flex flex-col w-full min-w-0">
-                  <div className="agent-message-bubble w-full">
-                    {partsFor(m.id).map((p) => {
-                      if (p.kind === "text") return <Markdown key={p.id} text={p.content || ""} />;
-                      if (p.kind === "tool_call") {
-                        return <ToolCallCard key={p.id} kind="tool_call" content={p.content} />;
-                      }
-                      if (p.kind === "tool_result") {
-                        return <ToolCallCard key={p.id} kind="tool_result" content={p.content} />;
-                      }
-                      if (p.kind === "reasoning") {
-                        return <ThinkingBlock key={p.id} content={p.content} />;
-                      }
-                      return null;
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
+
         {streamingText && (
-          <div className="relative mt-4 animate-in fade-in duration-150">
-            <div className="text-xs uppercase tracking-wide text-text-tertiary mb-1">assistant</div>
-            <div className="goose-message flex w-[90%] justify-start min-w-0">
-              <div className="flex flex-col w-full min-w-0">
-                <div className="agent-message-bubble w-full">
-                  <Markdown text={streamingText} />
-                </div>
-              </div>
+          <div className="flex justify-start">
+            <div className="max-w-[85%] rounded-lg px-3 py-2 bg-background-secondary text-text-primary">
+              <Markdown text={streamingText} />
             </div>
           </div>
         )}
-        {sending && !streamingText && <div className="text-text-secondary text-sm">Generating response…</div>}
-        {error && <div className="text-text-danger text-sm mt-2">{error}</div>}
+
+        {Object.values(toolEvents).length > 0 && (
+          <div className="space-y-2">
+            {Object.values(toolEvents).map((te) => (
+              <ToolCallCard
+                key={te.tool_call_id}
+                label={te.label || te.tool_name || "Tool"}
+                status={te.status}
+                durationMs={te.duration_ms}
+                content={te.error ? JSON.stringify({ error: te.error }) : undefined}
+              />
+            ))}
+          </div>
+        )}
+
+        {pendingApproval && (
+          <ToolApprovalCard
+            approvalId={pendingApproval.id}
+            toolName={undefined}
+            summary={pendingApproval.summary}
+            command={pendingApproval.command}
+            cwd={pendingApproval.cwd}
+            onDecide={decideApproval}
+          />
+        )}
+
+        {error && <div className="text-text-danger text-sm">{error}</div>}
+        {runStatus && runStatus !== "running" && (
+          <div className="text-xs text-text-tertiary">Status: {runStatus}</div>
+        )}
       </div>
-      {chatId && (
-        <div className="border-t border-border-primary bg-background-primary">
-          <div className="px-3 pt-3">
-            <AutoTextarea
-              className="flex-1"
-              minRows={1}
-              maxRows={10}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Message Gaggle… (Enter to send, Shift+Enter for newline)"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              disabled={sending}
-            />
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-xs" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
-              <option value="local-mock">local-mock</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.model_key}>{m.display_name}</option>
-              ))}
-            </select>
-            <div className="flex-1" />
-            {currentRunId && (
-              <Button variant="destructive" size="sm" onClick={async () => { try { await api.runs.cancel(currentRunId); } catch { /* ignore */ } }}>Cancel</Button>
-            )}
-            <Button variant="default" size="sm" onClick={send} disabled={sending || !draft.trim()}>
-              Send
-            </Button>
-          </div>
-        </div>
-      )}
+
+      <div className="border-t border-border-primary px-4 py-3">
+        <ChatInput
+          value={draft}
+          onChange={setDraft}
+          onSend={send}
+          onStop={cancel}
+          disabled={!chatId || sending}
+          sending={sending}
+          canStop={sending && !!currentRunId}
+        />
+      </div>
     </div>
   );
 }
