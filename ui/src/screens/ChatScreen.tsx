@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import type * as T from "../types";
 import Markdown from "../components/Markdown";
 import { Button } from "../components/ui/Button";
-import { Textarea } from "../components/ui/Input";
+import { AutoTextarea } from "../components/ui/AutoTextarea";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -224,8 +224,10 @@ export default function ChatScreen() {
       {chatId && (
         <div className="border-t border-border-primary p-3 bg-background-primary">
           <div className="flex gap-2 items-end">
-            <Textarea
-              className="flex-1 rounded-xl min-h-[60px]"
+            <AutoTextarea
+              className="flex-1"
+              minRows={1}
+              maxRows={10}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Message Gaggle… (Enter to send, Shift+Enter for newline)"
