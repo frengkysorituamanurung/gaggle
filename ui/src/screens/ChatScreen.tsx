@@ -169,7 +169,7 @@ export default function ChatScreen() {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className="relative mt-4">
+          <div key={m.id} className="relative mt-4 animate-in fade-in duration-150">
             <div className="text-xs uppercase tracking-wide text-text-tertiary mb-1">{m.role}</div>
             {m.role === "user" ? (
               <div className="message flex justify-end w-full">
