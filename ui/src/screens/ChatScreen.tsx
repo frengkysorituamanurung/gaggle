@@ -5,6 +5,7 @@ import type * as T from "../types";
 import Markdown from "../components/Markdown";
 import { Button } from "../components/ui/Button";
 import { AutoTextarea } from "../components/ui/AutoTextarea";
+import { ToolCallCard } from "../components/ToolCallCard";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -187,20 +188,10 @@ export default function ChatScreen() {
                     {partsFor(m.id).map((p) => {
                       if (p.kind === "text") return <Markdown key={p.id} text={p.content || ""} />;
                       if (p.kind === "tool_call") {
-                        return (
-                          <div key={p.id} className="mt-2 p-2 rounded-md bg-background-tertiary border border-border-primary text-sm">
-                            <strong>Tool call</strong>
-                            <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
-                          </div>
-                        );
+                        return <ToolCallCard key={p.id} kind="tool_call" content={p.content} />;
                       }
                       if (p.kind === "tool_result") {
-                        return (
-                          <div key={p.id} className="mt-2 p-2 rounded-md bg-background-tertiary border border-border-primary text-sm">
-                            <strong>Tool result</strong>
-                            <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
-                          </div>
-                        );
+                        return <ToolCallCard key={p.id} kind="tool_result" content={p.content} />;
                       }
                       if (p.kind === "reasoning") {
                         return (
