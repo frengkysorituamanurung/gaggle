@@ -115,6 +115,19 @@ export const api = {
         body: JSON.stringify({ prompt, model_key }),
       }),
   },
+  terminal: {
+    list: () => apiFetch<any[]>("/api/terminal-sessions"),
+    create: (req: Record<string, unknown> = {}) =>
+      apiFetch<any>("/api/terminal-sessions", { method: "POST", body: JSON.stringify(req) }),
+    get: (id: string) => apiFetch<any>(`/api/terminal-sessions/${id}`),
+    close: (id: string) => apiFetch<void>(`/api/terminal-sessions/${id}`, { method: "DELETE" }),
+    input: (id: string, input: string) =>
+      apiFetch<void>(`/api/terminal-sessions/${id}/input`, { method: "POST", body: JSON.stringify({ input }) }),
+    resize: (id: string, cols: number, rows: number) =>
+      apiFetch<void>(`/api/terminal-sessions/${id}/resize`, { method: "POST", body: JSON.stringify({ cols, rows }) }),
+    scrollback: (id: string) => apiFetch<string>(`/api/terminal-sessions/${id}/scrollback`),
+    streamUrl: (id: string) => `/api/terminal-sessions/${id}/stream`,
+  },
   worktrees: {
     gitStatus: (id: string) => apiFetch<T.GitWorkspaceStatus>(`/api/worktrees/${id}/git-status`),
     diff: (id: string) => apiFetch<T.GitDiffOutput>(`/api/worktrees/${id}/diff`),
