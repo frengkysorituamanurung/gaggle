@@ -2873,19 +2873,6 @@ async fn start_chat_run(
     Path(chat_id): Path<String>,
     Json(req): Json<SubmitChatMessageRequest>,
 ) -> Result<Json<StartRunResponse>, (StatusCode, String)> {
-    let runtime = AgentRuntime::new_with_active_runs(
-        state.pool.clone(),
-        DEFAULT_MAX_AGENT_STEPS,
-        state.active_runs.clone(),
-    );
-    let builtin_executor: Arc<dyn ToolExecutor> =
-        Arc::new(BuiltinToolExecutor::new(state.pool.clone()));
-    let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(
-        state.pool.clone(),
-        state.mcp_connections.clone(),
-    ));
-    let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
-
     let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
     let requested_model_key = if requested_model_key.is_empty() {
         "local-mock"
