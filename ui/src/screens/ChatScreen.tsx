@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import type * as T from "../types";
 import Markdown from "../components/Markdown";
 import { Button } from "../components/ui/Button";
-import { Input, Textarea } from "../components/ui/Input";
+import { Textarea } from "../components/ui/Input";
 
 export default function ChatScreen() {
   const { projectId, setProjectId, chatId, setChatId } = useApp();
@@ -122,14 +122,14 @@ export default function ChatScreen() {
   if (!projects.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
-        <h2 className="text-xl font-semibold text-text">Welcome to Gaggle</h2>
+        <h2 className="text-xl font-semibold text-text-primary">Welcome to Gaggle</h2>
         <p className="text-text-secondary">Register a project to start chatting.</p>
-        <div className="w-full max-w-md bg-surface border border-border rounded-xl p-4 flex flex-col gap-2">
-          <h3 className="font-medium text-text">New Project</h3>
-          <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-          <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-text" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
+        <div className="w-full max-w-md bg-background-secondary border border-border-primary rounded-xl p-4 flex flex-col gap-2">
+          <h3 className="font-medium text-text-primary">New Project</h3>
+          <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Project name" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+          <input className="w-full px-3 py-2 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" placeholder="Root path (absolute)" value={newProjectPath} onChange={(e) => setNewProjectPath(e.target.value)} />
           <Button variant="primary" onClick={createProject}>Create Project</Button>
-          {error && <div className="text-danger text-sm">{error}</div>}
+          {error && <div className="text-text-danger text-sm">{error}</div>}
         </div>
       </div>
     );
@@ -137,13 +137,13 @@ export default function ChatScreen() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-background">
-        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border-primary bg-background-primary">
+        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={projectId || ""} onChange={(e) => setProjectId(e.target.value)}>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
-        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={chatId || ""} onChange={(e) => setChatId(e.target.value || null)}>
+        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={chatId || ""} onChange={(e) => setChatId(e.target.value || null)}>
           <option value="">— select chat —</option>
           {chats.map((c) => (
             <option key={c.id} value={c.id}>{c.title}</option>
@@ -151,7 +151,7 @@ export default function ChatScreen() {
         </select>
         <Button variant="secondary" size="sm" onClick={createChat}>+ New Chat</Button>
         <div className="flex-1" />
-        <select className="px-2 py-1 rounded-md border border-border bg-background text-text text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
+        <select className="px-2 py-1 rounded-md border border-border-primary bg-background-primary text-text-primary text-sm" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
           <option value="local-mock">local-mock</option>
           {models.map((m) => (
             <option key={m.id} value={m.model_key}>{m.display_name}</option>
@@ -162,56 +162,67 @@ export default function ChatScreen() {
         {!chatId && <div className="text-center text-text-secondary py-12">Select or create a chat to begin.</div>}
         {chatId && messages.length === 0 && (
           <div className="text-center text-text-secondary py-12">
-            <h2 className="text-lg font-semibold text-text">{chat?.title || "New Chat"}</h2>
+            <h2 className="text-lg font-semibold text-text-primary">{chat?.title || "New Chat"}</h2>
             <p>Send a message to start the conversation.</p>
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`mb-4 ${m.role === "user" ? "flex justify-end" : ""}`}>
-            <div className="text-xs uppercase tracking-wide text-text-muted mb-1">{m.role}</div>
-            <div className={m.role === "user" ? "bg-surface px-3 py-2 rounded-xl max-w-[80%] inline-block" : ""}>
-              {partsFor(m.id).map((p) => {
-                if (p.kind === "text") {
-                  return m.role === "assistant" ? (
-                    <Markdown key={p.id} text={p.content || ""} />
-                  ) : (
-                    <div key={p.id}>{p.content}</div>
-                  );
-                }
-                if (p.kind === "tool_call") {
-                  return (
-                    <div key={p.id} className="mt-2 p-2 rounded-md bg-surface-2 border border-border text-sm">
-                      <strong>Tool call</strong>
-                      <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
-                    </div>
-                  );
-                }
-                if (p.kind === "tool_result") {
-                  return (
-                    <div key={p.id} className="mt-2 p-2 rounded-md bg-surface-2 border border-border text-sm">
-                      <strong>Tool result</strong>
-                      <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
-                    </div>
-                  );
-                }
-                if (p.kind === "reasoning") {
-                  return (
-                    <details key={p.id} className="mt-2 text-sm text-text-secondary">
-                      <summary>Reasoning</summary>
-                      <pre className="text-xs overflow-x-auto">{p.content}</pre>
-                    </details>
-                  );
-                }
-                return null;
-              })}
-            </div>
+          <div key={m.id} className="relative mt-4">
+            <div className="text-xs uppercase tracking-wide text-text-tertiary mb-1">{m.role}</div>
+            {m.role === "user" ? (
+              <div className="message flex justify-end w-full">
+                <div className="flex-col max-w-[85%] w-fit">
+                  <div className="user-message-bubble flex bg-text-primary text-background-primary rounded-xl py-2.5 px-4">
+                    {partsFor(m.id).map((p) => {
+                      if (p.kind === "text") return <div key={p.id}>{p.content}</div>;
+                      return null;
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="goose-message flex w-[90%] justify-start min-w-0">
+                <div className="flex flex-col w-full min-w-0">
+                  <div className="agent-message-bubble w-full">
+                    {partsFor(m.id).map((p) => {
+                      if (p.kind === "text") return <Markdown key={p.id} text={p.content || ""} />;
+                      if (p.kind === "tool_call") {
+                        return (
+                          <div key={p.id} className="mt-2 p-2 rounded-md bg-background-tertiary border border-border-primary text-sm">
+                            <strong>Tool call</strong>
+                            <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
+                          </div>
+                        );
+                      }
+                      if (p.kind === "tool_result") {
+                        return (
+                          <div key={p.id} className="mt-2 p-2 rounded-md bg-background-tertiary border border-border-primary text-sm">
+                            <strong>Tool result</strong>
+                            <pre className="mt-1 text-xs overflow-x-auto">{p.content}</pre>
+                          </div>
+                        );
+                      }
+                      if (p.kind === "reasoning") {
+                        return (
+                          <details key={p.id} className="mt-2 text-sm text-text-secondary">
+                            <summary>Reasoning</summary>
+                            <pre className="text-xs overflow-x-auto">{p.content}</pre>
+                          </details>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ))}
         {sending && <div className="text-text-secondary text-sm">Generating response…</div>}
-        {error && <div className="text-danger text-sm mt-2">{error}</div>}
+        {error && <div className="text-text-danger text-sm mt-2">{error}</div>}
       </div>
       {chatId && (
-        <div className="border-t border-border p-3 bg-background">
+        <div className="border-t border-border-primary p-3 bg-background-primary">
           <div className="flex gap-2 items-end">
             <Textarea
               className="flex-1 rounded-xl min-h-[60px]"
