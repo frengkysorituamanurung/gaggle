@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useApp } from "../lib/store";
 
 const NAV: { id: any; label: string; icon: string }[] = [
@@ -12,10 +13,14 @@ const NAV: { id: any; label: string; icon: string }[] = [
 
 export default function Sidebar() {
   const { screen, setScreen, theme, setTheme } = useApp();
+  const [collapsed, setCollapsed] = useState(false);
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-header">
-        <span>Gaggle</span>
+        {!collapsed && <span>Gaggle</span>}
+        <button className="btn" style={{ padding: "2px 6px" }} onClick={() => setCollapsed((v) => !v)} title="Toggle sidebar">
+          {collapsed ? "»" : "«"}
+        </button>
       </div>
       <nav className="nav-list">
         {NAV.map((n) => (
@@ -26,18 +31,20 @@ export default function Sidebar() {
             title={n.label}
           >
             <span className="icon">{n.icon}</span>
-            <span className="label">{n.label}</span>
+            {!collapsed && <span className="label">{n.label}</span>}
           </button>
         ))}
       </nav>
       <div className="sidebar-footer">
-        <button
-          className="btn"
-          style={{ width: "100%" }}
-          onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-        >
-          {theme === "light" ? "🌙 Dark" : "☀️ Light"}
-        </button>
+        {!collapsed && (
+          <button
+            className="btn"
+            style={{ width: "100%" }}
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          >
+            {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+          </button>
+        )}
       </div>
     </aside>
   );
