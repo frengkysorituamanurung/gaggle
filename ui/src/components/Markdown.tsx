@@ -111,5 +111,5 @@ export default function Markdown({ text }: { text: string }) {
   }
   flushCode();
   flushPara();
-  return <div className="message-body">{blocks}</div>;
+  return <div className="message-body prose prose-sm max-w-none dark:prose-invert">{blocks}</div>;
 }
