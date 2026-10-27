@@ -129,6 +129,21 @@ export const api = {
         body: JSON.stringify(req),
       }),
     models: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models`),
+    refreshModels: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models/refresh`, { method: "POST" }),
+    createModel: (id: string, req: {
+      model_key: string;
+      display_name: string;
+      context_window: number;
+      supports_tools?: boolean;
+      supports_vision?: boolean;
+      supports_reasoning?: boolean;
+      price_in_per_mtok?: number | null;
+      price_out_per_mtok?: number | null;
+    }) =>
+      apiFetch<T.Model>(`/api/providers/${id}/models`, {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
   },
   skills: () => apiFetch<T.SkillSummary[]>("/api/skills"),
   extensions: {
