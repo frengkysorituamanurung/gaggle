@@ -295,3 +295,35 @@ export type ToolPermissionStatus = {
 };
 
 export type Health = { status: string; service: string };
+export type RunEventKind =
+  | "run.started"
+  | "run.completed"
+  | "run.cancelled"
+  | "run.failed"
+  | "run.persist"
+  | "message.id"
+  | "message.role"
+  | "message.delta"
+  | "tool.started"
+  | "tool.completed"
+  | "tool.failed"
+  | "tool.denied"
+  | "approval.requested"
+  | "approval.approved";
+
+export type RunEventPayload = Record<string, unknown>;
+
+export type TypedRunEvent = {
+  seq: number;
+  id?: string;
+  kind: RunEventKind | string;
+  payload: RunEventPayload;
+  raw: string;
+};
+
+export type DiagnosticsReport = Record<string, unknown>;
+
+export type HealthStatus = {
+  status: string;
+  version?: string;
+};

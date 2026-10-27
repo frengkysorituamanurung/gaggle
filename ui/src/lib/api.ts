@@ -100,10 +100,19 @@ export const api = {
   },
   approvals: {
     pending: () => apiFetch<T.Approval[]>("/api/approvals/pending"),
-    decide: (id: string, approved: boolean) =>
+    decide: (
+      id: string,
+      approved: boolean,
+      options?: {
+        decided_by_device?: string;
+        project_id?: string;
+        remember_pattern?: string;
+        remember_match_kind?: string;
+      },
+    ) =>
       apiFetch<T.Approval>(`/api/approvals/${id}/decide`, {
         method: "POST",
-        body: JSON.stringify({ approved }),
+        body: JSON.stringify({ approved, ...(options || {}) }),
       }),
   },
   providers: {

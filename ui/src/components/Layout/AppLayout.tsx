@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { PanelLeft } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -9,9 +9,10 @@ import { cn } from "../../lib/utils";
 
 interface AppLayoutProps {
   sidebar: React.ReactNode;
+  children?: React.ReactNode;
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ sidebar }) => {
+export const AppLayout: React.FC<AppLayoutProps> = ({ sidebar, children }) => {
   const location = useLocation();
   const isOnSettingsRoute = location.pathname === "/settings";
 
@@ -54,7 +55,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ sidebar }) => {
   if (isOnSettingsRoute) {
     return (
       <div className="relative flex h-full w-full flex-1 bg-background-secondary">
-        <Outlet />
+        {children}
       </div>
     );
   }
@@ -96,7 +97,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ sidebar }) => {
         </motion.div>
 
         <div className="flex-1 overflow-hidden min-h-0">
-          <Outlet />
+          {children}
         </div>
       </div>
     </div>
