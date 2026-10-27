@@ -2887,7 +2887,11 @@ async fn start_chat_run(
     let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
 
     let requested_model_key = req.model_key.as_deref().unwrap_or("local-mock").trim();
-    let requested_model_key = if requested_model_key.is_empty() { "local-mock" } else { requested_model_key };
+    let requested_model_key = if requested_model_key.is_empty() {
+        "local-mock"
+    } else {
+        requested_model_key
+    };
 
     let chat_repo = ChatRepository::new(state.pool.clone());
     let chat = chat_repo
@@ -2896,9 +2900,10 @@ async fn start_chat_run(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
 
-    let (provider, model_key) = resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt)
-        .await
-        .map_err(|(status, message)| (status, message))?;
+    let (provider, model_key) =
+        resolve_chat_provider(&state, &chat, requested_model_key, &req.prompt)
+            .await
+            .map_err(|(status, message)| (status, message))?;
 
     // Persist user message + create run up front so we can return run_id and stream.
     let user_msg = chat_repo
@@ -2921,10 +2926,17 @@ async fn start_chat_run(
     let user_msg_id = user_msg.id.clone();
     let run_id_clone = run_id.clone();
     tokio::spawn(async move {
-        let runtime = AgentRuntime::new_with_active_runs(pool.clone(), DEFAULT_MAX_AGENT_STEPS, active_runs.clone());
+        let runtime = AgentRuntime::new_with_active_runs(
+            pool.clone(),
+            DEFAULT_MAX_AGENT_STEPS,
+            active_runs.clone(),
+        );
         let cancel_token = gaggle_core::CancellationToken::new();
-        let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor::new(pool.clone()));
-        let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(McpToolExecutor::with_connection_manager(pool.clone(), mcp_connections.clone()));
+        let builtin_executor: Arc<dyn ToolExecutor> =
+            Arc::new(BuiltinToolExecutor::new(pool.clone()));
+        let mcp_executor: Arc<dyn ToolExecutor> = Arc::new(
+            McpToolExecutor::with_connection_manager(pool.clone(), mcp_connections.clone()),
+        );
         let executor = CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
         let provider = provider;
         let _ = runtime

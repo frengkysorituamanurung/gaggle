@@ -274,7 +274,17 @@ impl AgentRuntime {
         tool_executor: &dyn ToolExecutor,
         cancel_token: &CancellationToken,
     ) -> Result<AgentLoopOutcome> {
-        self.run_turn_with_precreated(chat_id, user_prompt, model_key, provider, tool_executor, cancel_token, None, None).await
+        self.run_turn_with_precreated(
+            chat_id,
+            user_prompt,
+            model_key,
+            provider,
+            tool_executor,
+            cancel_token,
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn run_turn_with_precreated(
