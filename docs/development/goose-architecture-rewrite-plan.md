@@ -101,8 +101,12 @@ cancellation, audit-event, and adversarial-input tests.
 - **Phase 2 complete:** session/prompt delegates to Gaggle's agent loop.
   Creates project and chat for ACP session, resolves provider (local-mock
   default), runs agent loop, returns stop reason.
-- **Phase 3 (next):** Stream responses via WebSocket notifications
+- **Phase 3 complete:** Config option bridging (session/setConfigOption)
+  acknowledges provider/model/mode changes. Full persistence requires
+  adding update methods to ChatRepository.
+- **Phase 4 (next):** Stream responses via WebSocket notifications
   (session/update with text, tool calls, usage). Permission request bridging.
+  Requires agent loop modifications for intermediate notifications.
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and
