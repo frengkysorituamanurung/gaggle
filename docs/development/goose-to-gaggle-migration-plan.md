@@ -1,4 +1,9 @@
-# Goose → Gaggle Migration Plan
+# Goose → Gaggle Migration Plan (Historical)
+
+> Superseded for new implementation work by
+> [`goose-architecture-rewrite-plan.md`](goose-architecture-rewrite-plan.md)
+> and [ADR 0004](../adr/0004-goose-architecture-alignment.md). Retained as a
+> record of the earlier behavior-port approach.
 
 > Note: The UI section and Phase G are superseded by
 > `docs/development/ui-typescript-rewrite-plan.md`.

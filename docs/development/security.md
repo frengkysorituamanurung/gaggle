@@ -96,8 +96,9 @@ Out of scope:
 
 ## Residual risks
 
-- OS keychain integration is not fully wired; an in-memory credential store is
-  used in some paths.
+- Provider credentials now use the OS credential vault on macOS and Linux through
+  `KeyringCredentialStore`; tests and unsupported platforms still use the
+  in-memory store.
 - Browser requires a local Chromium binary; absence degrades the feature rather
   than faking it.
 - SQLite single-writer contention can surface as `SQLITE_BUSY` under heavy

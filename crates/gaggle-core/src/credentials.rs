@@ -132,3 +132,102 @@ impl CredentialStore for InMemoryCredentialStore {
         Ok(())
     }
 }
+
+/// Stores each secret in the operating-system credential vault under its
+/// `secret_ref`. The secret value is never written to Gaggle's SQLite database.
+#[derive(Clone)]
+pub struct KeyringCredentialStore {
+    service: String,
+}
+
+impl KeyringCredentialStore {
+    pub fn new() -> Self {
+        Self {
+            service: "com.gaggle.credentials".to_string(),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn entry(&self, secret_ref: &str) -> Result<keyring::Entry, CredentialError> {
+        let secret_ref = secret_ref.trim();
+        if secret_ref.is_empty() {
+            return Err(CredentialError::EmptySecretRef);
+        }
+        keyring::Entry::new(&self.service, secret_ref)
+            .map_err(|_| CredentialError::StoreError("Could not access OS credential vault".into()))
+    }
+}
+
+impl Default for KeyringCredentialStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+impl CredentialStore for KeyringCredentialStore {
+    fn set_secret(&self, secret_ref: &str, secret: SecretString) -> Result<(), CredentialError> {
+        self.entry(secret_ref)?
+            .set_password(secret.expose_secret())
+            .map_err(|_| CredentialError::StoreError("OS credential vault write failed".into()))
+    }
+
+    fn get_secret(&self, secret_ref: &str) -> Result<SecretString, CredentialError> {
+        let entry = self.entry(secret_ref)?;
+        match entry.get_password() {
+            Ok(secret) => SecretString::new(secret),
+            Err(error) if error.to_string().contains("No entry") => {
+                Err(CredentialError::NotFound(secret_ref.trim().to_string()))
+            }
+            Err(_) => Err(CredentialError::StoreError(
+                "OS credential vault read failed".into(),
+            )),
+        }
+    }
+
+    fn has_secret(&self, secret_ref: &str) -> bool {
+        self.entry(secret_ref)
+            .and_then(|entry| {
+                entry.get_password().map_err(|_| {
+                    CredentialError::StoreError("OS credential vault read failed".into())
+                })
+            })
+            .is_ok()
+    }
+
+    fn delete_secret(&self, secret_ref: &str) -> Result<(), CredentialError> {
+        let entry = self.entry(secret_ref)?;
+        match entry.delete_password() {
+            Ok(()) => Ok(()),
+            Err(error) if error.to_string().contains("No entry") => Ok(()),
+            Err(_) => Err(CredentialError::StoreError(
+                "OS credential vault delete failed".into(),
+            )),
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+impl CredentialStore for KeyringCredentialStore {
+    fn set_secret(&self, _secret_ref: &str, _secret: SecretString) -> Result<(), CredentialError> {
+        Err(CredentialError::StoreError(
+            "OS credential vault is unsupported on this platform".into(),
+        ))
+    }
+
+    fn get_secret(&self, _secret_ref: &str) -> Result<SecretString, CredentialError> {
+        Err(CredentialError::StoreError(
+            "OS credential vault is unsupported on this platform".into(),
+        ))
+    }
+
+    fn has_secret(&self, _secret_ref: &str) -> bool {
+        false
+    }
+
+    fn delete_secret(&self, _secret_ref: &str) -> Result<(), CredentialError> {
+        Err(CredentialError::StoreError(
+            "OS credential vault is unsupported on this platform".into(),
+        ))
+    }
+}

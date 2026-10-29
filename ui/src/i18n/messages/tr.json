@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Ana Sayfa",
+  "navigation.recipes": "Tarifler",
+  "navigation.skills": "Beceriler",
+  "navigation.extensions": "Uzantılar",
+  "navigation.scheduler": "Zamanlayıcı",
+  "navigation.memories": "Anılar",
+  "navigation.permissions": "İzinler",
+  "navigation.workspace": "Çalışma Alanı",
+  "navigation.terminal": "Terminal",
+  "navigation.sessionHistory": "Oturum Geçmişi",
+  "navigation.chats": "Sohbetler",
+  "navigation.noRecentChats": "Son sohbet yok",
+  "navigation.settings": "Ayarlar",
+  "app.toastNotifications": "Toast bildirimleri",
+  "common.loading": "Yükleniyor...",
+  "common.save": "Kaydet",
+  "common.cancel": "İptal",
+  "common.close": "Kapat"
+}

@@ -81,7 +81,10 @@ pub fn fingerprint_text(input: &str) -> String {
 }
 
 fn normalize_key(key: &str) -> String {
-    key.trim().to_ascii_lowercase().replace(['-', ' '], "_")
+    key.trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_")
 }
 
 fn is_sensitive_key(key: &str) -> bool {

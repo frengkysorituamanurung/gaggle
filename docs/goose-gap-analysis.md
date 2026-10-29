@@ -17,7 +17,7 @@ This document compares **Gaggle** (`frengky/gaggle`) with **Goose** (`aaif-goose
 - CI/CD: quality gates on ubuntu+macos, release pipeline for Mac+Linux, smoke tests.
 
 ## Identified gaps (Goose has, Gaggle lacks or partial)
-1. **Native desktop window (no browser).** Goose ships an Electron desktop app (`ui/desktop`). Gaggle serves the web UI via a local Axum server and opens a browser. Partially mitigated by launching Chromium in `--app` mode (dedicated window) with fallback to the default opener. Full native webview (wry/tauri) or Electron port is a larger follow-up.
+1. **Native desktop window.** Gaggle now has a Tauri shell that embeds the Axum UI on a dynamically allocated loopback port. Goose ships an Electron app with a richer ACP-based desktop workflow; UI and lifecycle parity remain incomplete.
 2. **One-line installer.** Goose provides `download_cli.sh`. Gaggle now ships `scripts/download_cli.sh` (Mac/Linux) for installing from GitHub releases.
 3. **ACP (Agent Client Protocol).** Goose has `goose-acp` / `goose-acp-macros` and an ACP client. Gaggle has no ACP transport yet.
 4. **Local inference.** Goose has `goose-local-inference` (llama.cpp) with optional GPU backends. Gaggle has no in-process local model inference; only Ollama as an external provider.
@@ -32,6 +32,8 @@ This document compares **Gaggle** (`frengky/gaggle`) with **Goose** (`aaif-goose
 - Added `scripts/download_cli.sh` (gap #2).
 - Improved desktop launcher to open a dedicated app window (gap #1, partial).
 - Added graceful shutdown to the server (supports installed-app lifecycle).
+- Added read-only import of one Goose SQLite session into a selected Gaggle project; usage and opaque metadata are preserved in redacted import-artifact tables, while credentials are not copied.
+- Added provider-native model catalog discovery for OpenAI-compatible, Google, Anthropic, and Ollama endpoints.
 - Produced this gap analysis (documentation).
 
 ## Recommended next steps (via CI, no local builds)

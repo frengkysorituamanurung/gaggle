@@ -51,6 +51,9 @@ erDiagram
   runs ||--o{ tool_calls : calls
   runs ||--o{ file_changes : produces
   runs ||--o{ usage_records : costs
+  chats ||--o| imported_session_metadata : imports
+  chats ||--o{ imported_message_metadata : imports
+  chats ||--o{ imported_usage_records : imports
   tool_calls ||--o| approvals : needs
   tool_calls ||--o| code_executions : runs_in
   file_changes ||--o{ review_comments : receives
@@ -99,7 +102,7 @@ erDiagram
   }
   providers {
     text id PK
-    text kind "chatgpt|openrouter|openai|anthropic|deepseek|ollama|openai_compat"
+    text kind "chatgpt|openrouter|openai|anthropic|deepseek|ollama|openai_compat|google|xai|azure|databricks|snowflake|mistral|groq|together|cohere|perplexity|fireworks|cerebras|deepinfra"
     text name
     text base_url
     text auth_kind "oauth|api_key|none"
@@ -339,6 +342,38 @@ erDiagram
     int cached_tokens
     real cost_usd
     int latency_ms
+    int created_at
+  }
+  imported_session_metadata {
+    text chat_id PK, FK
+    text source "goose"
+    text source_session_id
+    text payload "redacted JSON"
+    int imported_at
+  }
+  imported_message_metadata {
+    text id PK
+    text chat_id FK
+    text source "goose"
+    text source_message_id
+    int message_seq
+    text payload "redacted JSON"
+    int imported_at
+  }
+  imported_usage_records {
+    text id PK
+    text chat_id FK
+    text source "goose"
+    text source_record_id
+    text model_key
+    int input_tokens
+    int output_tokens
+    int total_tokens
+    int cache_read_tokens
+    int cache_write_tokens
+    real cost_usd
+    text cost_source "provider_reported|estimated|unknown"
+    int is_compaction
     int created_at
   }
 ```

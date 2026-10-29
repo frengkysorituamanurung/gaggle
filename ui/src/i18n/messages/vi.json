@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Trang chủ",
+  "navigation.recipes": "Công thức",
+  "navigation.skills": "Kỹ năng",
+  "navigation.extensions": "Tiện ích",
+  "navigation.scheduler": "Lịch trình",
+  "navigation.memories": "Bộ nhớ",
+  "navigation.permissions": "Quyền",
+  "navigation.workspace": "Không gian làm việc",
+  "navigation.terminal": "Terminal",
+  "navigation.sessionHistory": "Lịch sử phiên",
+  "navigation.chats": "Trò chuyện",
+  "navigation.noRecentChats": "Chưa có trò chuyện gần đây",
+  "navigation.settings": "Cài đặt",
+  "app.toastNotifications": "Thông báo toast",
+  "common.loading": "Đang tải...",
+  "common.save": "Lưu",
+  "common.cancel": "Hủy",
+  "common.close": "Đóng"
+}

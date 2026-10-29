@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Beranda",
+  "navigation.recipes": "Resep",
+  "navigation.skills": "Keterampilan",
+  "navigation.extensions": "Ekstensi",
+  "navigation.scheduler": "Penjadwal",
+  "navigation.memories": "Memori",
+  "navigation.permissions": "Izin",
+  "navigation.workspace": "Ruang Kerja",
+  "navigation.terminal": "Terminal",
+  "navigation.sessionHistory": "Riwayat Sesi",
+  "navigation.chats": "Obrolan",
+  "navigation.noRecentChats": "Belum ada obrolan terbaru",
+  "navigation.settings": "Pengaturan",
+  "app.toastNotifications": "Notifikasi toast",
+  "common.loading": "Memuat...",
+  "common.save": "Simpan",
+  "common.cancel": "Batal",
+  "common.close": "Tutup"
+}

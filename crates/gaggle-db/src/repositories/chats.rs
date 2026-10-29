@@ -2,9 +2,9 @@ use crate::{
     connection::{new_id, now_ms},
     models::{Chat, ChatSummary, Message, MessagePart},
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{FromRow, SqlitePool};
 use std::collections::{HashMap, HashSet};
 
 /// Hard upper bound for [`ChatRepository::list_messages_with_parts`] to keep context
@@ -20,6 +20,7 @@ pub const CHAT_BUNDLE_VERSION: u32 = 1;
 const MAX_BUNDLE_MESSAGES: usize = 20_000;
 /// Maximum number of message parts accepted from a single imported bundle.
 const MAX_BUNDLE_PARTS: usize = 100_000;
+const MAX_IMPORTED_USAGE_RECORDS: usize = 100_000;
 /// Maximum chat title length, in characters.
 const MAX_TITLE_CHARS: usize = 500;
 /// Maximum length, in characters, of a single message-part body.
@@ -44,6 +45,8 @@ pub struct ChatExportBundle {
     pub chat: Chat,
     pub messages: Vec<Message>,
     pub message_parts: Vec<MessagePart>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_artifacts: Option<ImportedChatArtifacts>,
 }
 
 /// Portable, versioned chat bundle exchanged by `gaggle export chat` and
@@ -64,6 +67,8 @@ pub struct ChatBundle {
     pub messages: Vec<Message>,
     #[serde(default)]
     pub message_parts: Vec<MessagePart>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_artifacts: Option<ImportedChatArtifacts>,
 }
 
 impl ChatBundle {
@@ -76,12 +81,17 @@ impl ChatBundle {
             chat: bundle.chat,
             messages: bundle.messages,
             message_parts: bundle.message_parts,
+            imported_artifacts: bundle.imported_artifacts,
         }
     }
 
     /// Validates structural, referential, and enum constraints before import.
     pub fn validate(&self) -> Result<()> {
-        validate_chat_bundle(self)
+        validate_chat_bundle(self)?;
+        if let Some(artifacts) = &self.imported_artifacts {
+            validate_imported_artifacts(self, artifacts)?;
+        }
+        Ok(())
     }
 }
 
@@ -91,6 +101,53 @@ pub struct ChatImportResult {
     pub chat: Chat,
     pub message_count: usize,
     pub part_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportedChatArtifacts {
+    pub source_session_id: String,
+    pub session_metadata_json: String,
+    pub message_metadata: Vec<ImportedMessageMetadata>,
+    pub usage_records: Vec<ImportedUsageRecord>,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ImportedMessageMetadata {
+    pub source_message_id: String,
+    pub message_seq: i64,
+    pub payload_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportedUsageRecord {
+    pub source_record_id: String,
+    pub model_key: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub cost_usd: Option<f64>,
+    pub cost_source: String,
+    pub is_compaction: bool,
+    pub created_at: i64,
+}
+
+#[derive(FromRow)]
+struct ImportedUsageRow {
+    source_record_id: String,
+    model_key: Option<String>,
+    input_tokens: i64,
+    output_tokens: i64,
+    total_tokens: i64,
+    cache_read_tokens: i64,
+    cache_write_tokens: i64,
+    cost_usd: Option<f64>,
+    cost_source: String,
+    is_compaction: i64,
+    created_at: i64,
 }
 
 fn default_bundle_format() -> String {
@@ -430,10 +487,82 @@ impl ChatRepository {
         .fetch_all(&self.pool)
         .await?;
 
+        let imported_artifacts = self.load_imported_artifacts(chat_id, &chat).await?;
+
         Ok(Some(ChatExportBundle {
             chat,
             messages,
             message_parts,
+            imported_artifacts,
+        }))
+    }
+
+    async fn load_imported_artifacts(
+        &self,
+        chat_id: &str,
+        chat: &Chat,
+    ) -> Result<Option<ImportedChatArtifacts>> {
+        let session = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT source, source_session_id, payload FROM imported_session_metadata WHERE chat_id = ?",
+        )
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some((source, source_session_id, session_metadata_json)) = session else {
+            return Ok(None);
+        };
+        if source != "goose" {
+            return Ok(None);
+        }
+
+        let message_metadata = sqlx::query_as::<_, ImportedMessageMetadata>(
+            r#"
+            SELECT source_message_id, message_seq, payload AS payload_json
+            FROM imported_message_metadata
+            WHERE chat_id = ? AND source = 'goose'
+            ORDER BY message_seq
+            "#,
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let usage_rows = sqlx::query_as::<_, ImportedUsageRow>(
+            r#"
+            SELECT source_record_id, model_key, input_tokens, output_tokens, total_tokens,
+                   cache_read_tokens, cache_write_tokens, cost_usd, cost_source,
+                   is_compaction, created_at
+            FROM imported_usage_records
+            WHERE chat_id = ? AND source = 'goose'
+            ORDER BY created_at, source_record_id
+            "#,
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let usage_records = usage_rows
+            .into_iter()
+            .map(|row| ImportedUsageRecord {
+                source_record_id: row.source_record_id,
+                model_key: row.model_key,
+                input_tokens: row.input_tokens,
+                output_tokens: row.output_tokens,
+                total_tokens: row.total_tokens,
+                cache_read_tokens: row.cache_read_tokens,
+                cache_write_tokens: row.cache_write_tokens,
+                cost_usd: row.cost_usd,
+                cost_source: row.cost_source,
+                is_compaction: row.is_compaction != 0,
+                created_at: row.created_at,
+            })
+            .collect();
+
+        Ok(Some(ImportedChatArtifacts {
+            source_session_id,
+            session_metadata_json,
+            message_metadata,
+            usage_records,
+            total_input_tokens: chat.total_input_tokens,
+            total_output_tokens: chat.total_output_tokens,
         }))
     }
 
@@ -450,7 +579,21 @@ impl ChatRepository {
         project_id: &str,
         bundle: &ChatBundle,
     ) -> Result<ChatImportResult> {
+        self.import_chat_with_artifacts(project_id, bundle, bundle.imported_artifacts.as_ref())
+            .await
+    }
+
+    /// Imports a chat and optional source artifacts in the same transaction.
+    pub async fn import_chat_with_artifacts(
+        &self,
+        project_id: &str,
+        bundle: &ChatBundle,
+        artifacts: Option<&ImportedChatArtifacts>,
+    ) -> Result<ChatImportResult> {
         bundle.validate()?;
+        if let Some(artifacts) = artifacts {
+            validate_imported_artifacts(bundle, artifacts)?;
+        }
 
         let archived_at: Option<Option<i64>> =
             sqlx::query_scalar("SELECT archived_at FROM projects WHERE id = ?")
@@ -581,6 +724,77 @@ impl ChatRepository {
                 .bind(new_message_id)
                 .execute(&mut *tx)
                 .await?;
+        }
+
+        if let Some(artifacts) = artifacts {
+            sqlx::query(
+                r#"
+                INSERT INTO imported_session_metadata (
+                    chat_id, source, source_session_id, payload, imported_at
+                ) VALUES (?, 'goose', ?, ?, ?)
+                "#,
+            )
+            .bind(&new_chat_id)
+            .bind(&artifacts.source_session_id)
+            .bind(&artifacts.session_metadata_json)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+
+            for metadata in &artifacts.message_metadata {
+                sqlx::query(
+                    r#"
+                    INSERT INTO imported_message_metadata (
+                        id, chat_id, source, source_message_id, message_seq, payload, imported_at
+                    ) VALUES (?, ?, 'goose', ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(new_id())
+                .bind(&new_chat_id)
+                .bind(&metadata.source_message_id)
+                .bind(metadata.message_seq)
+                .bind(&metadata.payload_json)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            for usage in &artifacts.usage_records {
+                sqlx::query(
+                    r#"
+                    INSERT INTO imported_usage_records (
+                        id, chat_id, source, source_record_id, model_key,
+                        input_tokens, output_tokens, total_tokens,
+                        cache_read_tokens, cache_write_tokens, cost_usd,
+                        cost_source, is_compaction, created_at
+                    ) VALUES (?, ?, 'goose', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(new_id())
+                .bind(&new_chat_id)
+                .bind(&usage.source_record_id)
+                .bind(&usage.model_key)
+                .bind(usage.input_tokens)
+                .bind(usage.output_tokens)
+                .bind(usage.total_tokens)
+                .bind(usage.cache_read_tokens)
+                .bind(usage.cache_write_tokens)
+                .bind(usage.cost_usd)
+                .bind(&usage.cost_source)
+                .bind(i64::from(usage.is_compaction))
+                .bind(normalize_timestamp(usage.created_at, now))
+                .execute(&mut *tx)
+                .await?;
+            }
+
+            sqlx::query(
+                "UPDATE chats SET total_input_tokens = ?, total_output_tokens = ? WHERE id = ?",
+            )
+            .bind(artifacts.total_input_tokens.max(0))
+            .bind(artifacts.total_output_tokens.max(0))
+            .bind(&new_chat_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
         tx.commit().await?;
@@ -741,6 +955,129 @@ fn validate_chat_bundle(bundle: &ChatBundle) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn validate_imported_artifacts(
+    bundle: &ChatBundle,
+    artifacts: &ImportedChatArtifacts,
+) -> Result<()> {
+    if artifacts.source_session_id.trim().is_empty()
+        || artifacts.source_session_id.chars().count() > 512
+    {
+        bail!("Imported source session id must contain 1 to 512 characters");
+    }
+    let session_metadata: serde_json::Value =
+        serde_json::from_str(&artifacts.session_metadata_json)
+            .context("Imported session metadata must be valid JSON")?;
+    validate_redacted_metadata(&session_metadata)?;
+    if artifacts.total_input_tokens < 0 || artifacts.total_output_tokens < 0 {
+        bail!("Imported session token totals must be non-negative");
+    }
+    if artifacts.usage_records.len() > MAX_IMPORTED_USAGE_RECORDS {
+        bail!(
+            "Imported usage ledger contains {}; maximum is {MAX_IMPORTED_USAGE_RECORDS}",
+            artifacts.usage_records.len()
+        );
+    }
+
+    let message_sequences: HashSet<i64> =
+        bundle.messages.iter().map(|message| message.seq).collect();
+    let mut imported_message_sequences = HashSet::new();
+    for metadata in &artifacts.message_metadata {
+        if metadata.source_message_id.trim().is_empty()
+            || metadata.source_message_id.chars().count() > 512
+        {
+            bail!("Imported source message id must contain 1 to 512 characters");
+        }
+        if !message_sequences.contains(&metadata.message_seq)
+            || !imported_message_sequences.insert(metadata.message_seq)
+        {
+            bail!(
+                "Imported metadata references a missing or duplicate message sequence {}",
+                metadata.message_seq
+            );
+        }
+        let payload: serde_json::Value = serde_json::from_str(&metadata.payload_json)
+            .context("Imported message metadata must be valid JSON")?;
+        validate_redacted_metadata(&payload)?;
+    }
+
+    let mut usage_ids = HashSet::new();
+    for usage in &artifacts.usage_records {
+        if usage.source_record_id.trim().is_empty()
+            || usage.source_record_id.chars().count() > MAX_ID_CHARS
+        {
+            bail!("Imported usage source id must contain 1 to {MAX_ID_CHARS} characters");
+        }
+        if !usage_ids.insert(usage.source_record_id.as_str()) {
+            bail!(
+                "Duplicate imported usage source id {}",
+                usage.source_record_id
+            );
+        }
+        if [
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
+        ]
+        .iter()
+        .any(|tokens| *tokens < 0)
+        {
+            bail!("Imported usage token counts must be non-negative");
+        }
+        if usage.cost_usd.is_some_and(|cost| !cost.is_finite()) {
+            bail!("Imported usage cost must be finite");
+        }
+        validate_enum(
+            "imported_usage_records.cost_source",
+            &usage.cost_source,
+            &["provider_reported", "estimated", "unknown"],
+        )?;
+        if usage.created_at < 0 {
+            bail!("Imported usage timestamp must be non-negative");
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_redacted_metadata(value: &serde_json::Value) -> Result<()> {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, value) in object {
+                if is_sensitive_metadata_key(key) && value.as_str() != Some("[REDACTED]") {
+                    bail!("Imported metadata contains an unredacted sensitive field");
+                }
+                validate_redacted_metadata(value)?;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                validate_redacted_metadata(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn is_sensitive_metadata_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase().replace('-', "_").replace('.', "_");
+    [
+        "secret",
+        "token",
+        "password",
+        "credential",
+        "api_key",
+        "apikey",
+        "authorization",
+        "private_key",
+        "client_secret",
+    ]
+    .iter()
+    .any(|sensitive| key.contains(sensitive))
 }
 
 fn validate_id(field: &str, value: &str) -> Result<()> {

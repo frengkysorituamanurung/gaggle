@@ -171,6 +171,7 @@ export const api = {
       }),
     models: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models`),
     refreshModels: (id: string) => apiFetch<T.Model[]>(`/api/providers/${id}/models/refresh`, { method: "POST" }),
+    catalog: (id: string) => apiFetch<string[]>(`/api/providers/${id}/catalog`),
     startChatgptOAuth: (id: string) => apiFetch<{ authorization_url: string }>(`/api/providers/${id}/oauth/chatgpt/start`, { method: "POST", body: "{}" }),
     createModel: (id: string, req: {
       model_key: string;

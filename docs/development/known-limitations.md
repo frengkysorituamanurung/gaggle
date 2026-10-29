@@ -6,7 +6,13 @@ the UI/backend integration audit.
 
 ## Credentials and secrets
 
-- API keys and OAuth tokens are stored via an in-memory `CredentialStore`
+- API keys and OAuth tokens are stored in the OS credential vault (macOS Keychain / Linux Secret Service) through `KeyringCredentialStore`; an in-memory fallback remains for tests and unsupported platforms.
+- Desktop Electron shell is rebranded from Goose to Gaggle (binary name, package name, branding).
+- ACP backend integration: agent-client-protocol and agent-client-protocol-http crates added as dependencies. Full ACP server implementation wrapping Gaggle's agent loop is in progress.
+- Desktop uses Tauri with dynamic port binding as a fallback.
+- Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.
+- Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.
+- UI supports English, Indonesian, and Japanese locales; full Goose i18n parity is in progress.
   abstraction. OS keychain integration is planned but not yet wired.
 - The database stores only `secret_ref` identifiers, never plaintext secrets.
 

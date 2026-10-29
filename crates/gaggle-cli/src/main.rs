@@ -118,6 +118,21 @@ enum ImportCommands {
         #[arg(long)]
         project: String,
     },
+    /// Import one Goose SQLite session into a project without modifying the source database
+    GooseSession {
+        /// Read-only path to Goose's SQLite database
+        #[arg(long = "source-db")]
+        source_database: PathBuf,
+        /// Goose session id to import
+        #[arg(long)]
+        session: String,
+        /// Existing Gaggle project id to receive the imported chat
+        #[arg(long)]
+        project: String,
+        /// Attempt to copy API keys from Goose's OS credential vault into Gaggle's
+        #[arg(long = "import-goose-credentials")]
+        import_credentials: bool,
+    },
 }
 
 #[tokio::main]
@@ -197,6 +212,22 @@ async fn main() -> Result<()> {
                 ImportCommands::Chat { file, project } => {
                     let summary =
                         gaggle_cli::chat_bundle::import_chat(&pool, &project, &file).await?;
+                    println!("{}", serde_json::to_string_pretty(&summary)?);
+                }
+                ImportCommands::GooseSession {
+                    source_database,
+                    session,
+                    project,
+                    import_credentials,
+                } => {
+                    let summary = gaggle_cli::goose_import::import_goose_session_with_credentials(
+                        &pool,
+                        &source_database,
+                        &session,
+                        &project,
+                        import_credentials,
+                    )
+                    .await?;
                     println!("{}", serde_json::to_string_pretty(&summary)?);
                 }
             }

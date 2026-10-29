@@ -23,7 +23,10 @@ pub mod credentials;
 pub mod diagnostics;
 pub mod errors;
 pub mod operations;
-pub use operations::{Operation, OperationContext, OperationOutcome, OperationRunner};
+pub use operations::{
+    InferenceOperation, InferenceOperationError, InferenceOutput, Operation, OperationContext,
+    OperationOutcome, OperationRunner,
+};
 pub mod permission_engine;
 pub mod provider;
 pub mod provider_oauth;
@@ -47,7 +50,8 @@ pub use context_assembler::{
     estimate_tokens, redact_context_secrets,
 };
 pub use credentials::{
-    CredentialError, CredentialStore, InMemoryCredentialStore, SecretString, redact_sensitive_text,
+    CredentialError, CredentialStore, InMemoryCredentialStore, KeyringCredentialStore,
+    SecretString, redact_sensitive_text,
 };
 pub use diagnostics::{
     BuildIdentity, CapabilityState, CapabilityStatus, CoreHealth, DiagnosticReport,
@@ -62,10 +66,10 @@ pub use observability::{
 };
 pub use permission_engine::{PermissionDecision, PermissionEngine, ToolCallContext};
 pub use provider::{
-    AnthropicAdapter, MockProviderAdapter, ModelCompletionRequest, ModelCompletionResponse,
-    ModelCompletionStream, ModelProviderAdapter, ModelStreamEvent, OllamaAdapter,
-    OpenAiCompatibleAdapter, ProposedToolCall, ProviderError, ProviderMessage, TokenUsage,
-    ToolDefinition, map_provider_http_error, validate_provider_base_url,
+    AnthropicAdapter, GoogleGeminiAdapter, MockProviderAdapter, ModelCompletionRequest,
+    ModelCompletionResponse, ModelCompletionStream, ModelProviderAdapter, ModelStreamEvent,
+    OllamaAdapter, OpenAiCompatibleAdapter, ProposedToolCall, ProviderError, ProviderMessage,
+    TokenUsage, ToolDefinition, map_provider_http_error, validate_provider_base_url,
 };
 pub use provider_oauth::{
     ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, OAuthTokenSet, PkceAuthorization,

@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Главная",
+  "navigation.recipes": "Рецепты",
+  "navigation.skills": "Навыки",
+  "navigation.extensions": "Расширения",
+  "navigation.scheduler": "Планировщик",
+  "navigation.memories": "Память",
+  "navigation.permissions": "Разрешения",
+  "navigation.workspace": "Рабочая область",
+  "navigation.terminal": "Терминал",
+  "navigation.sessionHistory": "История сессий",
+  "navigation.chats": "Чаты",
+  "navigation.noRecentChats": "Нет недавних чатов",
+  "navigation.settings": "Настройки",
+  "app.toastNotifications": "Всплывающие уведомления",
+  "common.loading": "Загрузка...",
+  "common.save": "Сохранить",
+  "common.cancel": "Отмена",
+  "common.close": "Закрыть"
+}

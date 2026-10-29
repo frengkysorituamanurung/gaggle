@@ -9,12 +9,17 @@ export default function ModelsSection() {
   const [providers, setProviders] = useState<T.ProviderStatus[]>([]);
   const [models, setModels] = useState<T.Model[]>([]);
   const [refreshing, setRefreshing] = useState<string | null>(null);
+  const [cataloging, setCataloging] = useState<string | null>(null);
+  const [catalogs, setCatalogs] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const [newProviderId, setNewProviderId] = useState("");
   const [newModelKey, setNewModelKey] = useState("");
   const [newModelName, setNewModelName] = useState("");
   const [newContextWindow, setNewContextWindow] = useState("128000");
+  const [newSupportsTools, setNewSupportsTools] = useState(true);
+  const [newSupportsVision, setNewSupportsVision] = useState(false);
+  const [newSupportsReasoning, setNewSupportsReasoning] = useState(false);
 
   const load = async () => {
     try {
@@ -50,14 +55,46 @@ export default function ModelsSection() {
     }
   };
 
+  const discoverProviderModels = async (id: string) => {
+    setCataloging(id);
+    setError(null);
+    try {
+      const catalog = await api.providers.catalog(id);
+      setCatalogs((prev) => ({ ...prev, [id]: catalog }));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCataloging(null);
+    }
+  };
+
+  const selectCatalogModel = (providerId: string, modelKey: string) => {
+    setNewProviderId(providerId);
+    setNewModelKey(modelKey);
+    setNewModelName(modelKey);
+    setNewContextWindow("");
+    setNewSupportsTools(false);
+    setNewSupportsVision(false);
+    setNewSupportsReasoning(false);
+  };
+
   const addModel = async () => {
-    if (!newProviderId || !newModelKey.trim() || !newModelName.trim()) return;
+    const contextWindow = Number(newContextWindow);
+    if (
+      !newProviderId ||
+      !newModelKey.trim() ||
+      !newModelName.trim() ||
+      !Number.isInteger(contextWindow) ||
+      contextWindow < 1
+    ) return;
     try {
       const created = await api.providers.createModel(newProviderId, {
         model_key: newModelKey.trim(),
         display_name: newModelName.trim(),
-        context_window: Number(newContextWindow) || 128000,
-        supports_tools: true,
+        context_window: contextWindow,
+        supports_tools: newSupportsTools,
+        supports_vision: newSupportsVision,
+        supports_reasoning: newSupportsReasoning,
       });
       setModels((prev) => [...prev, created]);
       setNewModelKey("");
@@ -91,7 +128,12 @@ export default function ModelsSection() {
           <Input placeholder="Model key" value={newModelKey} onChange={(e) => setNewModelKey(e.target.value)} />
           <Input placeholder="Display name" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} />
           <Input placeholder="Context window" value={newContextWindow} onChange={(e) => setNewContextWindow(e.target.value)} />
-          <Button size="sm" onClick={addModel} disabled={!newProviderId || !newModelKey.trim() || !newModelName.trim()}>
+          <div className="flex flex-wrap gap-4 text-sm text-text-secondary">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={newSupportsTools} onChange={(e) => setNewSupportsTools(e.target.checked)} /> Tool calls</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={newSupportsVision} onChange={(e) => setNewSupportsVision(e.target.checked)} /> Vision</label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={newSupportsReasoning} onChange={(e) => setNewSupportsReasoning(e.target.checked)} /> Reasoning</label>
+          </div>
+          <Button size="sm" onClick={addModel} disabled={!newProviderId || !newModelKey.trim() || !newModelName.trim() || !Number.isInteger(Number(newContextWindow)) || Number(newContextWindow) < 1}>
             Add model
           </Button>
         </div>
@@ -100,10 +142,35 @@ export default function ModelsSection() {
           <div key={p.provider.id} className="mb-4">
             <div className="flex items-center justify-between mb-1">
               <span className="font-medium text-text-primary">{p.provider.name}</span>
-              <Button size="sm" variant="secondary" onClick={() => refreshProvider(p.provider.id)} disabled={refreshing === p.provider.id}>
-                {refreshing === p.provider.id ? "Refreshing…" : "Refresh"}
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => discoverProviderModels(p.provider.id)} disabled={cataloging === p.provider.id}>
+                  {cataloging === p.provider.id ? "Discovering…" : "Discover models"}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => refreshProvider(p.provider.id)} disabled={refreshing === p.provider.id}>
+                  {refreshing === p.provider.id ? "Refreshing…" : "Refresh"}
+                </Button>
+              </div>
             </div>
+            {catalogs[p.provider.id] && (
+              <>
+                <p className="mb-1 text-xs text-text-secondary">
+                  Catalog IDs only; verify context window and capabilities before adding.
+                </p>
+                <ul className="mb-2 text-sm" aria-label={`Discovered models for ${p.provider.name}`}>
+                  {catalogs[p.provider.id].map((modelKey) => (
+                    <li key={modelKey} className="flex items-center justify-between gap-2 py-1">
+                      <span className="text-text-secondary">{modelKey}</span>
+                      <Button size="sm" variant="secondary" onClick={() => selectCatalogModel(p.provider.id, modelKey)}>
+                        Configure
+                      </Button>
+                    </li>
+                  ))}
+                  {catalogs[p.provider.id].length === 0 && (
+                    <li className="py-1 text-text-secondary">Provider returned no models.</li>
+                  )}
+                </ul>
+              </>
+            )}
             <ul className="text-sm">
               {modelsByProvider(p.provider.id).map((m) => (
                 <li key={m.id} className="py-1 border-b border-border-primary last:border-0">

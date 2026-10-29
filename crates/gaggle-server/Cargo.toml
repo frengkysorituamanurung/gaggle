@@ -8,6 +8,8 @@ license.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 futures.workspace = true
+agent-client-protocol = "3.6"
+agent-client-protocol-http = { version = "3.6", features = ["server"] }
 gaggle-core.workspace = true
 gaggle-db.workspace = true
 gaggle-mcp.workspace = true
@@ -23,7 +25,5 @@ tokio-stream.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
-
-[dev-dependencies]
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
 tokio-tungstenite = "0.26"

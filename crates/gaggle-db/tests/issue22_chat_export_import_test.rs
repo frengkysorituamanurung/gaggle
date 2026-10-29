@@ -4,7 +4,10 @@ use anyhow::Result;
 use gaggle_db::{
     Chat, connect_in_memory,
     repositories::{
-        chats::{CHAT_BUNDLE_FORMAT, CHAT_BUNDLE_VERSION, ChatBundle, ChatRepository},
+        chats::{
+            CHAT_BUNDLE_FORMAT, CHAT_BUNDLE_VERSION, ChatBundle, ChatRepository,
+            ImportedChatArtifacts, ImportedMessageMetadata, ImportedUsageRecord,
+        },
         memories::MemoryRepository,
         projects::ProjectRepository,
     },
@@ -103,6 +106,57 @@ async fn export_import_round_trip_creates_new_chat() -> Result<()> {
         .expect("source chat");
     assert_eq!(source.chat.project_id, fx.project_a);
     assert_eq!(source.messages.len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn goose_usage_and_metadata_survive_chat_bundle_round_trip() -> Result<()> {
+    let fx = fixture().await?;
+    let mut bundle = export_bundle(&fx, &fx.chat.id).await?;
+    bundle.imported_artifacts = Some(ImportedChatArtifacts {
+        source_session_id: "goose-session-1".to_string(),
+        session_metadata_json: r#"{"extension_data":{"enabled":true}}"#.to_string(),
+        message_metadata: vec![ImportedMessageMetadata {
+            source_message_id: "goose-message-1".to_string(),
+            message_seq: 1,
+            payload_json: r#"{"audience":"user"}"#.to_string(),
+        }],
+        usage_records: vec![ImportedUsageRecord {
+            source_record_id: "1".to_string(),
+            model_key: Some("gemini-test".to_string()),
+            input_tokens: 11,
+            output_tokens: 7,
+            total_tokens: 18,
+            cache_read_tokens: 2,
+            cache_write_tokens: 0,
+            cost_usd: Some(0.01),
+            cost_source: "provider_reported".to_string(),
+            is_compaction: false,
+            created_at: 1_730_000_000_000,
+        }],
+        total_input_tokens: 11,
+        total_output_tokens: 7,
+    });
+
+    let imported = fx.chats.import_chat(&fx.project_b, &bundle).await?;
+    assert_eq!(imported.chat.total_input_tokens, 11);
+    assert_eq!(imported.chat.total_output_tokens, 7);
+
+    let round_trip = fx
+        .chats
+        .export_chat(&imported.chat.id)
+        .await?
+        .expect("imported chat");
+    let artifacts = round_trip.imported_artifacts.expect("import artifacts");
+    assert_eq!(artifacts.source_session_id, "goose-session-1");
+    assert_eq!(artifacts.message_metadata.len(), 1);
+    assert_eq!(artifacts.usage_records.len(), 1);
+    assert_eq!(
+        artifacts.usage_records[0].model_key.as_deref(),
+        Some("gemini-test")
+    );
+    assert_eq!(artifacts.usage_records[0].input_tokens, 11);
 
     Ok(())
 }

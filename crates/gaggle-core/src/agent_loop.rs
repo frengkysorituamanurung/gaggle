@@ -1,19 +1,17 @@
 use crate::{
     ActionableError, CompactionEngine, ContextAssembler, CorrelationIds, DataPreservation,
-    FailureCategory, PermissionDecision, PermissionEngine, ToolCallContext,
+    FailureCategory, InferenceOperationError, PermissionDecision, PermissionEngine,
+    ToolCallContext,
     context_assembler::DEFAULT_CONTEXT_WINDOW,
     hooks::{HookContext, HookDecision, HookEvent, HookManager},
     observability::{redact_log_text, summarize_tool_arguments},
-    provider::{
-        ModelCompletionRequest, ModelCompletionResponse, ModelProviderAdapter, ModelStreamEvent,
-        ProposedToolCall, ProviderMessage, TokenUsage,
-    },
+    operations::InferenceOperation,
+    provider::{ModelCompletionRequest, ModelProviderAdapter, ProposedToolCall, ProviderMessage},
 };
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use futures::StreamExt;
 use gaggle_db::{
-    models::{Chat, Run},
+    models::{Chat, Project, Run},
     repositories::{
         chats::ChatRepository, extensions::ExtensionRepository, projects::ProjectRepository,
         runs::RunRepository,
@@ -29,6 +27,7 @@ use std::{
     },
     time::Instant,
 };
+use tokio::sync::Notify;
 use tracing::Instrument;
 
 /// Default maximum agent loop iterations per run to prevent runaway tool-call loops.
@@ -43,6 +42,7 @@ pub const MAX_TOOL_RESPONSE_CHARS: usize = 200_000;
 #[derive(Clone, Default)]
 pub struct CancellationToken {
     cancelled: Arc<AtomicBool>,
+    notify: Arc<Notify>,
 }
 
 impl CancellationToken {
@@ -52,10 +52,18 @@ impl CancellationToken {
 
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+        self.notify.notify_one();
     }
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub async fn cancelled(&self) {
+        if !self.is_cancelled() {
+            self.notify.notified().await;
+        }
     }
 }
 
@@ -482,84 +490,37 @@ impl AgentRuntime {
 
             // Prefer native provider streaming when available; otherwise fall back to a single
             // blocking completion. Both paths normalize to `ModelCompletionResponse`.
-            let mut used_native_stream = false;
-            let completion_result: Result<ModelCompletionResponse, crate::ProviderError> =
-                if let Some(mut stream) = provider.stream(req.clone()) {
-                    used_native_stream = true;
-                    let mut streamed_text = String::new();
-                    let mut streamed_calls = Vec::new();
-                    let mut streamed_usage = TokenUsage::default();
-                    let mut done_response = None;
-                    let mut stream_error = None;
-
-                    while let Some(item) = stream.next().await {
-                        if cancel_token.is_cancelled() {
-                            return self.finish_cancelled(&run_repo, &run.id).await;
-                        }
-                        match item {
-                            Ok(ModelStreamEvent::TextDelta(delta)) => {
-                                if !delta.is_empty() {
-                                    streamed_text.push_str(&delta);
-                                    run_repo
-                                        .emit_event(
-                                            &run.id,
-                                            "message.delta",
-                                            &serde_json::json!({
-                                                "step": step_idx,
-                                                "text": delta
-                                            })
-                                            .to_string(),
-                                        )
-                                        .await?;
-                                }
-                            }
-                            Ok(ModelStreamEvent::ToolCall(call)) => streamed_calls.push(call),
-                            Ok(ModelStreamEvent::Usage(usage)) => streamed_usage = usage,
-                            Ok(ModelStreamEvent::Done(response)) => done_response = Some(response),
-                            Err(err) => {
-                                stream_error = Some(err);
-                                break;
-                            }
-                        }
+            let inference = InferenceOperation::run(provider, req, cancel_token, {
+                let run_repo = run_repo.clone();
+                let run_id = run.id.clone();
+                move |delta| {
+                    let run_repo = run_repo.clone();
+                    let run_id = run_id.clone();
+                    async move {
+                        run_repo
+                            .emit_event(
+                                &run_id,
+                                "message.delta",
+                                &serde_json::json!({
+                                    "step": step_idx,
+                                    "text": delta
+                                })
+                                .to_string(),
+                            )
+                            .await?;
+                        Ok(())
                     }
+                }
+            })
+            .await;
 
-                    match (stream_error, done_response) {
-                        (Some(err), _) => Err(err),
-                        (None, Some(response)) => {
-                            if response.text.is_empty() && !streamed_text.is_empty() {
-                                Ok(ModelCompletionResponse {
-                                    text: streamed_text,
-                                    ..response
-                                })
-                            } else if response.tool_calls.is_empty() && !streamed_calls.is_empty() {
-                                Ok(ModelCompletionResponse {
-                                    tool_calls: streamed_calls,
-                                    ..response
-                                })
-                            } else if response.usage == TokenUsage::default()
-                                && streamed_usage != TokenUsage::default()
-                            {
-                                Ok(ModelCompletionResponse {
-                                    usage: streamed_usage,
-                                    ..response
-                                })
-                            } else {
-                                Ok(response)
-                            }
-                        }
-                        (None, None) => Ok(ModelCompletionResponse {
-                            text: streamed_text,
-                            tool_calls: streamed_calls,
-                            usage: streamed_usage,
-                        }),
-                    }
-                } else {
-                    provider.complete(&req).await
-                };
-
-            let completion = match completion_result {
-                Ok(resp) => resp,
-                Err(err) => {
+            let (completion, used_native_stream) = match inference {
+                Ok(output) => (output.completion, output.used_native_stream),
+                Err(InferenceOperationError::Cancelled) => {
+                    return self.finish_cancelled(&run_repo, &run.id).await;
+                }
+                Err(InferenceOperationError::Persistence(err)) => return Err(err),
+                Err(InferenceOperationError::Provider(err)) => {
                     let failure =
                         ActionableError::from_provider_error("agent.turn", &err, &correlation);
                     tracing::error!(
@@ -655,180 +616,39 @@ impl AgentRuntime {
                 ..Default::default()
             });
 
-            // Process proposed tool calls through the 7-step PermissionEngine
-            for proposed in &completion.tool_calls {
-                if cancel_token.is_cancelled() {
+            let tool_outcome = ToolCallingOperation {
+                runtime: self,
+                run_repo: &run_repo,
+                ext_repo: &ext_repo,
+                permission_engine: &perm_engine,
+            }
+            .run(
+                &run,
+                step_idx,
+                &chat,
+                &project,
+                &completion.tool_calls,
+                tool_executor,
+                cancel_token,
+                &mut conversation,
+                &correlation,
+            )
+            .await?;
+            match tool_outcome {
+                ToolCallingOutcome::Continue => {}
+                ToolCallingOutcome::Cancelled => {
                     return self.finish_cancelled(&run_repo, &run.id).await;
                 }
-
-                let Some(ext_tool) = ext_repo
-                    .find_enabled_tool_by_name(&proposed.tool_name)
-                    .await?
-                else {
-                    let failure = ActionableError::new(
-                        FailureCategory::Tool,
-                        "agent.tool_lookup",
-                        format!("Unknown or disabled tool '{}'", proposed.tool_name),
-                    )
-                    .with_data_preservation(DataPreservation::Preserved)
-                    .with_correlation(&correlation);
-                    tracing::error!(
-                        target: "gaggle.agent",
-                        run_id = %run.id,
-                        step = step_idx,
-                        tool_name = %proposed.tool_name,
-                        failure_category = failure.category.as_str(),
-                        "Proposed tool is unknown or disabled"
-                    );
-                    bail!("{failure}");
-                };
-
-                let shell_cmd =
-                    Self::extract_shell_command(&proposed.tool_name, &proposed.arguments_json);
-                let ctx = ToolCallContext {
-                    project_id: Some(project.id.clone()),
-                    permission_mode: chat.permission_mode.clone(),
-                    extension_tool: ext_tool,
-                    args_json: proposed.arguments_json.clone(),
-                    shell_command: shell_cmd.clone(),
-                };
-
-                let decision = perm_engine.evaluate(&ctx).await?;
-                match decision {
-                    PermissionDecision::Deny { reason } => {
-                        tracing::warn!(
-                            target: "gaggle.agent",
-                            run_id = %run.id,
-                            step = step_idx,
-                            tool_name = %proposed.tool_name,
-                            decision = "deny",
-                            reason = %redact_log_text(&reason),
-                            "Tool call denied by policy"
-                        );
-                        let tc = run_repo
-                            .record_tool_call(
-                                &run.id,
-                                step_idx as i64,
-                                "native",
-                                &proposed.tool_name,
-                                &proposed.arguments_json,
-                                "denied",
-                            )
-                            .await?;
-                        let deny_json = serde_json::json!({ "denied": reason }).to_string();
-                        run_repo
-                            .update_tool_call_result(&tc.id, "denied", Some(&deny_json), 0)
-                            .await?;
-                        run_repo
-                            .emit_event(
-                                &run.id,
-                                "tool.denied",
-                                &serde_json::json!({
-                                    "tool_call_id": tc.id,
-                                    "tool_name": proposed.tool_name,
-                                    "reason": reason
-                                })
-                                .to_string(),
-                            )
-                            .await?;
-                        conversation.push(ProviderMessage {
-                            role: "tool".to_string(),
-                            content: deny_json,
-                            tool_call_id: Some(proposed.id.clone()),
-                            ..Default::default()
-                        });
-                    }
-                    PermissionDecision::NeedsApproval { kind, summary } => {
-                        tracing::info!(
-                            target: "gaggle.agent",
-                            run_id = %run.id,
-                            step = step_idx,
-                            tool_name = %proposed.tool_name,
-                            decision = "needs_approval",
-                            approval_kind = %kind,
-                            "Tool call is waiting for user approval"
-                        );
-                        let tc = run_repo
-                            .record_tool_call(
-                                &run.id,
-                                step_idx as i64,
-                                "native",
-                                &proposed.tool_name,
-                                &proposed.arguments_json,
-                                "awaiting_approval",
-                            )
-                            .await?;
-                        let approval = run_repo
-                            .create_approval(
-                                &tc.id,
-                                &kind,
-                                &summary,
-                                shell_cmd.as_deref(),
-                                Some(&project.root_path),
-                            )
-                            .await?;
-                        run_repo
-                            .save_checkpoint(
-                                &run.id,
-                                step_idx as i64,
-                                &serde_json::json!({
-                                    "waiting_approval_id": approval.id,
-                                    "tool_call_id": tc.id
-                                })
-                                .to_string(),
-                            )
-                            .await?;
-                        run_repo
-                            .emit_event(
-                                &run.id,
-                                "approval.requested",
-                                &serde_json::json!({
-                                    "approval_id": approval.id,
-                                    "tool_call_id": tc.id,
-                                    "tool_name": proposed.tool_name,
-                                    "summary": summary,
-                                    "command": shell_cmd,
-                                    "cwd": project.root_path
-                                })
-                                .to_string(),
-                            )
-                            .await?;
-                        let waiting_run = run_repo
-                            .update_run_status(&run.id, "waiting_approval", None)
-                            .await?;
-                        return Ok(AgentLoopOutcome::WaitingApproval {
-                            run: waiting_run,
-                            pending_approval_id: approval.id,
-                            tool_call_id: tc.id,
-                        });
-                    }
-                    PermissionDecision::Allow => {
-                        tracing::debug!(
-                            target: "gaggle.agent",
-                            run_id = %run.id,
-                            step = step_idx,
-                            tool_name = %proposed.tool_name,
-                            decision = "allow",
-                            "Tool call allowed by policy"
-                        );
-                        let tool_out = self
-                            .execute_allowed_tool(
-                                &run_repo,
-                                &run.id,
-                                step_idx as i64,
-                                &chat,
-                                &project.root_path,
-                                proposed,
-                                tool_executor,
-                            )
-                            .await?;
-                        conversation.push(ProviderMessage {
-                            role: "tool".to_string(),
-                            content: tool_out,
-                            tool_call_id: Some(proposed.id.clone()),
-                            ..Default::default()
-                        });
-                    }
+                ToolCallingOutcome::WaitingApproval {
+                    run,
+                    pending_approval_id,
+                    tool_call_id,
+                } => {
+                    return Ok(AgentLoopOutcome::WaitingApproval {
+                        run,
+                        pending_approval_id,
+                        tool_call_id,
+                    });
                 }
             }
 
@@ -1111,5 +931,221 @@ impl AgentRuntime {
                 .map(|s| s.to_string());
         }
         None
+    }
+}
+
+enum ToolCallingOutcome {
+    Continue,
+    WaitingApproval {
+        run: Run,
+        pending_approval_id: String,
+        tool_call_id: String,
+    },
+    Cancelled,
+}
+
+struct ToolCallingOperation<'a> {
+    runtime: &'a AgentRuntime,
+    run_repo: &'a RunRepository,
+    ext_repo: &'a ExtensionRepository,
+    permission_engine: &'a PermissionEngine,
+}
+
+impl ToolCallingOperation<'_> {
+    #[allow(clippy::too_many_arguments)]
+    async fn run(
+        &self,
+        run: &Run,
+        step_idx: usize,
+        chat: &Chat,
+        project: &Project,
+        proposed_calls: &[ProposedToolCall],
+        tool_executor: &dyn ToolExecutor,
+        cancel_token: &CancellationToken,
+        conversation: &mut Vec<ProviderMessage>,
+        correlation: &CorrelationIds,
+    ) -> Result<ToolCallingOutcome> {
+        for proposed in proposed_calls {
+            if cancel_token.is_cancelled() {
+                return Ok(ToolCallingOutcome::Cancelled);
+            }
+
+            let Some(ext_tool) = self
+                .ext_repo
+                .find_enabled_tool_by_name(&proposed.tool_name)
+                .await?
+            else {
+                let failure = ActionableError::new(
+                    FailureCategory::Tool,
+                    "agent.tool_lookup",
+                    format!("Unknown or disabled tool '{}'", proposed.tool_name),
+                )
+                .with_data_preservation(DataPreservation::Preserved)
+                .with_correlation(correlation);
+                tracing::error!(
+                    target: "gaggle.agent",
+                    run_id = %run.id,
+                    step = step_idx,
+                    tool_name = %proposed.tool_name,
+                    failure_category = failure.category.as_str(),
+                    "Proposed tool is unknown or disabled"
+                );
+                bail!("{failure}");
+            };
+
+            let shell_cmd =
+                AgentRuntime::extract_shell_command(&proposed.tool_name, &proposed.arguments_json);
+            let ctx = ToolCallContext {
+                project_id: Some(project.id.clone()),
+                permission_mode: chat.permission_mode.clone(),
+                extension_tool: ext_tool,
+                args_json: proposed.arguments_json.clone(),
+                shell_command: shell_cmd.clone(),
+            };
+
+            match self.permission_engine.evaluate(&ctx).await? {
+                PermissionDecision::Deny { reason } => {
+                    tracing::warn!(
+                        target: "gaggle.agent",
+                        run_id = %run.id,
+                        step = step_idx,
+                        tool_name = %proposed.tool_name,
+                        decision = "deny",
+                        reason = %redact_log_text(&reason),
+                        "Tool call denied by policy"
+                    );
+                    let tool_call = self
+                        .run_repo
+                        .record_tool_call(
+                            &run.id,
+                            step_idx as i64,
+                            "native",
+                            &proposed.tool_name,
+                            &proposed.arguments_json,
+                            "denied",
+                        )
+                        .await?;
+                    let deny_json = serde_json::json!({ "denied": reason }).to_string();
+                    self.run_repo
+                        .update_tool_call_result(&tool_call.id, "denied", Some(&deny_json), 0)
+                        .await?;
+                    self.run_repo
+                        .emit_event(
+                            &run.id,
+                            "tool.denied",
+                            &serde_json::json!({
+                                "tool_call_id": tool_call.id,
+                                "tool_name": proposed.tool_name,
+                                "reason": reason
+                            })
+                            .to_string(),
+                        )
+                        .await?;
+                    conversation.push(ProviderMessage {
+                        role: "tool".to_string(),
+                        content: deny_json,
+                        tool_call_id: Some(proposed.id.clone()),
+                        ..Default::default()
+                    });
+                }
+                PermissionDecision::NeedsApproval { kind, summary } => {
+                    tracing::info!(
+                        target: "gaggle.agent",
+                        run_id = %run.id,
+                        step = step_idx,
+                        tool_name = %proposed.tool_name,
+                        decision = "needs_approval",
+                        approval_kind = %kind,
+                        "Tool call is waiting for user approval"
+                    );
+                    let tool_call = self
+                        .run_repo
+                        .record_tool_call(
+                            &run.id,
+                            step_idx as i64,
+                            "native",
+                            &proposed.tool_name,
+                            &proposed.arguments_json,
+                            "awaiting_approval",
+                        )
+                        .await?;
+                    let approval = self
+                        .run_repo
+                        .create_approval(
+                            &tool_call.id,
+                            &kind,
+                            &summary,
+                            shell_cmd.as_deref(),
+                            Some(&project.root_path),
+                        )
+                        .await?;
+                    self.run_repo
+                        .save_checkpoint(
+                            &run.id,
+                            step_idx as i64,
+                            &serde_json::json!({
+                                "waiting_approval_id": approval.id,
+                                "tool_call_id": tool_call.id
+                            })
+                            .to_string(),
+                        )
+                        .await?;
+                    self.run_repo
+                        .emit_event(
+                            &run.id,
+                            "approval.requested",
+                            &serde_json::json!({
+                                "approval_id": approval.id,
+                                "tool_call_id": tool_call.id,
+                                "tool_name": proposed.tool_name,
+                                "summary": summary,
+                                "command": shell_cmd,
+                                "cwd": project.root_path
+                            })
+                            .to_string(),
+                        )
+                        .await?;
+                    let waiting_run = self
+                        .run_repo
+                        .update_run_status(&run.id, "waiting_approval", None)
+                        .await?;
+                    return Ok(ToolCallingOutcome::WaitingApproval {
+                        run: waiting_run,
+                        pending_approval_id: approval.id,
+                        tool_call_id: tool_call.id,
+                    });
+                }
+                PermissionDecision::Allow => {
+                    tracing::debug!(
+                        target: "gaggle.agent",
+                        run_id = %run.id,
+                        step = step_idx,
+                        tool_name = %proposed.tool_name,
+                        decision = "allow",
+                        "Tool call allowed by policy"
+                    );
+                    let tool_out = self
+                        .runtime
+                        .execute_allowed_tool(
+                            self.run_repo,
+                            &run.id,
+                            step_idx as i64,
+                            chat,
+                            &project.root_path,
+                            proposed,
+                            tool_executor,
+                        )
+                        .await?;
+                    conversation.push(ProviderMessage {
+                        role: "tool".to_string(),
+                        content: tool_out,
+                        tool_call_id: Some(proposed.id.clone()),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
+        Ok(ToolCallingOutcome::Continue)
     }
 }

@@ -103,7 +103,41 @@ The command prints the imported chat plus `message_count` and `part_count`.
 
 ---
 
-## 4. Export memories for Git
+## 4. Import a Goose session
+
+```bash
+gaggle import goose-session \
+  --source-db /path/to/goose/sessions.db \
+  --session <goose-session-id> \
+  --project <gaggle-project-id>
+```
+
+The Goose database is opened read-only. The selected transcript is imported as
+a new Gaggle chat through the same validated, transactional chat-bundle path;
+tool request/response parts and embedded attachment content are retained when
+they fit the import limits. The importer currently supports Goose SQLite schema
+version 17. The project id must identify an active Gaggle project.
+
+Add `--import-goose-credentials` to attempt copying API keys from Goose's OS
+credential vault into Gaggle's. This is best-effort: only known provider API
+key environment variable names are attempted, and Goose's JSON secret blob is
+never written to Gaggle's database. Credential values are stored in Gaggle's
+OS credential vault under a new `secret_ref`.
+
+For safety, imported chats use permission mode `ask`; the session's system
+prompt override is retained. Session/message metadata is preserved in separate
+Gaggle import-artifact tables after sensitive-key redaction. The historical
+Goose usage ledger and aggregate token totals are also retained; these imported
+records are separate from live Gaggle run usage. Provider configuration is kept
+only as sanitized import metadata and is not activated. Credential values are
+never copied; configure the provider credentials again in Gaggle. Gaggle stores
+new credentials in the macOS Keychain or Linux Secret Service, referenced from
+SQLite by `secret_ref`. Importing the same Goose session more than once creates
+additional chats; the source database is never changed.
+
+---
+
+## 5. Export memories for Git
 
 ```bash
 # Default: <project root>/.pal/memory/
@@ -131,7 +165,7 @@ Soft-deleted memories are excluded from both chat-bundle and memory exports.
 
 ---
 
-## 5. Create a full backup
+## 6. Create a full backup
 
 ```bash
 gaggle backup --output backup.tar.gz
@@ -171,7 +205,7 @@ gaggle backup --output ~/Backups/gaggle-$(date +%Y%m%d).tar.gz
 
 ---
 
-## 6. Verify and restore a backup
+## 7. Verify and restore a backup
 
 ```bash
 # Verify checksums and database integrity without changing anything

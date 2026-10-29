@@ -1,0 +1,20 @@
+{
+  "navigation.home": "होम",
+  "navigation.recipes": "रेसिपी",
+  "navigation.skills": "कौशल",
+  "navigation.extensions": "एक्सटेंशन",
+  "navigation.scheduler": "शेड्यूलर",
+  "navigation.memories": "स्मृति",
+  "navigation.permissions": "अनुमतियाँ",
+  "navigation.workspace": "वर्कस्पेस",
+  "navigation.terminal": "टर्मिनल",
+  "navigation.sessionHistory": "सत्र इतिहास",
+  "navigation.chats": "चैट",
+  "navigation.noRecentChats": "कोई हालिया चैट नहीं",
+  "navigation.settings": "सेटिंग्स",
+  "app.toastNotifications": "टोस्ट सूचनाएँ",
+  "common.loading": "लोड हो रहा है...",
+  "common.save": "सहेजें",
+  "common.cancel": "रद्द करें",
+  "common.close": "बंद करें"
+}

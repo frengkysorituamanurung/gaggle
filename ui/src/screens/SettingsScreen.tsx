@@ -83,7 +83,7 @@ export default function SettingsScreen() {
               <div className="flex flex-col gap-2">
                 <Input placeholder="Name" value={pName} onChange={(e) => setPName(e.target.value)} />
                 <select className={inputCls} value={pKind} onChange={(e) => setPKind(e.target.value)}>
-                  {["openai","anthropic","openai_compat","ollama","chatgpt","openrouter","deepseek","xai","google","azure","databricks","snowflake"].map((k) => (<option key={k} value={k}>{k}</option>))}
+                  {["openai","anthropic","openai_compat","ollama","chatgpt","openrouter","deepseek","xai","google","azure","databricks","snowflake","mistral","groq","together","cohere","perplexity","fireworks","cerebras","deepinfra"].map((k) => (<option key={k} value={k}>{k}</option>))}
                 </select>
                 <select className={inputCls} value={pAuth} onChange={(e) => setPAuth(e.target.value)}>
                   <option value="api_key">api_key</option>

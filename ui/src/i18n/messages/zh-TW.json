@@ -1,0 +1,20 @@
+{
+  "navigation.home": "首頁",
+  "navigation.recipes": "配方",
+  "navigation.skills": "技能",
+  "navigation.extensions": "擴充功能",
+  "navigation.scheduler": "排程器",
+  "navigation.memories": "記憶",
+  "navigation.permissions": "權限",
+  "navigation.workspace": "工作區",
+  "navigation.terminal": "終端機",
+  "navigation.sessionHistory": "工作階段歷史",
+  "navigation.chats": "聊天",
+  "navigation.noRecentChats": "無最近聊天",
+  "navigation.settings": "設定",
+  "app.toastNotifications": "Toast 通知",
+  "common.loading": "載入中...",
+  "common.save": "儲存",
+  "common.cancel": "取消",
+  "common.close": "關閉"
+}

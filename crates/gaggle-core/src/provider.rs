@@ -297,6 +297,7 @@ pub struct OpenAiCompatibleAdapter {
     provider_name: String,
     base_url: String,
     secret_ref: Option<String>,
+    auth_header: Option<String>,
     credential_store: Arc<dyn CredentialStore>,
     client: reqwest::Client,
     timeout_ms: u64,
@@ -310,23 +311,74 @@ impl OpenAiCompatibleAdapter {
         credential_store: Arc<dyn CredentialStore>,
         timeout_ms: u64,
     ) -> Result<Self, ProviderError> {
+        Self::new_with_auth_header(
+            provider_name,
+            base_url,
+            secret_ref,
+            credential_store,
+            timeout_ms,
+            None,
+        )
+    }
+
+    pub fn new_with_auth_header(
+        provider_name: impl Into<String>,
+        base_url: &str,
+        secret_ref: Option<String>,
+        credential_store: Arc<dyn CredentialStore>,
+        timeout_ms: u64,
+        auth_header: Option<String>,
+    ) -> Result<Self, ProviderError> {
+        let provider_name = provider_name.into();
         let validated_url = validate_provider_base_url(base_url)?;
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| ProviderError::Transport {
-                provider: "openai_compat".to_string(),
+                provider: provider_name.clone(),
                 message: e.to_string(),
             })?;
 
         Ok(Self {
-            provider_name: provider_name.into(),
+            provider_name,
             base_url: validated_url,
             secret_ref,
+            auth_header,
             credential_store,
             client,
             timeout_ms,
         })
+    }
+
+    fn completion_endpoint(&self) -> Result<String, ProviderError> {
+        let mut url =
+            reqwest::Url::parse(&self.base_url).map_err(|error| ProviderError::InvalidBaseUrl {
+                url: self.base_url.clone(),
+                reason: error.to_string(),
+            })?;
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| ProviderError::InvalidBaseUrl {
+                url: self.base_url.clone(),
+                reason: "Base URL cannot accept a chat-completions path".to_string(),
+            })?;
+        segments.pop_if_empty().push("chat").push("completions");
+        drop(segments);
+        Ok(url.to_string())
+    }
+
+    fn authorize(
+        &self,
+        request: reqwest::RequestBuilder,
+        secret: Option<&SecretString>,
+    ) -> reqwest::RequestBuilder {
+        let Some(secret) = secret else {
+            return request;
+        };
+        match self.auth_header.as_deref() {
+            Some(header) => request.header(header, secret.expose_secret()),
+            None => request.bearer_auth(secret.expose_secret()),
+        }
     }
 
     /// Parses an OpenAI-compatible JSON response payload into a normalized `ModelCompletionResponse`.
@@ -429,13 +481,10 @@ impl ModelProviderAdapter for OpenAiCompatibleAdapter {
             None => None,
         };
 
-        let endpoint = format!("{}/chat/completions", self.base_url);
+        let endpoint = self.completion_endpoint()?;
         let payload = adapter_support::build_openai_chat_payload(req, false);
 
-        let mut builder = self.client.post(&endpoint).json(&payload);
-        if let Some(s) = &secret {
-            builder = builder.bearer_auth(s.expose_secret());
-        }
+        let builder = self.authorize(self.client.post(&endpoint).json(&payload), secret.as_ref());
 
         let response = builder.send().await.map_err(|e| {
             adapter_support::map_reqwest_send_error(
@@ -472,13 +521,10 @@ impl ModelProviderAdapter for OpenAiCompatibleAdapter {
                 None => None,
             };
 
-            let endpoint = format!("{}/chat/completions", adapter.base_url);
+            let endpoint = adapter.completion_endpoint()?;
             let payload = adapter_support::build_openai_chat_payload(&req, true);
 
-            let mut builder = adapter.client.post(&endpoint).json(&payload);
-            if let Some(s) = &secret {
-                builder = builder.bearer_auth(s.expose_secret());
-            }
+            let builder = adapter.authorize(adapter.client.post(&endpoint).json(&payload), secret.as_ref());
 
             let response = builder.send().await.map_err(|e| {
                 adapter_support::map_reqwest_send_error(
@@ -1584,6 +1630,131 @@ impl ModelProviderAdapter for AnthropicAdapter {
 }
 
 /// Ollama native chat adapter (`POST {base_url}/api/chat`), with optional NDJSON streaming.
+/// Google Gemini API adapter (`POST {base_url}/models/{model}:generateContent`).
+pub struct GoogleGeminiAdapter {
+    provider_name: String,
+    base_url: String,
+    secret_ref: Option<String>,
+    credential_store: Arc<dyn CredentialStore>,
+    client: reqwest::Client,
+    timeout_ms: u64,
+}
+
+impl GoogleGeminiAdapter {
+    pub fn new(
+        provider_name: impl Into<String>,
+        base_url: &str,
+        secret_ref: Option<String>,
+        credential_store: Arc<dyn CredentialStore>,
+        timeout_ms: u64,
+    ) -> Result<Self, ProviderError> {
+        let provider_name = provider_name.into();
+        let validated_url = validate_provider_base_url(base_url)?;
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .build()
+            .map_err(|e| ProviderError::Transport {
+                provider: provider_name.clone(),
+                message: e.to_string(),
+            })?;
+        Ok(Self {
+            provider_name,
+            base_url: validated_url,
+            secret_ref,
+            credential_store,
+            client,
+            timeout_ms,
+        })
+    }
+}
+
+#[async_trait]
+impl ModelProviderAdapter for GoogleGeminiAdapter {
+    fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
+
+    async fn complete(
+        &self,
+        req: &ModelCompletionRequest,
+    ) -> Result<ModelCompletionResponse, ProviderError> {
+        let secret: Option<SecretString> = match &self.secret_ref {
+            Some(ref_key) => Some(self.credential_store.get_secret(ref_key)?),
+            None => None,
+        };
+
+        let endpoint = format!(
+            "{}/v1beta/models/{}:generateContent",
+            self.base_url.trim_end_matches('/'),
+            req.model_key
+        );
+        let payload = serde_json::json!({
+            "contents": req.messages.iter().map(|m| serde_json::json!({
+                "role": if m.role == "assistant" { "model" } else { "user" },
+                "parts": [{"text": m.content}]
+            })).collect::<Vec<_>>(),
+            "generationConfig": {
+                "maxOutputTokens": req.max_output_tokens.unwrap_or(1024)
+            }
+        });
+
+        let mut builder = self.client.post(&endpoint).json(&payload);
+        if let Some(s) = &secret {
+            builder = builder.header("x-goog-api-key", s.expose_secret());
+        }
+
+        let response = builder.send().await.map_err(|e| {
+            adapter_support::map_reqwest_send_error(
+                &self.provider_name,
+                self.timeout_ms,
+                &e,
+                secret.as_ref(),
+            )
+        })?;
+
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(map_provider_http_error(
+                &self.provider_name,
+                status.as_u16(),
+                &body_text,
+                secret.as_ref(),
+                None,
+            ));
+        }
+
+        let val: serde_json::Value =
+            serde_json::from_str(&body_text).map_err(|e| ProviderError::MalformedResponse {
+                provider: self.provider_name.clone(),
+                reason: format!("Invalid JSON: {e}"),
+            })?;
+
+        let text = val
+            .get("candidates")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|c| c.get("content"))
+            .and_then(|c| c.get("parts"))
+            .and_then(|p| p.as_array())
+            .and_then(|parts| parts.first())
+            .and_then(|p| p.get("text"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        Ok(ModelCompletionResponse {
+            text,
+            tool_calls: Vec::new(),
+            usage: TokenUsage::default(),
+        })
+    }
+
+    fn stream(&self, _req: ModelCompletionRequest) -> Option<ModelCompletionStream> {
+        None
+    }
+}
+
 pub struct OllamaAdapter {
     provider_name: String,
     base_url: String,

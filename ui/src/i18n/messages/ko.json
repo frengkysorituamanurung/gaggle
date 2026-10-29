@@ -1,0 +1,20 @@
+{
+  "navigation.home": "홈",
+  "navigation.recipes": "레시피",
+  "navigation.skills": "스킬",
+  "navigation.extensions": "확장",
+  "navigation.scheduler": "스케줄러",
+  "navigation.memories": "메모리",
+  "navigation.permissions": "권한",
+  "navigation.workspace": "워크스페이스",
+  "navigation.terminal": "터미널",
+  "navigation.sessionHistory": "세션 기록",
+  "navigation.chats": "채팅",
+  "navigation.noRecentChats": "최근 채팅 없음",
+  "navigation.settings": "설정",
+  "app.toastNotifications": "토스트 알림",
+  "common.loading": "로딩 중...",
+  "common.save": "저장",
+  "common.cancel": "취소",
+  "common.close": "닫기"
+}

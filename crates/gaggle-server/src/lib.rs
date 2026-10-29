@@ -9,16 +9,16 @@ use axum::{
     },
     routing::{get, patch, post},
 };
-use futures::stream::Stream;
+use futures::{StreamExt, stream::Stream};
 use gaggle_core::CompactionEngine;
 use gaggle_core::{
     ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
     BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CompositeToolExecutor,
     CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
-    DiagnosticsExport, FailureCategory, InMemoryCredentialStore, MockProviderAdapter,
-    ModelCompletionResponse, ModelProviderAdapter, OllamaAdapter, OpenAiCompatibleAdapter,
-    RunEngine, SecretString, TokenUsage, ToolExecutor, WorkspacePathPolicy, collect_diagnostics,
-    export_diagnostics, validate_provider_base_url,
+    DiagnosticsExport, FailureCategory, GoogleGeminiAdapter, InMemoryCredentialStore,
+    KeyringCredentialStore, MockProviderAdapter, ModelCompletionResponse, ModelProviderAdapter,
+    OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString, TokenUsage, ToolExecutor,
+    WorkspacePathPolicy, collect_diagnostics, export_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
     connection::{new_id, now_ms},
@@ -61,6 +61,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -457,6 +458,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/providers/{id}/models/refresh",
             post(refresh_provider_models),
         )
+        .route("/api/providers/{id}/catalog", get(provider_model_catalog))
         .route(
             "/api/providers/{id}/oauth/chatgpt/start",
             post(start_chatgpt_oauth),
@@ -543,6 +545,19 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
+    initialize_server_state_with_credential_store(pool, Arc::new(InMemoryCredentialStore::new()))
+        .await
+}
+
+pub async fn initialize_server_state_with_os_credentials(pool: SqlitePool) -> Result<AppState> {
+    initialize_server_state_with_credential_store(pool, Arc::new(KeyringCredentialStore::new()))
+        .await
+}
+
+pub async fn initialize_server_state_with_credential_store(
+    pool: SqlitePool,
+    credential_store: Arc<dyn CredentialStore>,
+) -> Result<AppState> {
     register_builtin_extensions(&pool).await?;
     // Guard bundled MCP bootstrap errors so startup is resilient.
     let _ = gaggle_mcp::bundled::install_bundled(pool.clone()).await;
@@ -565,7 +580,6 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
         "Gaggle core initialized"
     );
     let db_path = pool.connect_options().get_filename().to_path_buf();
-    let credential_store: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::new());
     let active_runs = ActiveRunRegistry::new();
     let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
     let mcp_connections = McpConnectionManager::with_pool(pool.clone());
@@ -583,7 +597,7 @@ pub async fn initialize_server_state(pool: SqlitePool) -> Result<AppState> {
 }
 
 pub async fn serve(pool: SqlitePool, addr: SocketAddr) -> Result<()> {
-    let state = initialize_server_state(pool).await?;
+    let state = initialize_server_state_with_os_credentials(pool).await?;
     let browser_pool = state.pool.clone();
     let tm = state.terminal_manager.clone();
     let _ = missed_run_catchup(&state).await;
@@ -2134,6 +2148,209 @@ async fn list_provider_models(
     Ok(Json(models))
 }
 
+/// Fetches model identifiers using the provider's native catalog endpoint. The
+/// result is not persisted because the catalog does not establish model
+/// capabilities such as context length or tool support.
+async fn provider_model_catalog(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+    let repo = ProviderRepository::new(state.pool.clone());
+    let provider = repo
+        .get_provider_by_id(&id)
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Provider '{id}' not found")))?;
+    if provider.enabled != 1 {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("Provider '{}' is disabled", provider.name),
+        ));
+    }
+
+    let base_url = provider
+        .base_url
+        .as_deref()
+        .or_else(|| default_base_url(&provider.kind))
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Provider '{}' requires a base_url", provider.name),
+            )
+        })?;
+    let validated_base = validate_provider_base_url(base_url)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let endpoint = provider_catalog_endpoint(&provider.kind, &validated_base).ok_or_else(|| {
+        (
+            StatusCode::NOT_IMPLEMENTED,
+            format!("Model catalog is not supported for '{}'", provider.kind),
+        )
+    })?;
+
+    let secret = match provider.secret_ref.as_deref() {
+        Some(secret_ref) => Some(state.credential_store.get_secret(secret_ref).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Credentials are unavailable for provider '{}'",
+                    provider.name
+                ),
+            )
+        })?),
+        None if matches!(provider.kind.as_str(), "ollama") => None,
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Credentials are not configured for provider '{}'",
+                    provider.name
+                ),
+            ));
+        }
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Could not initialize provider catalog client".to_string(),
+            )
+        })?;
+    let mut request = client.get(endpoint);
+    if let Some(secret) = secret.as_ref() {
+        request = match provider.kind.as_str() {
+            "google" => request.header("x-goog-api-key", secret.expose_secret()),
+            "anthropic" => request.header("x-api-key", secret.expose_secret()).header(
+                "anthropic-version",
+                gaggle_core::provider::ANTHROPIC_API_VERSION,
+            ),
+            _ => request.bearer_auth(secret.expose_secret()),
+        };
+    }
+
+    let response = request.send().await.map_err(|_| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Could not reach provider '{}' model catalog", provider.name),
+        )
+    })?;
+    if !response.status().is_success() {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "Provider '{}' model catalog returned HTTP {}",
+                provider.name,
+                response.status()
+            ),
+        ));
+    }
+
+    const MAX_CATALOG_BYTES: usize = 4 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    let mut body = response.bytes_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|_| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Could not read provider '{}' model catalog", provider.name),
+            )
+        })?;
+        if bytes.len().saturating_add(chunk.len()) > MAX_CATALOG_BYTES {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                "Provider model catalog exceeded the 4 MiB response limit".to_string(),
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "Provider '{}' returned an invalid model catalog",
+                provider.name
+            ),
+        )
+    })?;
+    let models = parse_provider_model_catalog(&provider.kind, &body);
+    Ok(Json(models))
+}
+
+fn provider_catalog_endpoint(kind: &str, base_url: &str) -> Option<String> {
+    let mut url = reqwest::Url::parse(base_url).ok()?;
+    let ollama_base_has_api_segment =
+        kind == "ollama" && url.path().trim_end_matches('/').ends_with("/api");
+    match kind {
+        "google" | "anthropic" | "openai" | "openrouter" | "deepseek" | "xai" | "databricks"
+        | "snowflake" | "openai_compat" | "chatgpt" | "ollama" | "mistral" | "groq"
+        | "together" | "cohere" | "perplexity" | "fireworks" | "cerebras" | "deepinfra" => {}
+        _ => return None,
+    }
+
+    let mut segments = url.path_segments_mut().ok()?;
+    segments.pop_if_empty();
+    match kind {
+        "google" => {
+            segments.push("v1beta").push("models");
+        }
+        "ollama" if ollama_base_has_api_segment => {
+            segments.push("tags");
+        }
+        "ollama" => {
+            segments.push("api").push("tags");
+        }
+        _ => {
+            segments.push("models");
+        }
+    }
+    drop(segments);
+    Some(url.to_string())
+}
+
+fn parse_provider_model_catalog(kind: &str, body: &serde_json::Value) -> Vec<String> {
+    let entries = match kind {
+        "google" => body.get("models").and_then(serde_json::Value::as_array),
+        "ollama" => body.get("models").and_then(serde_json::Value::as_array),
+        _ => body.get("data").and_then(serde_json::Value::as_array),
+    };
+    let Some(entries) = entries else {
+        return Vec::new();
+    };
+
+    let mut models = entries
+        .iter()
+        .filter_map(|entry| {
+            if kind == "google"
+                && entry
+                    .get("supportedGenerationMethods")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|methods| {
+                        !methods
+                            .iter()
+                            .any(|method| method.as_str() == Some("generateContent"))
+                    })
+            {
+                return None;
+            }
+            let name = if kind == "google" {
+                entry.get("name")?.as_str()?.rsplit('/').next()?
+            } else if kind == "ollama" {
+                entry.get("name")?.as_str()?
+            } else {
+                entry.get("id")?.as_str()?
+            };
+            (!name.trim().is_empty()).then(|| name.to_string())
+        })
+        .collect::<Vec<_>>();
+    models.sort();
+    models.dedup();
+    models.truncate(500);
+    models
+}
+
 /// Best-effort model catalog refresh. Providers that do not support model listing (or whose
 /// listing fails) simply return the currently stored models (empty when none exist). No secrets
 /// are ever echoed back.
@@ -2162,6 +2379,14 @@ async fn refresh_provider_models(
             | "snowflake"
             | "openai_compat"
             | "chatgpt"
+            | "mistral"
+            | "groq"
+            | "together"
+            | "cohere"
+            | "perplexity"
+            | "fireworks"
+            | "cerebras"
+            | "deepinfra"
     );
     if !supported {
         let models = repo
@@ -2212,7 +2437,15 @@ fn default_base_url(kind: &str) -> Option<&'static str> {
         "openrouter" => Some("https://openrouter.ai/api/v1"),
         "deepseek" => Some("https://api.deepseek.com/v1"),
         "xai" => Some("https://api.x.ai/v1"),
-        "google" => Some("https://generativelanguage.googleapis.com/v1beta/openai"),
+        "google" => Some("https://generativelanguage.googleapis.com"),
+        "mistral" => Some("https://api.mistral.ai/v1"),
+        "groq" => Some("https://api.groq.com/openai/v1"),
+        "together" => Some("https://api.together.xyz/v1"),
+        "cohere" => Some("https://api.cohere.com/compatibility/v1"),
+        "perplexity" => Some("https://api.perplexity.ai"),
+        "fireworks" => Some("https://api.fireworks.ai/inference/v1"),
+        "cerebras" => Some("https://api.cerebras.ai/v1"),
+        "deepinfra" => Some("https://api.deepinfra.com/v1/openai"),
         // Azure/Databricks/Snowflake endpoints are deployment-specific, so a base URL is
         // required from the user; no default is provided.
         "azure" => None,
@@ -2273,9 +2506,50 @@ fn build_provider_adapter(
             DEFAULT_PROVIDER_TIMEOUT_MS,
         )
         .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "google" => GoogleGeminiAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
         "ollama" => OllamaAdapter::new(
             provider.name.clone(),
             &base_url,
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "google" => GoogleGeminiAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "azure" => OpenAiCompatibleAdapter::new_with_auth_header(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+            Some("api-key".to_string()),
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "databricks" => OpenAiCompatibleAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
+            DEFAULT_PROVIDER_TIMEOUT_MS,
+        )
+        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
+        "snowflake" => OpenAiCompatibleAdapter::new(
+            provider.name.clone(),
+            &base_url,
+            provider.secret_ref.clone(),
+            state.credential_store.clone(),
             DEFAULT_PROVIDER_TIMEOUT_MS,
         )
         .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
@@ -2298,10 +2572,9 @@ fn build_provider_adapter(
             )
             .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>)
         }
-        // OpenAI-compatible providers (openai, openrouter, deepseek, xai, google, azure,
-        // databricks, snowflake, openai_compat) fall through to OpenAiCompatibleAdapter.
-        // Azure may require an api-version query parameter on some deployments; for simplicity
-        // we treat it as OpenAI-compatible with the user-provided base URL.
+        // OpenAI-compatible providers (openai, openrouter, deepseek, xai, google, databricks,
+        // snowflake, mistral, groq, together, cohere, and openai_compat) fall through to the
+        // standard bearer-auth adapter. Azure uses its api-key header above.
         _ => OpenAiCompatibleAdapter::new(
             provider.name.clone(),
             &base_url,
@@ -3526,4 +3799,42 @@ async fn recipe_graph_has_cycle(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod provider_catalog_tests {
+    use super::{parse_provider_model_catalog, provider_catalog_endpoint};
+
+    #[test]
+    fn google_catalog_strips_resource_prefix_sorts_and_deduplicates() {
+        let catalog = serde_json::json!({
+            "models": [
+                {"name": "models/gemini-2.5-pro"},
+                {"name": "models/gemini-2.5-flash"},
+                {"name": "models/gemini-2.5-pro"}
+            ]
+        });
+
+        assert_eq!(
+            parse_provider_model_catalog("google", &catalog),
+            vec!["gemini-2.5-flash", "gemini-2.5-pro"]
+        );
+        assert_eq!(
+            provider_catalog_endpoint(
+                "google",
+                "https://generativelanguage.googleapis.com/v1beta/openai"
+            )
+            .as_deref(),
+            Some("https://generativelanguage.googleapis.com/v1beta/models")
+        );
+    }
+
+    #[test]
+    fn openai_catalog_reads_model_ids() {
+        let catalog = serde_json::json!({"data": [{"id": "model-a"}, {"id": "model-b"}]});
+        assert_eq!(
+            parse_provider_model_catalog("openai", &catalog),
+            vec!["model-a", "model-b"]
+        );
+    }
 }

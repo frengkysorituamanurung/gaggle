@@ -1,5 +1,6 @@
 target/
 dist/
+goose/
 ui/node_modules/
 ui/tsconfig.tsbuildinfo
 ui/dist/

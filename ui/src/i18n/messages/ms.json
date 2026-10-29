@@ -1,0 +1,20 @@
+{
+  "navigation.home": "Laman Utama",
+  "navigation.recipes": "Resipi",
+  "navigation.skills": "Kemahiran",
+  "navigation.extensions": "Sambungan",
+  "navigation.scheduler": "Penjadual",
+  "navigation.memories": "Memori",
+  "navigation.permissions": "Kebenaran",
+  "navigation.workspace": "Ruang Kerja",
+  "navigation.terminal": "Terminal",
+  "navigation.sessionHistory": "Sejarah Sesi",
+  "navigation.chats": "Sembang",
+  "navigation.noRecentChats": "Tiada sembang terkini",
+  "navigation.settings": "Tetapan",
+  "app.toastNotifications": "Notifikasi toast",
+  "common.loading": "Memuatkan...",
+  "common.save": "Simpan",
+  "common.cancel": "Batal",
+  "common.close": "Tutup"
+}
