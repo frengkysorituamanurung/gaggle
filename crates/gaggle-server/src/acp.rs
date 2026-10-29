@@ -1,7 +1,4 @@
 //! Agent Client Protocol (ACP) compatibility layer for Gaggle.
-//!
-//! This module provides ACP-compatible WebSocket endpoints so the rebranded
-//! Gaggle Electron desktop app can communicate with the Gaggle backend.
 
 use axum::{
     Router,
@@ -300,7 +297,7 @@ async fn handle_request(
                 });
             }
 
-            // Delegate to Gaggle's agent loop in background with streaming
+            // Delegate to Gaggle's agent loop in background
             let state = state.clone();
             let session_id = session_id.to_string();
             let tx = tx.clone();
@@ -424,7 +421,7 @@ async fn handle_request(
                 let _ = tx.send(json).await;
             });
 
-            // Return immediate response (actual response sent via notification)
+            // Return immediate response
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
@@ -547,29 +544,6 @@ async fn handle_request(
             }
         }
         "session/setConfigOption" => {
-            let config_id = req
-                .params
-                .get("configId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let value = req
-                .params
-                .get("value")
-                .cloned()
-                .unwrap_or(serde_json::json!(null));
-
-            // Map config options to Gaggle chat settings
-            let session_id = req
-                .params
-                .get("sessionId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let session = session_manager.get_session(session_id);
-
-            // Config option changes are acknowledged but not yet persisted
-            // to Gaggle's chat settings. Full config bridging requires
-            // adding update methods to ChatRepository.
-
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
