@@ -1090,7 +1090,7 @@ fn validate_redacted_metadata(value: &serde_json::Value) -> Result<()> {
 }
 
 fn is_sensitive_metadata_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase().replace('-', "_").replace('.', "_");
+    let key = key.to_ascii_lowercase().replace(['-', '.'], "_");
     [
         "secret",
         "token",

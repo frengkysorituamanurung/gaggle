@@ -443,7 +443,7 @@ fn redact_metadata_value(value: Value, redacted: &mut bool) -> Value {
 }
 
 fn is_sensitive_metadata_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase().replace('-', "_").replace('.', "_");
+    let key = key.to_ascii_lowercase().replace(['-', '.'], "_");
     [
         "secret",
         "token",
