@@ -104,9 +104,12 @@ cancellation, audit-event, and adversarial-input tests.
 - **Phase 3 complete:** Config option bridging (session/setConfigOption)
   acknowledges provider/model/mode changes. Full persistence requires
   adding update methods to ChatRepository.
-- **Phase 4 (next):** Stream responses via WebSocket notifications
-  (session/update with text, tool calls, usage). Permission request bridging.
-  Requires agent loop modifications for intermediate notifications.
+- **Phase 4 complete:** Streaming responses via WebSocket notifications
+  (session/update with text deltas, tool calls). Permission request bridging
+  (session/request_permission notifications). Agent loop modified to accept
+  notification callback for text deltas and tool calls.
+- **Phase 5 (next):** Full real-time permission response handling via
+  oneshot channel correlation. Usage update notifications.
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and

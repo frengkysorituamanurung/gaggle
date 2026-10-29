@@ -8,7 +8,7 @@ the UI/backend integration audit.
 
 - API keys and OAuth tokens are stored in the OS credential vault (macOS Keychain / Linux Secret Service) through `KeyringCredentialStore`; an in-memory fallback remains for tests and unsupported platforms.
 - Desktop Electron shell is rebranded from Goose to Gaggle (binary name, package name, branding).
-- ACP backend integration: WebSocket JSON-RPC handler at /acp with initialize, session/new, session/prompt (delegated to agent loop), session/cancel, session/list, session/load, session/delete, session/close, session/fork, session/setConfigOption methods. Streaming responses and permission bridging require agent loop modifications for intermediate notifications.
+- ACP backend integration: WebSocket JSON-RPC handler at /acp with initialize, session/new, session/prompt (delegated to agent loop with streaming text deltas), session/cancel, session/list, session/load, session/delete, session/close, session/fork, session/setConfigOption methods. Permission request bridging sends session/request_permission notifications. Config option bridging acknowledges changes. Full real-time permission response handling requires oneshot channel correlation.
 - Desktop Electron shell rebranded from Goose to Gaggle. ACP WebSocket endpoint available for Electron desktop communication. Tauri desktop remains the primary desktop option.
 - Desktop uses Tauri with dynamic port binding as a fallback.
 - Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.

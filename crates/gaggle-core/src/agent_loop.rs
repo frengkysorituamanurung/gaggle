@@ -291,10 +291,37 @@ impl AgentRuntime {
             cancel_token,
             None,
             None,
+            None,
         )
         .await
     }
 
+    /// Run a turn with an optional notification callback for streaming.
+    pub async fn run_turn_with_notifications(
+        &self,
+        chat_id: &str,
+        user_prompt: &str,
+        model_key: &str,
+        provider: &dyn ModelProviderAdapter,
+        tool_executor: &dyn ToolExecutor,
+        cancel_token: &CancellationToken,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    ) -> Result<AgentLoopOutcome> {
+        self.run_turn_with_precreated(
+            chat_id,
+            user_prompt,
+            model_key,
+            provider,
+            tool_executor,
+            cancel_token,
+            None,
+            None,
+            notification_tx,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub async fn run_turn_with_precreated(
         &self,
@@ -306,6 +333,7 @@ impl AgentRuntime {
         cancel_token: &CancellationToken,
         precreated_run_id: Option<String>,
         precreated_user_msg_id: Option<String>,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     ) -> Result<AgentLoopOutcome> {
         let span = CorrelationIds::for_chat(chat_id).span("agent.run");
         self.run_turn_inner(
@@ -317,6 +345,7 @@ impl AgentRuntime {
             cancel_token,
             precreated_run_id,
             precreated_user_msg_id,
+            notification_tx,
         )
         .instrument(span)
         .await
@@ -334,6 +363,7 @@ impl AgentRuntime {
         cancel_token: &CancellationToken,
         precreated_run_id: Option<String>,
         precreated_user_msg_id: Option<String>,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     ) -> Result<AgentLoopOutcome> {
         let chat_repo = ChatRepository::new(self.pool.clone());
         let proj_repo = ProjectRepository::new(self.pool.clone());
@@ -493,9 +523,13 @@ impl AgentRuntime {
             let inference = InferenceOperation::run(provider, req, cancel_token, {
                 let run_repo = run_repo.clone();
                 let run_id = run.id.clone();
+                let notification_tx = notification_tx.clone();
+                let chat_id_for_notif = chat_id.to_string();
                 move |delta| {
                     let run_repo = run_repo.clone();
                     let run_id = run_id.clone();
+                    let notification_tx = notification_tx.clone();
+                    let chat_id_for_notif = chat_id_for_notif.clone();
                     async move {
                         run_repo
                             .emit_event(
@@ -503,11 +537,29 @@ impl AgentRuntime {
                                 "message.delta",
                                 &serde_json::json!({
                                     "step": step_idx,
-                                    "text": delta
+                                    "text": delta.clone()
                                 })
                                 .to_string(),
                             )
                             .await?;
+                        // Send WebSocket notification if available
+                        if let Some(tx) = notification_tx {
+                            let notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": chat_id_for_notif,
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "content": {
+                                            "type": "text",
+                                            "text": delta
+                                        }
+                                    }
+                                }
+                            });
+                            let _ = tx.send(notification.to_string());
+                        }
                         Ok(())
                     }
                 }
@@ -621,6 +673,8 @@ impl AgentRuntime {
                 run_repo: &run_repo,
                 ext_repo: &ext_repo,
                 permission_engine: &perm_engine,
+                notification_tx: notification_tx.clone(),
+                chat_id: chat_id.to_string(),
             }
             .run(
                 &run,
@@ -949,6 +1003,8 @@ struct ToolCallingOperation<'a> {
     run_repo: &'a RunRepository,
     ext_repo: &'a ExtensionRepository,
     permission_engine: &'a PermissionEngine,
+    notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    chat_id: String,
 }
 
 impl ToolCallingOperation<'_> {
@@ -1041,6 +1097,22 @@ impl ToolCallingOperation<'_> {
                             .to_string(),
                         )
                         .await?;
+                    // Send tool call denied notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call_update",
+                                    "toolCallId": proposed.id,
+                                    "status": "failed"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     conversation.push(ProviderMessage {
                         role: "tool".to_string(),
                         content: deny_json,
@@ -1124,6 +1196,24 @@ impl ToolCallingOperation<'_> {
                         decision = "allow",
                         "Tool call allowed by policy"
                     );
+                    // Send tool call started notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call",
+                                    "toolCallId": proposed.id,
+                                    "title": proposed.tool_name,
+                                    "kind": "other",
+                                    "status": "in_progress"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     let tool_out = self
                         .runtime
                         .execute_allowed_tool(
@@ -1136,6 +1226,22 @@ impl ToolCallingOperation<'_> {
                             tool_executor,
                         )
                         .await?;
+                    // Send tool call completed notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call_update",
+                                    "toolCallId": proposed.id,
+                                    "status": "completed"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     conversation.push(ProviderMessage {
                         role: "tool".to_string(),
                         content: tool_out,

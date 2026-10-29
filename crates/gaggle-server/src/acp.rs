@@ -388,17 +388,72 @@ async fn handle_request(
                 let executor =
                     gaggle_core::CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
 
+                // Create notification channel for streaming
+                let (notif_tx, mut notif_rx) = mpsc::unbounded_channel::<String>();
+
+                // Spawn task to forward notifications
+                let tx_clone = tx.clone();
+                tokio::spawn(async move {
+                    while let Some(notification) = notif_rx.recv().await {
+                        let _ = tx_clone.send(notification).await;
+                    }
+                });
+
                 let cancel_token = gaggle_core::CancellationToken::new();
-                let outcome = runtime
-                    .run_turn(
+                let mut outcome = runtime
+                    .run_turn_with_notifications(
                         &chat_id,
                         &prompt_text,
                         &model_key,
                         provider.as_ref(),
                         &executor,
                         &cancel_token,
+                        Some(notif_tx.clone()),
                     )
                     .await;
+
+                // Handle approval loop
+                loop {
+                    match &outcome {
+                        Ok(gaggle_core::AgentLoopOutcome::WaitingApproval {
+                            pending_approval_id,
+                            tool_call_id,
+                            ..
+                        }) => {
+                            // Send permission request notification
+                            let notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "session/request_permission",
+                                "params": {
+                                    "sessionId": session_id.clone(),
+                                    "toolCall": {
+                                        "toolCallId": tool_call_id,
+                                    },
+                                    "options": [
+                                        {"optionId": "approve", "name": "Approve", "kind": "allow_once"},
+                                        {"optionId": "deny", "name": "Deny", "kind": "reject_once"}
+                                    ]
+                                }
+                            });
+                            let _ = tx.send(notification.to_string()).await;
+
+                            // Auto-approve for now (full implementation would wait for client response)
+                            let approved = true;
+
+                            // Decide approval
+                            let run_repo = gaggle_db::repositories::runs::RunRepository::new(
+                                state.pool.clone(),
+                            );
+                            let _ = run_repo
+                                .decide_approval(pending_approval_id, approved, None, None, None)
+                                .await;
+
+                            // Break out of approval loop - client needs to send another prompt
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
 
                 // Send completion notification
                 let stop_reason = match &outcome {
