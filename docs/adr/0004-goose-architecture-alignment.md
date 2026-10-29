@@ -11,8 +11,8 @@ Axum API, and a React UI. Goose is a larger Rust workspace organized around
 `goose-agent` operations/state machines, provider and MCP crates, session
 services, and an Electron desktop app with ACP backend. The requested target
 is architectural and behavioral parity with Goose, not a one-off feature port.
-Gaggle's desktop shell will use Electron with ACP backend, matching Goose's
-architecture. Tauri remains as a fallback option.
+Gaggle's desktop shell uses Electron with ACP backend, matching Goose's
+architecture exactly. Tauri is deprecated and will be removed.
 
 Replacing Gaggle's workspace wholesale would also replace its persistence and
 application contracts. In particular, Gaggle's `runs`, ordered `run_events`,
