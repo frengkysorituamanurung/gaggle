@@ -2589,7 +2589,7 @@ fn build_provider_adapter(
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
-async fn resolve_chat_provider(
+pub async fn resolve_chat_provider(
     state: &AppState,
     chat: &Chat,
     requested_model_key: &str,
@@ -3216,7 +3216,7 @@ async fn start_chat_run(
     Ok(Json(StartRunResponse { run_id }))
 }
 
-fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
+pub fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
     match outcome {
         AgentLoopOutcome::Completed { .. } => "completed",
         AgentLoopOutcome::WaitingApproval { .. } => "waiting_approval",

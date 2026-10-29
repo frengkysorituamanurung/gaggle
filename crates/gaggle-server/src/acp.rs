@@ -1,8 +1,7 @@
-//! Minimal Agent Client Protocol (ACP) compatibility layer for Gaggle.
+//! Agent Client Protocol (ACP) compatibility layer for Gaggle.
 //!
-//! This module provides ACP-compatible endpoints so the rebranded Gaggle
-//! Electron desktop app can communicate with the Gaggle backend. It wraps
-//! Gaggle's existing REST/SSE agent runtime in ACP-compatible handlers.
+//! This module provides ACP-compatible WebSocket endpoints so the rebranded
+//! Gaggle Electron desktop app can communicate with the Gaggle backend.
 
 use axum::{
     Router,
@@ -14,11 +13,11 @@ use axum::{
     routing::get,
 };
 use futures::{SinkExt, StreamExt};
+use gaggle_db::connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 use crate::AppState;
 
@@ -28,6 +27,7 @@ pub struct AcpSession {
     pub session_id: String,
     pub chat_id: Option<String>,
     pub project_id: Option<String>,
+    pub run_id: Option<String>,
     pub cwd: Option<String>,
     pub created_at: i64,
 }
@@ -74,11 +74,12 @@ impl AcpSessionManager {
     }
 
     pub fn create_session(&self, cwd: Option<String>) -> AcpSession {
-        let session_id = Uuid::new_v4().to_string();
+        let session_id = connection::new_id();
         let session = AcpSession {
             session_id: session_id.clone(),
             chat_id: None,
             project_id: None,
+            run_id: None,
             cwd,
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -130,7 +131,7 @@ async fn health() -> &'static str {
 }
 
 async fn status() -> axum::Json<serde_json::Value> {
-    axum::Json(json!({
+    axum::Json(serde_json::json!({
         "status": "ok",
         "service": "gaggle",
         "version": env!("CARGO_PKG_VERSION")
@@ -163,7 +164,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             let request: Result<JsonRpcRequest, _> = serde_json::from_str(&text);
             match request {
                 Ok(req) => {
-                    let response = handle_request(&req, &state, &session_manager).await;
+                    let response = handle_request(&req, &state, &session_manager, &tx).await;
                     if let Some(resp) = response {
                         let json = serde_json::to_string(&resp).unwrap_or_default();
                         let _ = tx.send(json).await;
@@ -195,6 +196,7 @@ async fn handle_request(
     req: &JsonRpcRequest,
     state: &AppState,
     session_manager: &AcpSessionManager,
+    tx: &mpsc::Sender<String>,
 ) -> Option<JsonRpcResponse> {
     let id = req.id.clone();
 
@@ -203,7 +205,7 @@ async fn handle_request(
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({
+                result: Some(serde_json::json!({
                     "protocolVersion": 1,
                     "agentCapabilities": {
                         "loadSession": true,
@@ -243,7 +245,7 @@ async fn handle_request(
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({
+                result: Some(serde_json::json!({
                     "sessionId": session.session_id
                 })),
                 error: None,
@@ -268,21 +270,178 @@ async fn handle_request(
                     }),
                 });
             }
-            // For now, return a simple response
-            // Full implementation would delegate to Gaggle's agent loop
-            let response = JsonRpcResponse {
+
+            // Extract prompt text
+            let prompt_text = req
+                .params
+                .get("prompt")
+                .and_then(|p| p.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if prompt_text.is_empty() {
+                return Some(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32602,
+                        message: "Empty prompt".to_string(),
+                    }),
+                });
+            }
+
+            // Delegate to Gaggle's agent loop
+            let state = state.clone();
+            let session_id = session_id.to_string();
+            let tx = tx.clone();
+            let id = id.clone();
+
+            // Run agent loop in background
+            tokio::spawn(async move {
+                // Create project if needed
+                let project_id = format!("acp-project-{}", session_id);
+                let chat_id = format!("acp-chat-{}", session_id);
+
+                // Try to get existing chat, or create project + chat
+                let pool = state.pool.clone();
+                let chat_repo = gaggle_db::repositories::chats::ChatRepository::new(pool.clone());
+                let proj_repo =
+                    gaggle_db::repositories::projects::ProjectRepository::new(pool.clone());
+
+                // Check if project exists
+                let project = proj_repo.get_by_id(&project_id).await;
+                if project.is_err() || project.unwrap().is_none() {
+                    // Create project
+                    let _ = proj_repo.create("ACP Session", "/tmp", "none").await;
+                }
+
+                // Check if chat exists
+                let chat = chat_repo.get_by_id(&chat_id).await;
+                if chat.is_err() || chat.unwrap().is_none() {
+                    // Create chat
+                    let _ = chat_repo
+                        .create(&project_id, "ACP Chat", "user", "local", "ask")
+                        .await;
+                }
+
+                // Submit message and run agent
+                let runtime = gaggle_core::AgentRuntime::new_with_active_runs(
+                    state.pool.clone(),
+                    gaggle_core::DEFAULT_MAX_AGENT_STEPS,
+                    state.active_runs.clone(),
+                );
+                let builtin_executor: Arc<dyn gaggle_core::ToolExecutor> =
+                    Arc::new(gaggle_tools::BuiltinToolExecutor::new(state.pool.clone()));
+                let mcp_executor: Arc<dyn gaggle_core::ToolExecutor> =
+                    Arc::new(gaggle_mcp::McpToolExecutor::with_connection_manager(
+                        state.pool.clone(),
+                        state.mcp_connections.clone(),
+                    ));
+                let executor =
+                    gaggle_core::CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
+
+                // Get the chat for provider resolution
+                let chat = match chat_repo.get_by_id(&chat_id).await {
+                    Ok(Some(c)) => c,
+                    _ => {
+                        let error_resp = JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: id.clone(),
+                            result: None,
+                            error: Some(JsonRpcError {
+                                code: -32000,
+                                message: "Failed to get chat".to_string(),
+                            }),
+                        };
+                        let json = serde_json::to_string(&error_resp).unwrap_or_default();
+                        let _ = tx.send(json).await;
+                        return;
+                    }
+                };
+
+                // Resolve provider (use local-mock as default)
+                let (provider, model_key) = match gaggle_server::resolve_chat_provider(
+                    &state,
+                    &chat,
+                    "local-mock",
+                    &prompt_text,
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // Send error notification
+                        let error_resp = JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: id.clone(),
+                            result: None,
+                            error: Some(JsonRpcError {
+                                code: -32000,
+                                message: "Failed to resolve provider".to_string(),
+                            }),
+                        };
+                        let json = serde_json::to_string(&error_resp).unwrap_or_default();
+                        let _ = tx.send(json).await;
+                        return;
+                    }
+                };
+
+                let cancel_token = gaggle_core::CancellationToken::new();
+                let outcome = runtime
+                    .run_turn(
+                        &chat_id,
+                        &prompt_text,
+                        &model_key,
+                        provider.as_ref(),
+                        &executor,
+                        &cancel_token,
+                    )
+                    .await;
+
+                // Send completion notification
+                let stop_reason = match &outcome {
+                    Ok(gaggle_core::AgentLoopOutcome::Completed { .. }) => "end_turn",
+                    Ok(gaggle_core::AgentLoopOutcome::WaitingApproval { .. }) => "end_turn",
+                    Ok(gaggle_core::AgentLoopOutcome::Cancelled { .. }) => "cancelled",
+                    Ok(gaggle_core::AgentLoopOutcome::Failed { .. }) => "error",
+                    Err(_) => "error",
+                };
+
+                let response = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: id.clone(),
+                    result: Some(serde_json::json!({
+                        "stopReason": stop_reason
+                    })),
+                    error: None,
+                };
+                let json = serde_json::to_string(&response).unwrap_or_default();
+                let _ = tx.send(json).await;
+            });
+
+            // Return immediate response (the actual response will be sent via notification)
+            Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({
+                result: Some(serde_json::json!({
                     "stopReason": "end_turn"
                 })),
                 error: None,
-            };
-            Some(response)
+            })
         }
         "session/cancel" => {
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             // Cancel is a notification, no response needed
-            // Full implementation would cancel the run
+            // In a full implementation, this would cancel the run
+            let _ = session_id;
             None
         }
         "session/list" => {
@@ -290,7 +449,7 @@ async fn handle_request(
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({
+                result: Some(serde_json::json!({
                     "sessions": sessions
                 })),
                 error: None,
@@ -309,7 +468,7 @@ async fn handle_request(
                     let response = JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
-                        result: Some(json!({
+                        result: Some(serde_json::json!({
                             "sessionId": s.session_id
                         })),
                         error: None,
@@ -337,7 +496,7 @@ async fn handle_request(
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({})),
+                result: Some(serde_json::json!({})),
                 error: None,
             };
             Some(response)
@@ -352,7 +511,7 @@ async fn handle_request(
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({})),
+                result: Some(serde_json::json!({})),
                 error: None,
             };
             Some(response)
@@ -370,7 +529,7 @@ async fn handle_request(
                     let response = JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
-                        result: Some(json!({
+                        result: Some(serde_json::json!({
                             "sessionId": new_session.session_id
                         })),
                         error: None,
@@ -389,11 +548,10 @@ async fn handle_request(
             }
         }
         "session/setConfigOption" => {
-            // Acknowledge config option changes
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({
+                result: Some(serde_json::json!({
                     "configOptions": []
                 })),
                 error: None,
