@@ -16,8 +16,8 @@ the UI/backend integration audit.
 - UI: Onboarding, Diagnostics, Worktrees, Context Management, Memory Management, Recipe Management, Extension Management, Quick Launcher (Ctrl+K) added.
 - Settings: Theme, Keyboard Shortcuts, Live Voice, Dictation sections added.
 - McpApps renderer with iframe sandbox and message passing.
-- Native menu localization: Chinese (existing). Full multi-locale menu localization pending.
-- ACP-based session management: WebSocket JSON-RPC with all core methods. Full HandleDispatchFrom trait parity pending.
+- Native menu localization: Chinese (existing). Multi-locale menu translation framework added (i18n-menu.ts). Full translation files for all 16 locales pending.
+- ACP-based session management: WebSocket JSON-RPC with all core methods (initialize, session/new, session/prompt, session/cancel, session/list, session/load, session/delete, session/close, session/fork, session/setConfigOption). Streaming notifications and permission bridging implemented. Full HandleDispatchFrom trait parity pending (requires porting 4000+ lines from Goose).
 - Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.
 - Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.
 - UI supports English, Indonesian, and Japanese locales; full Goose i18n parity is in progress.
