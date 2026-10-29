@@ -8,7 +8,8 @@ the UI/backend integration audit.
 
 - API keys and OAuth tokens are stored in the OS credential vault (macOS Keychain / Linux Secret Service) through `KeyringCredentialStore`; an in-memory fallback remains for tests and unsupported platforms.
 - Desktop Electron shell is rebranded from Goose to Gaggle (binary name, package name, branding).
-- ACP backend integration: agent-client-protocol and agent-client-protocol-http crates added as dependencies. Minimal ACP-compatible endpoints (/health, /status) and session manager added. Full ACP server implementation (initialize, new_session, prompt, cancel) wrapping Gaggle's agent loop is in progress.
+- ACP backend integration: agent-client-protocol and agent-client-protocol-http crates added as dependencies. Minimal ACP-compatible endpoints (/health, /status) and in-memory session manager implemented. Full ACP server requires porting Goose's HandleDispatchFrom<Client> trait (4000+ lines) which wraps StateMachineServices. This is a major milestone.
+- Desktop Electron shell rebranded from Goose to Gaggle. Full ACP integration needed for Electron desktop to function with Gaggle backend. Tauri desktop remains the primary desktop option.
 - Desktop uses Tauri with dynamic port binding as a fallback.
 - Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.
 - Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.

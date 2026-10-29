@@ -94,9 +94,19 @@ cancellation, audit-event, and adversarial-input tests.
 - **Started:** Electron desktop shell rebranded from Goose to Gaggle (binary
   name, package name, protocol scheme, branding). ACP backend dependencies
   added to gaggle-server. Minimal ACP-compatible endpoints (/health, /status)
-  and in-memory session manager implemented. Full ACP server implementation
-  (initialize, new_session, prompt, cancel) wrapping Gaggle's agent loop is
-  the next major milestone.
+  and in-memory session manager implemented.
+- **Critical assessment:** Full ACP server implementation requires porting
+  Goose's `HandleDispatchFrom<Client>` trait (4000+ lines) which wraps
+  `StateMachineServices`. This is not a simple adapter - it requires
+  implementing the entire ACP JSON-RPC protocol including initialize,
+  new_session, prompt, cancel, session management, config options, and
+  streaming notifications. The recommended approach is to either:
+  1. Port Goose's ACP server module wholesale and adapt it to Gaggle's
+     data model, or
+  2. Create a compatibility bridge that translates ACP requests to
+     Gaggle's REST API.
+  Option 1 is more robust but requires significant effort. Option 2 is
+  faster but may have limitations.
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and
