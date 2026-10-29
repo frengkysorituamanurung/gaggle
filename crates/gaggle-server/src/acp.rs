@@ -13,7 +13,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -56,6 +56,44 @@ pub struct JsonRpcResponse {
 pub struct JsonRpcError {
     pub code: i64,
     pub message: String,
+}
+
+/// Permission bridge for request/response correlation.
+pub struct PermissionBridge {
+    pending: std::sync::Mutex<std::collections::HashMap<String, oneshot::Sender<bool>>>,
+}
+
+impl PermissionBridge {
+    pub fn new() -> Self {
+        Self {
+            pending: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Register a pending permission request and return a receiver.
+    pub fn register(&self, request_id: String) -> oneshot::Receiver<bool> {
+        let (tx, rx) = oneshot::channel();
+        let mut pending = self.pending.lock().unwrap();
+        pending.insert(request_id, tx);
+        rx
+    }
+
+    /// Resolve a pending permission request with a decision.
+    pub fn resolve(&self, request_id: &str, approved: bool) -> bool {
+        let mut pending = self.pending.lock().unwrap();
+        if let Some(tx) = pending.remove(request_id) {
+            let _ = tx.send(approved);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for PermissionBridge {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// ACP session manager (in-memory).
@@ -164,6 +202,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Handle incoming messages
     while let Some(Ok(msg)) = receiver.next().await {
         if let Message::Text(text) = msg {
+            // Check if this is a permission response (has "result" and "id" but no "method")
+            let value: Result<Value, _> = serde_json::from_str(&text);
+            if let Ok(val) = value {
+                if val.get("method").is_none()
+                    && val.get("id").is_some()
+                    && (val.get("result").is_some() || val.get("error").is_some())
+                {
+                    // This is a response - check if it's a permission response
+                    if let Some(id) = val.get("id").and_then(|v| v.as_str()) {
+                        if id.starts_with("perm-") {
+                            let approved = val
+                                .get("result")
+                                .and_then(|r| r.get("approved"))
+                                .and_then(|a| a.as_bool())
+                                .unwrap_or(false);
+                            state.permission_bridge.resolve(id, approved);
+                            continue;
+                        }
+                    }
+                }
+            }
+
             let request: Result<JsonRpcRequest, _> = serde_json::from_str(&text);
             match request {
                 Ok(req) => {
@@ -427,10 +487,15 @@ async fn handle_request(
                             tool_call_id,
                             ..
                         }) => {
+                            // Register permission request and wait for response
+                            let perm_req_id = format!("perm-{}", tool_call_id);
+                            let rx = state.permission_bridge.register(perm_req_id.clone());
+
                             // Send permission request notification
                             let notification = serde_json::json!({
                                 "jsonrpc": "2.0",
                                 "method": "session/request_permission",
+                                "id": perm_req_id.clone(),
                                 "params": {
                                     "sessionId": session_id.clone(),
                                     "toolCall": {
@@ -444,8 +509,14 @@ async fn handle_request(
                             });
                             let _ = tx.send(notification.to_string()).await;
 
-                            // Auto-approve for now (full implementation would wait for client response)
-                            let approved = true;
+                            // Wait for client response (with 30s timeout)
+                            let approved =
+                                match tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+                                    .await
+                                {
+                                    Ok(Ok(approved)) => approved,
+                                    _ => false, // Timeout or error - deny
+                                };
 
                             // Decide approval
                             let run_repo = gaggle_db::repositories::runs::RunRepository::new(

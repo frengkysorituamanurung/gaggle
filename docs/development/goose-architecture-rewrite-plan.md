@@ -111,8 +111,11 @@ cancellation, audit-event, and adversarial-input tests.
 - **Phase 5 complete:** Usage update notifications sent after completion.
   Config option persistence to ChatRepository (mode, permission_mode).
   Session updated with chat_id and project_id for config bridging.
-- **Phase 6 (next):** Full real-time permission response handling via
-  oneshot channel correlation.
+- **Phase 6 complete:** Full real-time permission response handling via
+  oneshot channel correlation. PermissionBridge with register/resolve.
+  WebSocket handler routes permission responses. 30s timeout with auto-deny.
+- **Phase 7 (next):** Full ACP protocol parity with Goose (initialize,
+  new_session, prompt, cancel, session management, config options, streaming).
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and

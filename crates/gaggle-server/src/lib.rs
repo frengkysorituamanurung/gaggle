@@ -90,6 +90,7 @@ pub struct AppState {
     pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
     pub terminal_manager: Arc<TerminalManager>,
     pub mcp_connections: McpConnectionManager,
+    pub permission_bridge: Arc<acp::PermissionBridge>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -585,6 +586,7 @@ pub async fn initialize_server_state_with_credential_store(
     let active_runs = ActiveRunRegistry::new();
     let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
     let mcp_connections = McpConnectionManager::with_pool(pool.clone());
+    let permission_bridge = Arc::new(acp::PermissionBridge::new());
     let state = AppState {
         pool,
         db_path,
@@ -593,6 +595,7 @@ pub async fn initialize_server_state_with_credential_store(
         oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
         terminal_manager,
         mcp_connections,
+        permission_bridge,
     };
     let _ = missed_run_catchup(&state).await;
     Ok(state)
