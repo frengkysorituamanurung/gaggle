@@ -12,6 +12,7 @@ use sqlx::SqlitePool;
 
 pub mod browser_tools;
 pub mod download;
+pub mod final_output;
 pub mod fs_tools;
 pub mod git_tools;
 pub mod shell_tools;
