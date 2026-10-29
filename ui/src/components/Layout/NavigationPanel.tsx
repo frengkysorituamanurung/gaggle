@@ -53,6 +53,9 @@ const NAV = [
   { path: "/terminal", label: navMessages.terminal, icon: Terminal },
   { path: "/diagnostics", label: { id: "navigation.diagnostics", defaultMessage: "Diagnostics" }, icon: Stethoscope },
   { path: "/worktrees", label: { id: "navigation.worktrees", defaultMessage: "Worktrees" }, icon: GitBranch },
+  { path: "/memories/manage", label: { id: "navigation.memoryManagement", defaultMessage: "Memory Mgmt" }, icon: Brain },
+  { path: "/recipes/manage", label: { id: "navigation.recipeManagement", defaultMessage: "Recipe Mgmt" }, icon: BookOpen },
+  { path: "/extensions/manage", label: { id: "navigation.extensionManagement", defaultMessage: "Ext Mgmt" }, icon: Plug },
   { path: "/history", label: navMessages.sessionHistory, icon: History },
 ];
 
