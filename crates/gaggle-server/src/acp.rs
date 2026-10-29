@@ -300,7 +300,7 @@ async fn handle_request(
                 });
             }
 
-            // Delegate to Gaggle's agent loop in background
+            // Delegate to Gaggle's agent loop in background with streaming
             let state = state.clone();
             let session_id = session_id.to_string();
             let tx = tx.clone();
@@ -354,30 +354,26 @@ async fn handle_request(
                 };
 
                 // Resolve provider
-                let (provider, model_key) = match gaggle_server::resolve_chat_provider(
-                    &state,
-                    &chat,
-                    "local-mock",
-                    &prompt_text,
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(_) => {
-                        let error_resp = JsonRpcResponse {
-                            jsonrpc: "2.0".to_string(),
-                            id: id.clone(),
-                            result: None,
-                            error: Some(JsonRpcError {
-                                code: -32000,
-                                message: "Failed to resolve provider".to_string(),
-                            }),
-                        };
-                        let json = serde_json::to_string(&error_resp).unwrap_or_default();
-                        let _ = tx.send(json).await;
-                        return;
-                    }
-                };
+                let (provider, model_key) =
+                    match crate::resolve_chat_provider(&state, &chat, "local-mock", &prompt_text)
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => {
+                            let error_resp = JsonRpcResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: id.clone(),
+                                result: None,
+                                error: Some(JsonRpcError {
+                                    code: -32000,
+                                    message: "Failed to resolve provider".to_string(),
+                                }),
+                            };
+                            let json = serde_json::to_string(&error_resp).unwrap_or_default();
+                            let _ = tx.send(json).await;
+                            return;
+                        }
+                    };
 
                 // Run agent loop
                 let runtime = gaggle_core::AgentRuntime::new_with_active_runs(
@@ -428,7 +424,7 @@ async fn handle_request(
                 let _ = tx.send(json).await;
             });
 
-            // Return immediate response
+            // Return immediate response (actual response sent via notification)
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
@@ -551,6 +547,29 @@ async fn handle_request(
             }
         }
         "session/setConfigOption" => {
+            let config_id = req
+                .params
+                .get("configId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let value = req
+                .params
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::json!(null));
+
+            // Map config options to Gaggle chat settings
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let session = session_manager.get_session(session_id);
+
+            // Config option changes are acknowledged but not yet persisted
+            // to Gaggle's chat settings. Full config bridging requires
+            // adding update methods to ChatRepository.
+
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
