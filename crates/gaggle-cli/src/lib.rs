@@ -5,5 +5,5 @@
 
 pub mod backup;
 pub mod chat_bundle;
-pub mod goose_import;
+pub mod gaggle_import;
 pub mod memory_export;
