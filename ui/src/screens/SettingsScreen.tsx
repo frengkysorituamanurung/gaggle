@@ -8,6 +8,8 @@ import { Input } from "../components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Switch } from "../components/ui/Switch";
 import ThemeSelector from "../components/GooseSidebar/ThemeSelector";
+import ThemeSettingsSection from "../components/settings/ThemeSettingsSection";
+import KeyboardShortcutsSection from "../components/settings/KeyboardShortcutsSection";
 import ModelsSection from "../components/settings/models/ModelsSection";
 import ModeSection from "../components/settings/chat/ModeSection";
 import GoosehintsSection from "../components/settings/chat/GoosehintsSection";
@@ -73,6 +75,7 @@ export default function SettingsScreen() {
           <TabsTrigger value="keyboard">Keyboard</TabsTrigger>
           <TabsTrigger value="auth">Auth</TabsTrigger>
           <TabsTrigger value="app">App</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
         </TabsList>
 
         <TabsContent value="models">
@@ -169,6 +172,13 @@ export default function SettingsScreen() {
                 ))}
               </CardContent>
             </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="appearance">
+          <div className="flex flex-col gap-4">
+            <ThemeSettingsSection />
+            <KeyboardShortcutsSection />
           </div>
         </TabsContent>
 
