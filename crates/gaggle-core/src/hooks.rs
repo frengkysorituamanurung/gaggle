@@ -65,11 +65,16 @@ impl HookResult {
     }
 }
 
+use std::sync::{Arc, RwLock};
+
+/// A registered hook callback.
+pub type HookCallback = Arc<dyn Fn(&HookContext) -> HookResult + Send + Sync>;
+
 /// In-process hook manager. Hooks are registered as callbacks; the default
 /// implementation is a no-op that allows everything.
 #[derive(Clone, Default)]
 pub struct HookManager {
-    // Reserved for future callback registration.
+    callbacks: Arc<RwLock<Vec<(HookEvent, HookCallback)>>>,
 }
 
 impl HookManager {
@@ -77,12 +82,36 @@ impl HookManager {
         Self::default()
     }
 
-    pub fn emit(&self, _ctx: &HookContext) -> HookResult {
+    /// Register a hook callback for a specific event.
+    pub fn register(&self, event: HookEvent, callback: HookCallback) {
+        if let Ok(mut guard) = self.callbacks.write() {
+            guard.push((event, callback));
+        }
+    }
+
+    /// Emit a hook event and collect results from all registered callbacks.
+    pub fn emit(&self, ctx: &HookContext) -> HookResult {
+        let callbacks = self.callbacks.read().ok();
+        if let Some(guard) = callbacks {
+            for (event, callback) in guard.iter() {
+                if *event == ctx.event {
+                    let result = callback(ctx);
+                    if result.decision == HookDecision::Deny {
+                        return result;
+                    }
+                }
+            }
+        }
         HookResult::allow()
     }
 
-    pub fn emit_blocking(&self, _ctx: &HookContext) -> HookResult {
-        HookResult::allow()
+    pub fn emit_blocking(&self, ctx: &HookContext) -> HookResult {
+        self.emit(ctx)
+    }
+
+    /// Get the number of registered hooks.
+    pub fn hook_count(&self) -> usize {
+        self.callbacks.read().map(|g| g.len()).unwrap_or(0)
     }
 }
 

@@ -178,6 +178,14 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
         is_read_only: false,
         schema_json: r#"{"type":"object","properties":{"format":{"type":"string","enum":["text","html"]}}}"#,
     },
+    BuiltinToolSpec {
+        extension_name: "gaggle.agent",
+        extension_desc: "Built-in agent output tools for Gaggle",
+        tool_name: "agent.final_output",
+        description: "Produce a structured final output summarizing the agent's work",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{"summary":{"type":"string"},"changes":{"type":"array","items":{"type":"string"}},"tests_run":{"type":"array","items":{"type":"string"}},"errors":{"type":"array","items":{"type":"string"}}},"required":["summary"]}"#,
+    },
 ];
 
 /// Registers all built-in Gaggle extensions (`kind = 'builtin'`, `source = 'bundled'`)
@@ -537,6 +545,36 @@ impl ToolExecutor for BuiltinToolExecutor {
                     "results": items
                 }))
                 .map_err(|e| e.to_string())
+            }
+            "agent.final_output" => {
+                // Produce a structured final output
+                let summary = args
+                    .get("summary")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Task completed");
+                let mut output = crate::final_output::FinalOutput::new(summary);
+                if let Some(changes) = args.get("changes").and_then(|v| v.as_array()) {
+                    for change in changes {
+                        if let Some(s) = change.as_str() {
+                            output.add_change(s);
+                        }
+                    }
+                }
+                if let Some(tests) = args.get("tests_run").and_then(|v| v.as_array()) {
+                    for test in tests {
+                        if let Some(s) = test.as_str() {
+                            output.add_test(s);
+                        }
+                    }
+                }
+                if let Some(errors) = args.get("errors").and_then(|v| v.as_array()) {
+                    for error in errors {
+                        if let Some(s) = error.as_str() {
+                            output.add_error(s);
+                        }
+                    }
+                }
+                serde_json::to_string(&output).map_err(|e| e.to_string())
             }
             other => Err(format!("Unsupported built-in tool '{other}'")),
         }
