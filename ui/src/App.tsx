@@ -8,6 +8,9 @@ import { Navigation } from "./components/Layout/NavigationPanel";
 import { defineMessages, useIntl } from "./i18n";
 import ChatScreen from "./screens/ChatScreen";
 import HubScreen from "./screens/HubScreen";
+import DiagnosticsScreen from "./screens/DiagnosticsScreen";
+import WorktreeScreen from "./screens/WorktreeScreen";
+import ContextScreen from "./screens/ContextScreen";
 import OnboardingGuard from "./components/onboarding/OnboardingGuard";
 import AnnouncementModal from "./components/AnnouncementModal";
 import TelemetryConsentPrompt from "./components/TelemetryConsentPrompt";
@@ -47,6 +50,9 @@ function Shell() {
           <Route path="/permissions" element={<PermissionScreen />} />
           <Route path="/workspace" element={<WorkspaceScreen />} />
           <Route path="/terminal" element={<TerminalScreen />} />
+          <Route path="/diagnostics" element={<DiagnosticsScreen />} />
+          <Route path="/worktrees" element={<WorktreeScreen projectId="" />} />
+          <Route path="/context" element={<ContextScreen chatId="" />} />
           <Route path="/standalone-app" element={<StandaloneAppView />} />
           <Route path="/launcher" element={<LauncherView />} />
           <Route path="/configure-providers" element={<ConfigureProvidersScreen />} />

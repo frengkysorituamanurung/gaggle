@@ -18,8 +18,8 @@ describes incremental behavior ports and is superseded for new work.
 | Providers | Gaggle provider trait and adapters; model catalog discovery now supports native OpenAI-compatible, Google, Anthropic, and Ollama endpoints | `goose-provider-types`, `goose-providers`, provider inventory | Continue aligning adapter capabilities and add provider-specific streaming/model metadata; retain secret references and normalize errors/streams |
 | Extensions | `gaggle-mcp` and `gaggle-tools`, with central permission checks | `goose-mcp`, extension manager, built-ins and platform extensions | Port compatible extension lifecycle and tools without bypassing Gaggle's permission engine |
 | Context | Context assembler and basic persisted compaction | Context-management crate, structured summaries, tool-pair compaction | Port context operations after runtime effects are durable and tested |
-| UI | React/Vite app served by Axum; Tauri desktop shell now binds an available loopback port and shuts down its server on exit | React/Electron desktop app | Adopt desktop workflows in stages; keep UI calls on a stable backend contract until cutover |
-| Delivery | CLI/server and macOS/Linux packaging | CLI, desktop, API/ACP, and Windows packaging | Add entry points/platforms only with parity and release tests |
+| UI | React/Vite app served by Axum; Electron desktop shell rebranded from Goose with ACP backend (WebSocket JSON-RPC) | React/Electron desktop app | Adopt desktop workflows in stages; ACP backend provides protocol compatibility with Goose desktop |
+| Delivery | CLI/server, Tauri desktop, and Electron desktop (rebranded) with ACP backend | CLI, desktop, API/ACP, and Windows packaging | ACP WebSocket endpoint at /acp; Electron desktop uses ACP for communication |
 
 ## Phases
 

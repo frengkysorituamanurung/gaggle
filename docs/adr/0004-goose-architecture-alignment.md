@@ -9,8 +9,10 @@
 Gaggle is a Rust workspace with eight crates, a durable SQLite run model, an
 Axum API, and a React UI. Goose is a larger Rust workspace organized around
 `goose-agent` operations/state machines, provider and MCP crates, session
-services, and an Electron desktop app. The requested target is architectural
-and behavioral parity with Goose, not a one-off feature port.
+services, and an Electron desktop app with ACP backend. The requested target
+is architectural and behavioral parity with Goose, not a one-off feature port.
+Gaggle's desktop shell will use Electron with ACP backend, matching Goose's
+architecture. Tauri remains as a fallback option.
 
 Replacing Gaggle's workspace wholesale would also replace its persistence and
 application contracts. In particular, Gaggle's `runs`, ordered `run_events`,

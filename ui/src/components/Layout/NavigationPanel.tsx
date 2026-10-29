@@ -19,6 +19,8 @@ import {
   FolderTree,
   Terminal,
   AppWindow,
+  Stethoscope,
+  GitBranch,
 } from "lucide-react";
 
 const navMessages = defineMessages({
@@ -49,6 +51,8 @@ const NAV = [
   { path: "/permissions", label: navMessages.permissions, icon: Shield },
   { path: "/workspace", label: navMessages.workspace, icon: FolderTree },
   { path: "/terminal", label: navMessages.terminal, icon: Terminal },
+  { path: "/diagnostics", label: { id: "navigation.diagnostics", defaultMessage: "Diagnostics" }, icon: Stethoscope },
+  { path: "/worktrees", label: { id: "navigation.worktrees", defaultMessage: "Worktrees" }, icon: GitBranch },
   { path: "/history", label: navMessages.sessionHistory, icon: History },
 ];
 
