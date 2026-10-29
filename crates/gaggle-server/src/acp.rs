@@ -13,11 +13,11 @@ use axum::{
     routing::get,
 };
 use futures::{SinkExt, StreamExt};
-use gaggle_db::connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 use crate::AppState;
 
@@ -74,7 +74,13 @@ impl AcpSessionManager {
     }
 
     pub fn create_session(&self, cwd: Option<String>) -> AcpSession {
-        let session_id = connection::new_id();
+        let session_id = format!(
+            "acp-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
         let session = AcpSession {
             session_id: session_id.clone(),
             chat_id: None,
@@ -294,57 +300,41 @@ async fn handle_request(
                 });
             }
 
-            // Delegate to Gaggle's agent loop
+            // Delegate to Gaggle's agent loop in background
             let state = state.clone();
             let session_id = session_id.to_string();
             let tx = tx.clone();
             let id = id.clone();
 
-            // Run agent loop in background
             tokio::spawn(async move {
-                // Create project if needed
+                // Create project and chat for this session
                 let project_id = format!("acp-project-{}", session_id);
                 let chat_id = format!("acp-chat-{}", session_id);
 
-                // Try to get existing chat, or create project + chat
                 let pool = state.pool.clone();
                 let chat_repo = gaggle_db::repositories::chats::ChatRepository::new(pool.clone());
                 let proj_repo =
                     gaggle_db::repositories::projects::ProjectRepository::new(pool.clone());
 
-                // Check if project exists
-                let project = proj_repo.get_by_id(&project_id).await;
-                if project.is_err() || project.unwrap().is_none() {
-                    // Create project
+                // Create project if not exists
+                if proj_repo
+                    .get_by_id(&project_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_none()
+                {
                     let _ = proj_repo.create("ACP Session", "/tmp", "none").await;
                 }
 
-                // Check if chat exists
-                let chat = chat_repo.get_by_id(&chat_id).await;
-                if chat.is_err() || chat.unwrap().is_none() {
-                    // Create chat
+                // Create chat if not exists
+                if chat_repo.get_by_id(&chat_id).await.ok().flatten().is_none() {
                     let _ = chat_repo
                         .create(&project_id, "ACP Chat", "user", "local", "ask")
                         .await;
                 }
 
-                // Submit message and run agent
-                let runtime = gaggle_core::AgentRuntime::new_with_active_runs(
-                    state.pool.clone(),
-                    gaggle_core::DEFAULT_MAX_AGENT_STEPS,
-                    state.active_runs.clone(),
-                );
-                let builtin_executor: Arc<dyn gaggle_core::ToolExecutor> =
-                    Arc::new(gaggle_tools::BuiltinToolExecutor::new(state.pool.clone()));
-                let mcp_executor: Arc<dyn gaggle_core::ToolExecutor> =
-                    Arc::new(gaggle_mcp::McpToolExecutor::with_connection_manager(
-                        state.pool.clone(),
-                        state.mcp_connections.clone(),
-                    ));
-                let executor =
-                    gaggle_core::CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
-
-                // Get the chat for provider resolution
+                // Get chat for provider resolution
                 let chat = match chat_repo.get_by_id(&chat_id).await {
                     Ok(Some(c)) => c,
                     _ => {
@@ -363,7 +353,7 @@ async fn handle_request(
                     }
                 };
 
-                // Resolve provider (use local-mock as default)
+                // Resolve provider
                 let (provider, model_key) = match gaggle_server::resolve_chat_provider(
                     &state,
                     &chat,
@@ -374,7 +364,6 @@ async fn handle_request(
                 {
                     Ok(result) => result,
                     Err(_) => {
-                        // Send error notification
                         let error_resp = JsonRpcResponse {
                             jsonrpc: "2.0".to_string(),
                             id: id.clone(),
@@ -389,6 +378,22 @@ async fn handle_request(
                         return;
                     }
                 };
+
+                // Run agent loop
+                let runtime = gaggle_core::AgentRuntime::new_with_active_runs(
+                    state.pool.clone(),
+                    gaggle_core::DEFAULT_MAX_AGENT_STEPS,
+                    state.active_runs.clone(),
+                );
+                let builtin_executor: Arc<dyn gaggle_core::ToolExecutor> =
+                    Arc::new(gaggle_tools::BuiltinToolExecutor::new(state.pool.clone()));
+                let mcp_executor: Arc<dyn gaggle_core::ToolExecutor> =
+                    Arc::new(gaggle_mcp::McpToolExecutor::with_connection_manager(
+                        state.pool.clone(),
+                        state.mcp_connections.clone(),
+                    ));
+                let executor =
+                    gaggle_core::CompositeToolExecutor::new(builtin_executor, Some(mcp_executor));
 
                 let cancel_token = gaggle_core::CancellationToken::new();
                 let outcome = runtime
@@ -423,7 +428,7 @@ async fn handle_request(
                 let _ = tx.send(json).await;
             });
 
-            // Return immediate response (the actual response will be sent via notification)
+            // Return immediate response
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
@@ -439,8 +444,6 @@ async fn handle_request(
                 .get("sessionId")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            // Cancel is a notification, no response needed
-            // In a full implementation, this would cancel the run
             let _ = session_id;
             None
         }
