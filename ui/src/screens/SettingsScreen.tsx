@@ -15,6 +15,8 @@ import ModeSection from "../components/settings/chat/ModeSection";
 import GoosehintsSection from "../components/settings/chat/GoosehintsSection";
 import LiveVoiceSettings from "../components/settings/chat/LiveVoiceSettings";
 import DictationSettings from "../components/settings/chat/DictationSettings";
+import LiveVoiceSettingsSection from "../components/settings/LiveVoiceSettingsSection";
+import DictationSettingsSection from "../components/settings/DictationSettingsSection";
 import ResponseStylesSection from "../components/settings/chat/ResponseStylesSection";
 import SecurityToggle from "../components/settings/chat/SecurityToggle";
 import SpellcheckToggle from "../components/settings/chat/SpellcheckToggle";
@@ -76,6 +78,7 @@ export default function SettingsScreen() {
           <TabsTrigger value="auth">Auth</TabsTrigger>
           <TabsTrigger value="app">App</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="voice">Voice</TabsTrigger>
         </TabsList>
 
         <TabsContent value="models">
@@ -179,6 +182,13 @@ export default function SettingsScreen() {
           <div className="flex flex-col gap-4">
             <ThemeSettingsSection />
             <KeyboardShortcutsSection />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="voice">
+          <div className="flex flex-col gap-4">
+            <LiveVoiceSettingsSection />
+            <DictationSettingsSection />
           </div>
         </TabsContent>
 

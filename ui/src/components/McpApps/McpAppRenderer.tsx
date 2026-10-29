@@ -1,16 +1,23 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Card, CardContent } from "../ui/Card";
 
 interface McpAppRendererProps {
   url: string;
   title?: string;
   onClose?: () => void;
+  onMessage?: (msg: unknown) => void;
 }
 
-export default function McpAppRenderer({ url, title, onClose }: McpAppRendererProps) {
+interface McpAppMessage {
+  type: "tool_result" | "notification" | "error";
+  payload: unknown;
+}
+
+export default function McpAppRenderer({ url, title, onClose, onMessage }: McpAppRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<McpAppMessage[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -18,6 +25,35 @@ export default function McpAppRenderer({ url, title, onClose }: McpAppRendererPr
     const timer = setTimeout(() => setLoading(false), 3000);
     return () => clearTimeout(timer);
   }, [url]);
+
+  // Listen for messages from the iframe
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      // Validate origin
+      try {
+        const origin = new URL(url).origin;
+        if (event.origin !== origin && event.origin !== "null") {
+          return;
+        }
+      } catch {
+        return;
+      }
+
+      if (event.data && typeof event.data === "object") {
+        const msg = event.data as McpAppMessage;
+        setMessages((prev) => [...prev, msg]);
+        onMessage?.(msg);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [url, onMessage]);
+
+  const sendMessage = useCallback((msg: unknown) => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(msg, "*");
+    }
+  }, []);
 
   if (!url) {
     return (
@@ -54,11 +90,21 @@ export default function McpAppRenderer({ url, title, onClose }: McpAppRendererPr
           ref={iframeRef}
           src={url}
           className="w-full h-96 border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           onLoad={() => setLoading(false)}
           onError={() => setError("Failed to load MCP app")}
           title={title || "MCP App"}
         />
+        {messages.length > 0 && (
+          <div className="border-t border-border-primary p-2 max-h-32 overflow-y-auto">
+            <div className="text-xs text-text-tertiary mb-1">Messages ({messages.length})</div>
+            {messages.slice(-5).map((m, i) => (
+              <div key={i} className="text-xs text-text-secondary truncate">
+                {m.type}: {JSON.stringify(m.payload).slice(0, 100)}
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

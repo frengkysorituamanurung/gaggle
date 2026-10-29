@@ -12,8 +12,12 @@ the UI/backend integration audit.
 - UI screens added: Onboarding, Diagnostics, Worktrees, Context Management, Memory Management, Recipe Management, Extension Management, Quick Launcher (Ctrl+K).
 - Desktop: Electron is the primary desktop shell. Native menu localization exists (Chinese). ACP backend provides WebSocket JSON-RPC at /acp with all core methods. Tauri is deprecated.
 - ACP backend integration: WebSocket JSON-RPC handler at /acp with initialize, session/new, session/prompt (delegated to agent loop with streaming text deltas and tool call notifications), session/cancel, session/list, session/load, session/delete, session/close, session/fork, session/setConfigOption (with config persistence) methods. Usage update notifications sent after completion. Permission request bridging with oneshot channel correlation - waits for client response with 30s timeout. Auto-deny on timeout.
-- Desktop Electron shell rebranded from Goose to Gaggle. ACP WebSocket endpoint available for Electron desktop communication. Tauri desktop remains the primary desktop option.
-- Desktop uses Tauri with dynamic port binding as a fallback.
+- Desktop: Electron is the primary desktop shell. Native menu localization exists (Chinese). ACP backend provides WebSocket JSON-RPC at /acp with all core methods. Tauri is deprecated.
+- UI: Onboarding, Diagnostics, Worktrees, Context Management, Memory Management, Recipe Management, Extension Management, Quick Launcher (Ctrl+K) added.
+- Settings: Theme, Keyboard Shortcuts, Live Voice, Dictation sections added.
+- McpApps renderer with iframe sandbox and message passing.
+- Native menu localization: Chinese (existing). Full multi-locale menu localization pending.
+- ACP-based session management: WebSocket JSON-RPC with all core methods. Full HandleDispatchFrom trait parity pending.
 - Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.
 - Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.
 - UI supports English, Indonesian, and Japanese locales; full Goose i18n parity is in progress.
