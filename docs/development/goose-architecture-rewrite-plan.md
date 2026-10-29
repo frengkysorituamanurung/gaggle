@@ -98,8 +98,11 @@ cancellation, audit-event, and adversarial-input tests.
   session/new, session/prompt, session/cancel, session/list, session/load,
   session/delete, session/close, session/fork, session/setConfigOption methods.
   In-memory session manager with create/get/update/remove/list.
-- **Phase 2 (next):** Delegate session/prompt to Gaggle's agent loop and
-  stream responses via WebSocket notifications.
+- **Phase 2 complete:** session/prompt delegates to Gaggle's agent loop.
+  Creates project and chat for ACP session, resolves provider (local-mock
+  default), runs agent loop, returns stop reason.
+- **Phase 3 (next):** Stream responses via WebSocket notifications
+  (session/update with text, tool calls, usage). Permission request bridging.
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and
