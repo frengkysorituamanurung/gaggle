@@ -93,8 +93,10 @@ cancellation, audit-event, and adversarial-input tests.
   signals graceful Axum shutdown on app exit.
 - **Started:** Electron desktop shell rebranded from Goose to Gaggle (binary
   name, package name, protocol scheme, branding). ACP backend dependencies
-  added to gaggle-server. Full ACP server implementation wrapping Gaggle's
-  agent loop is the next major milestone.
+  added to gaggle-server. Minimal ACP-compatible endpoints (/health, /status)
+  and in-memory session manager implemented. Full ACP server implementation
+  (initialize, new_session, prompt, cancel) wrapping Gaggle's agent loop is
+  the next major milestone.
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and

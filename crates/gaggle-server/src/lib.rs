@@ -66,6 +66,7 @@ use std::{
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+mod acp;
 mod terminal;
 use terminal::{TerminalManager, terminal_routes};
 
@@ -540,6 +541,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/approvals/pending", get(list_pending_approvals))
         .route("/api/approvals/{id}/decide", post(decide_approval))
         .merge(terminal_routes())
+        .nest("/acp", acp::acp_routes())
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
