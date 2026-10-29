@@ -344,6 +344,32 @@ impl ChatRepository {
             .ok_or_else(|| anyhow::anyhow!("Chat not found after title update"))
     }
 
+    pub async fn update_mode(&self, chat_id: &str, mode: &str) -> Result<Chat> {
+        let now = now_ms();
+        sqlx::query("UPDATE chats SET mode = ?, updated_at = ? WHERE id = ?")
+            .bind(mode)
+            .bind(now)
+            .bind(chat_id)
+            .execute(&self.pool)
+            .await?;
+        self.get_by_id(chat_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after mode update"))
+    }
+
+    pub async fn update_permission_mode(&self, chat_id: &str, mode: &str) -> Result<Chat> {
+        let now = now_ms();
+        sqlx::query("UPDATE chats SET permission_mode = ?, updated_at = ? WHERE id = ?")
+            .bind(mode)
+            .bind(now)
+            .bind(chat_id)
+            .execute(&self.pool)
+            .await?;
+        self.get_by_id(chat_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Chat not found after permission mode update"))
+    }
+
     pub async fn append_message(
         &self,
         chat_id: &str,

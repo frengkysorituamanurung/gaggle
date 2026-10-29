@@ -331,6 +331,13 @@ async fn handle_request(
                         .await;
                 }
 
+                // Update session with chat_id and project_id
+                if let Some(mut sess) = session_manager.get_session(&session_id) {
+                    sess.chat_id = Some(chat_id.clone());
+                    sess.project_id = Some(project_id.clone());
+                    session_manager.update_session(sess);
+                }
+
                 // Get chat for provider resolution
                 let chat = match chat_repo.get_by_id(&chat_id).await {
                     Ok(Some(c)) => c,
@@ -454,6 +461,24 @@ async fn handle_request(
                         _ => break,
                     }
                 }
+
+                // Send usage update notification
+                let usage_notification = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session_id.clone(),
+                        "update": {
+                            "sessionUpdate": "usage_update",
+                            "usage": {
+                                "inputTokens": 0,
+                                "outputTokens": 0,
+                                "totalTokens": 0
+                            }
+                        }
+                    }
+                });
+                let _ = tx.send(usage_notification.to_string()).await;
 
                 // Send completion notification
                 let stop_reason = match &outcome {
@@ -599,6 +624,44 @@ async fn handle_request(
             }
         }
         "session/setConfigOption" => {
+            let config_id = req
+                .params
+                .get("configId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let value = req
+                .params
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::json!(null));
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Persist config option changes to Gaggle's chat settings
+            let session = session_manager.get_session(session_id);
+            if let Some(session) = session {
+                if let Some(chat_id) = &session.chat_id {
+                    let chat_repo =
+                        gaggle_db::repositories::chats::ChatRepository::new(state.pool.clone());
+                    match config_id {
+                        "mode" => {
+                            if let Some(mode) = value.as_str() {
+                                let _ = chat_repo.update_mode(chat_id, mode).await;
+                            }
+                        }
+                        "permission_mode" => {
+                            if let Some(mode) = value.as_str() {
+                                let _ = chat_repo.update_permission_mode(chat_id, mode).await;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
             let response = JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
