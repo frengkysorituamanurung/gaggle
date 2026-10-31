@@ -212,18 +212,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 && val.get("id").is_some()
                 && (val.get("result").is_some() || val.get("error").is_some())
             {
-                    // This is a response - check if it's a permission response
-                    if let Some(id) = val.get("id").and_then(|v| v.as_str())
-                        && id.starts_with("perm-")
-                    {
-                        let approved = val
-                            .get("result")
-                            .and_then(|r| r.get("approved"))
-                            .and_then(|a| a.as_bool())
-                            .unwrap_or(false);
-                        state.permission_bridge.resolve(id, approved);
-                        continue;
-                    }
+                // This is a response - check if it's a permission response
+                if let Some(id) = val.get("id").and_then(|v| v.as_str())
+                    && id.starts_with("perm-")
+                {
+                    let approved = val
+                        .get("result")
+                        .and_then(|r| r.get("approved"))
+                        .and_then(|a| a.as_bool())
+                        .unwrap_or(false);
+                    state.permission_bridge.resolve(id, approved);
+                    continue;
+                }
             }
 
             let request: Result<JsonRpcRequest, _> = serde_json::from_str(&text);
@@ -715,21 +715,21 @@ async fn handle_request(
             if let Some(session) = session
                 && let Some(chat_id) = &session.chat_id
             {
-                    let chat_repo =
-                        gaggle_db::repositories::chats::ChatRepository::new(state.pool.clone());
-                    match config_id {
-                        "mode" => {
-                            if let Some(mode) = value.as_str() {
-                                let _ = chat_repo.update_mode(chat_id, mode).await;
-                            }
+                let chat_repo =
+                    gaggle_db::repositories::chats::ChatRepository::new(state.pool.clone());
+                match config_id {
+                    "mode" => {
+                        if let Some(mode) = value.as_str() {
+                            let _ = chat_repo.update_mode(chat_id, mode).await;
                         }
-                        "permission_mode" => {
-                            if let Some(mode) = value.as_str() {
-                                let _ = chat_repo.update_permission_mode(chat_id, mode).await;
-                            }
-                        }
-                        _ => {}
                     }
+                    "permission_mode" => {
+                        if let Some(mode) = value.as_str() {
+                            let _ = chat_repo.update_permission_mode(chat_id, mode).await;
+                        }
+                    }
+                    _ => {}
+                }
             }
 
             let response = JsonRpcResponse {
@@ -785,29 +785,53 @@ impl HandleDispatchFrom for AcpSessionManager {
             }
             "session/list" => Some(self.handle_session_list()),
             "session/load" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 Some(self.handle_session_load(session_id))
             }
             "session/delete" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 Some(self.handle_session_delete(session_id))
             }
             "session/close" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 Some(self.handle_session_close(session_id))
             }
             "session/fork" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 Some(self.handle_session_fork(session_id))
             }
             "session/cancel" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 self.handle_session_cancel(session_id)
             }
             "session/setConfigOption" => {
-                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
-                let config_id = params.get("configId").and_then(|v| v.as_str()).unwrap_or("");
-                let value = params.get("value").cloned().unwrap_or(serde_json::json!(null));
+                let session_id = params
+                    .get("sessionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let config_id = params
+                    .get("configId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let value = params
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::json!(null));
                 Some(self.handle_session_set_config_option(session_id, config_id, value))
             }
             _ => None,
@@ -828,7 +852,9 @@ impl HandleDispatchFrom for AcpSessionManager {
         JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id: None,
-            result: Some(serde_json::json!({ "sessionId": session_id, "prompt": prompt, "stopReason": "end_turn" })),
+            result: Some(
+                serde_json::json!({ "sessionId": session_id, "prompt": prompt, "stopReason": "end_turn" }),
+            ),
             error: None,
         }
     }
@@ -860,7 +886,10 @@ impl HandleDispatchFrom for AcpSessionManager {
                 jsonrpc: "2.0".to_string(),
                 id: None,
                 result: None,
-                error: Some(JsonRpcError { code: -32001, message: "Session not found".to_string() }),
+                error: Some(JsonRpcError {
+                    code: -32001,
+                    message: "Session not found".to_string(),
+                }),
             },
         }
     }
@@ -900,7 +929,10 @@ impl HandleDispatchFrom for AcpSessionManager {
                 jsonrpc: "2.0".to_string(),
                 id: None,
                 result: None,
-                error: Some(JsonRpcError { code: -32001, message: "Session not found".to_string() }),
+                error: Some(JsonRpcError {
+                    code: -32001,
+                    message: "Session not found".to_string(),
+                }),
             },
         }
     }

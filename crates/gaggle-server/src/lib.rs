@@ -2295,11 +2295,20 @@ fn provider_catalog_endpoint(kind: &str, base_url: &str) -> Option<String> {
         _ => return None,
     }
 
+    let google_openai_suffix = url.path().trim_end_matches('/').ends_with("/openai");
+    let google_has_v1beta =
+        google_openai_suffix || url.path().trim_end_matches('/').ends_with("/v1beta");
     let mut segments = url.path_segments_mut().ok()?;
     segments.pop_if_empty();
     match kind {
         "google" => {
-            segments.push("v1beta").push("models");
+            if google_openai_suffix {
+                segments.pop();
+            }
+            if !google_has_v1beta {
+                segments.push("v1beta");
+            }
+            segments.push("models");
         }
         "ollama" if ollama_base_has_api_segment => {
             segments.push("tags");

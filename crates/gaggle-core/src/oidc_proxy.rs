@@ -96,7 +96,8 @@ impl OidcProxy {
             .as_ref()
             .ok_or("redirect_uri not configured")?;
 
-        let url = format!("{}/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}",
+        let url = format!(
+            "{}/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}",
             issuer.trim_end_matches('/'),
             client_id,
             redirect_uri,

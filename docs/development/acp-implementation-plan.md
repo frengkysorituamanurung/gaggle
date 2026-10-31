@@ -44,20 +44,20 @@ Gaggle Agent Loop (existing)
 ### Phase 1: Core ACP Methods (Current)
 - [x] `/health` and `/status` endpoints
 - [x] In-memory session manager
-- [ ] `initialize` - protocol handshake
-- [ ] `session/new` - create chat + project
-- [ ] `session/prompt` - submit message + stream response
-- [ ] `session/cancel` - cancel run
+- [x] `initialize` - protocol handshake
+- [x] `session/new` - create chat + project
+- [x] `session/prompt` - submit message + stream response
+- [x] `session/cancel` - cancel run
 
 ### Phase 2: Session Management
-- [ ] `session/list` - list chats
-- [ ] `session/load` - load chat history
-- [ ] `session/delete` - delete chat
-- [ ] `session/close` - close session
-- [ ] `session/fork` - fork chat
+- [x] `session/list` - list chats
+- [x] `session/load` - load chat history
+- [x] `session/delete` - delete chat
+- [x] `session/close` - close session
+- [x] `session/fork` - fork chat
 
 ### Phase 3: Configuration
-- [ ] `session/setConfigOption` - provider, model, mode
+- [x] `session/setConfigOption` - provider, model, mode
 - [ ] Provider/model discovery
 - [ ] Permission mode switching
 

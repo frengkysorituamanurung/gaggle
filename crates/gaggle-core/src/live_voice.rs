@@ -74,7 +74,11 @@ impl LiveVoiceService {
 
     /// Convert text to speech.
     /// In a full implementation, this would call the configured TTS provider.
-    pub async fn text_to_speech(&self, _text: &str, output_path: &str) -> Result<TtsResult, String> {
+    pub async fn text_to_speech(
+        &self,
+        _text: &str,
+        output_path: &str,
+    ) -> Result<TtsResult, String> {
         if !self.is_enabled() {
             return Err("Live voice is disabled".to_string());
         }
