@@ -142,6 +142,8 @@ mod tests {
     #[test]
     fn authorization_url_requires_config() {
         let proxy = OidcProxy::new(OidcProxyConfig::default());
-        assert!(proxy.authorization_url("state", "").is_err());
+        let state = String::from("state");
+        let empty_nonce = String::new();
+        assert!(proxy.authorization_url(&state, &empty_nonce).is_err());
     }
 }
