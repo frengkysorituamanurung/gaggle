@@ -64,7 +64,7 @@ pub fn parse_slash_command(input: &str) -> Option<SlashCommand> {
 pub async fn execute_slash_command(
     cmd: &SlashCommand,
     chat_id: &str,
-    pool: &sqlx::SqlitePool,
+    _pool: &sqlx::SqlitePool,
 ) -> SlashCommandResult {
     match cmd.name.as_str() {
         "compact" => SlashCommandResult::Handled {

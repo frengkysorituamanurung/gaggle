@@ -10,7 +10,7 @@ use crate::{
         ProviderError, TokenUsage,
     },
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -262,7 +262,7 @@ mod tests {
                 async move {
                     deltas
                         .lock()
-                        .map_err(|_| anyhow!("delta collector lock poisoned"))?
+                        .map_err(|_| anyhow::anyhow!("delta collector lock poisoned"))?
                         .push(delta);
                     Ok(())
                 }

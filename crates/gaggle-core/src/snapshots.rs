@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A snapshot of a chat's state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ChatSnapshot {
     pub id: String,
     pub chat_id: String,

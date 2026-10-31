@@ -2525,14 +2525,6 @@ fn build_provider_adapter(
             DEFAULT_PROVIDER_TIMEOUT_MS,
         )
         .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
-        "google" => GoogleGeminiAdapter::new(
-            provider.name.clone(),
-            &base_url,
-            provider.secret_ref.clone(),
-            state.credential_store.clone(),
-            DEFAULT_PROVIDER_TIMEOUT_MS,
-        )
-        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
         "azure" => OpenAiCompatibleAdapter::new_with_auth_header(
             provider.name.clone(),
             &base_url,
@@ -3212,6 +3204,7 @@ async fn start_chat_run(
                 &cancel_token,
                 Some(run_id_clone.clone()),
                 Some(user_msg_id),
+                None,
             )
             .await;
     });

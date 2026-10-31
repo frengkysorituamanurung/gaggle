@@ -44,11 +44,48 @@ impl GenAiSpan {
         serde_json::json!({
             "operation": self.operation,
             "model": self.model,
+            "gen_ai.system": "gaggle",
+            "gen_ai.request.model": self.model,
+            "gen_ai.usage.input_tokens": self.input_tokens,
+            "gen_ai.usage.output_tokens": self.output_tokens,
+            "gen_ai.usage.cached_tokens": self.cached_tokens,
+            "gen_ai.response.latency_ms": self.latency_ms,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cached_tokens": self.cached_tokens,
             "latency_ms": self.latency_ms,
         })
+    }
+
+    /// Returns OpenTelemetry-compatible span attributes.
+    pub fn to_otel_attributes(&self) -> Vec<(String, serde_json::Value)> {
+        vec![
+            ("gen_ai.system".to_string(), serde_json::json!("gaggle")),
+            (
+                "gen_ai.operation.name".to_string(),
+                serde_json::json!(self.operation),
+            ),
+            (
+                "gen_ai.request.model".to_string(),
+                serde_json::json!(self.model),
+            ),
+            (
+                "gen_ai.usage.input_tokens".to_string(),
+                serde_json::json!(self.input_tokens),
+            ),
+            (
+                "gen_ai.usage.output_tokens".to_string(),
+                serde_json::json!(self.output_tokens),
+            ),
+            (
+                "gen_ai.usage.cached_tokens".to_string(),
+                serde_json::json!(self.cached_tokens),
+            ),
+            (
+                "gen_ai.response.latency_ms".to_string(),
+                serde_json::json!(self.latency_ms),
+            ),
+        ]
     }
 }
 
@@ -72,6 +109,17 @@ impl TelemetryCollector {
 
     pub fn clear(&mut self) {
         self.spans.clear();
+    }
+
+    /// Export all spans as OpenTelemetry-compatible JSON.
+    pub fn export_otel(&self) -> serde_json::Value {
+        serde_json::json!({
+            "resourceSpans": [{
+                "scopeSpans": [{
+                    "spans": self.spans.iter().map(|s| s.to_json()).collect::<Vec<_>>()
+                }]
+            }]
+        })
     }
 }
 

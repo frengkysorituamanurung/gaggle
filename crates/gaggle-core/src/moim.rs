@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A model-owned instruction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ModelInstruction {
     pub id: String,
     pub chat_id: String,

@@ -218,6 +218,7 @@ impl ToolExecutor for CompositeToolExecutor {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentLoopOutcome {
     Completed {
         run: Run,
@@ -296,6 +297,7 @@ impl AgentRuntime {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Run a turn with an optional notification callback for streaming.
     pub async fn run_turn_with_notifications(
         &self,
@@ -321,7 +323,6 @@ impl AgentRuntime {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub async fn run_turn_with_precreated(
         &self,
@@ -379,6 +380,57 @@ impl AgentRuntime {
             .get_by_id(&chat.project_id)
             .await?
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
+
+        // 0a. Slash command handling.
+        let effective_prompt = if let Some(cmd) =
+            crate::slash_commands::parse_slash_command(user_prompt)
+        {
+            if cmd.recognized {
+                let result =
+                    crate::slash_commands::execute_slash_command(&cmd, chat_id, &self.pool).await;
+                match result {
+                    crate::slash_commands::SlashCommandResult::Handled { output } => {
+                        chat_repo
+                            .append_message(chat_id, None, "assistant", &output)
+                            .await?;
+                        let run = run_repo
+                            .create(chat_id, None, chat.model_id.as_deref())
+                            .await?;
+
+                        // Create a snapshot of the chat state before the run begins
+                        let _ = crate::snapshots::SnapshotManager::new(self.pool.clone())
+                            .create_snapshot(chat_id)
+                            .await;
+                        run_repo
+                            .emit_event(
+                                &run.id,
+                                "run.completed",
+                                &serde_json::json!({"slash_command": cmd.name}).to_string(),
+                            )
+                            .await?;
+                        let completed_run = run_repo
+                            .update_run_status(&run.id, "completed", None)
+                            .await?;
+                        return Ok(AgentLoopOutcome::Completed {
+                            run: completed_run,
+                            final_text: output,
+                            steps_executed: 0,
+                        });
+                    }
+                    crate::slash_commands::SlashCommandResult::ContextModification {
+                        modified_prompt,
+                    } => modified_prompt,
+                    crate::slash_commands::SlashCommandResult::NotRecognized => {
+                        user_prompt.to_string()
+                    }
+                }
+            } else {
+                user_prompt.to_string()
+            }
+        } else {
+            user_prompt.to_string()
+        };
+        let user_prompt = &effective_prompt;
 
         // 0. Auto-compaction: summarize older history when token ratio exceeds threshold.
         let resolved_context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
@@ -593,6 +645,20 @@ impl AgentRuntime {
             };
 
             let latency_ms = step_start.elapsed().as_millis() as i64;
+
+            // Record GenAI telemetry
+            let mut telemetry_span = crate::genai_telemetry::GenAiSpan::new("chat", model_key);
+            telemetry_span.record_usage(
+                completion.usage.input_tokens,
+                completion.usage.output_tokens,
+                completion.usage.cached_tokens,
+            );
+            telemetry_span.finish();
+            tracing::debug!(
+                target: "gaggle.telemetry",
+                telemetry = %telemetry_span.to_json(),
+                "GenAI operation completed"
+            );
             tracing::info!(
                 target: "gaggle.agent",
                 run_id = %run.id,
@@ -988,6 +1054,7 @@ impl AgentRuntime {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum ToolCallingOutcome {
     Continue,
     WaitingApproval {
