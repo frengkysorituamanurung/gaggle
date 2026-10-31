@@ -218,6 +218,7 @@ impl ToolExecutor for CompositeToolExecutor {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentLoopOutcome {
     Completed {
         run: Run,
@@ -291,6 +292,33 @@ impl AgentRuntime {
             cancel_token,
             None,
             None,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Run a turn with an optional notification callback for streaming.
+    pub async fn run_turn_with_notifications(
+        &self,
+        chat_id: &str,
+        user_prompt: &str,
+        model_key: &str,
+        provider: &dyn ModelProviderAdapter,
+        tool_executor: &dyn ToolExecutor,
+        cancel_token: &CancellationToken,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    ) -> Result<AgentLoopOutcome> {
+        self.run_turn_with_precreated(
+            chat_id,
+            user_prompt,
+            model_key,
+            provider,
+            tool_executor,
+            cancel_token,
+            None,
+            None,
+            notification_tx,
         )
         .await
     }
@@ -306,6 +334,7 @@ impl AgentRuntime {
         cancel_token: &CancellationToken,
         precreated_run_id: Option<String>,
         precreated_user_msg_id: Option<String>,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     ) -> Result<AgentLoopOutcome> {
         let span = CorrelationIds::for_chat(chat_id).span("agent.run");
         self.run_turn_inner(
@@ -317,6 +346,7 @@ impl AgentRuntime {
             cancel_token,
             precreated_run_id,
             precreated_user_msg_id,
+            notification_tx,
         )
         .instrument(span)
         .await
@@ -334,6 +364,7 @@ impl AgentRuntime {
         cancel_token: &CancellationToken,
         precreated_run_id: Option<String>,
         precreated_user_msg_id: Option<String>,
+        notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     ) -> Result<AgentLoopOutcome> {
         let chat_repo = ChatRepository::new(self.pool.clone());
         let proj_repo = ProjectRepository::new(self.pool.clone());
@@ -349,6 +380,57 @@ impl AgentRuntime {
             .get_by_id(&chat.project_id)
             .await?
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
+
+        // 0a. Slash command handling.
+        let effective_prompt = if let Some(cmd) =
+            crate::slash_commands::parse_slash_command(user_prompt)
+        {
+            if cmd.recognized {
+                let result =
+                    crate::slash_commands::execute_slash_command(&cmd, chat_id, &self.pool).await;
+                match result {
+                    crate::slash_commands::SlashCommandResult::Handled { output } => {
+                        chat_repo
+                            .append_message(chat_id, None, "assistant", &output)
+                            .await?;
+                        let run = run_repo
+                            .create(chat_id, None, chat.model_id.as_deref())
+                            .await?;
+
+                        // Create a snapshot of the chat state before the run begins
+                        let _ = crate::snapshots::SnapshotManager::new(self.pool.clone())
+                            .create_snapshot(chat_id)
+                            .await;
+                        run_repo
+                            .emit_event(
+                                &run.id,
+                                "run.completed",
+                                &serde_json::json!({"slash_command": cmd.name}).to_string(),
+                            )
+                            .await?;
+                        let completed_run = run_repo
+                            .update_run_status(&run.id, "completed", None)
+                            .await?;
+                        return Ok(AgentLoopOutcome::Completed {
+                            run: completed_run,
+                            final_text: output,
+                            steps_executed: 0,
+                        });
+                    }
+                    crate::slash_commands::SlashCommandResult::ContextModification {
+                        modified_prompt,
+                    } => modified_prompt,
+                    crate::slash_commands::SlashCommandResult::NotRecognized => {
+                        user_prompt.to_string()
+                    }
+                }
+            } else {
+                user_prompt.to_string()
+            }
+        } else {
+            user_prompt.to_string()
+        };
+        let user_prompt = &effective_prompt;
 
         // 0. Auto-compaction: summarize older history when token ratio exceeds threshold.
         let resolved_context_window: i64 = if let Some(model_id) = chat.model_id.as_deref() {
@@ -493,9 +575,13 @@ impl AgentRuntime {
             let inference = InferenceOperation::run(provider, req, cancel_token, {
                 let run_repo = run_repo.clone();
                 let run_id = run.id.clone();
+                let notification_tx = notification_tx.clone();
+                let chat_id_for_notif = chat_id.to_string();
                 move |delta| {
                     let run_repo = run_repo.clone();
                     let run_id = run_id.clone();
+                    let notification_tx = notification_tx.clone();
+                    let chat_id_for_notif = chat_id_for_notif.clone();
                     async move {
                         run_repo
                             .emit_event(
@@ -503,11 +589,29 @@ impl AgentRuntime {
                                 "message.delta",
                                 &serde_json::json!({
                                     "step": step_idx,
-                                    "text": delta
+                                    "text": delta.clone()
                                 })
                                 .to_string(),
                             )
                             .await?;
+                        // Send WebSocket notification if available
+                        if let Some(tx) = notification_tx {
+                            let notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": chat_id_for_notif,
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "content": {
+                                            "type": "text",
+                                            "text": delta
+                                        }
+                                    }
+                                }
+                            });
+                            let _ = tx.send(notification.to_string());
+                        }
                         Ok(())
                     }
                 }
@@ -541,6 +645,20 @@ impl AgentRuntime {
             };
 
             let latency_ms = step_start.elapsed().as_millis() as i64;
+
+            // Record GenAI telemetry
+            let mut telemetry_span = crate::genai_telemetry::GenAiSpan::new("chat", model_key);
+            telemetry_span.record_usage(
+                completion.usage.input_tokens,
+                completion.usage.output_tokens,
+                completion.usage.cached_tokens,
+            );
+            telemetry_span.finish();
+            tracing::debug!(
+                target: "gaggle.telemetry",
+                telemetry = %telemetry_span.to_json(),
+                "GenAI operation completed"
+            );
             tracing::info!(
                 target: "gaggle.agent",
                 run_id = %run.id,
@@ -621,6 +739,8 @@ impl AgentRuntime {
                 run_repo: &run_repo,
                 ext_repo: &ext_repo,
                 permission_engine: &perm_engine,
+                notification_tx: notification_tx.clone(),
+                chat_id: chat_id.to_string(),
             }
             .run(
                 &run,
@@ -934,6 +1054,7 @@ impl AgentRuntime {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum ToolCallingOutcome {
     Continue,
     WaitingApproval {
@@ -949,6 +1070,8 @@ struct ToolCallingOperation<'a> {
     run_repo: &'a RunRepository,
     ext_repo: &'a ExtensionRepository,
     permission_engine: &'a PermissionEngine,
+    notification_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    chat_id: String,
 }
 
 impl ToolCallingOperation<'_> {
@@ -1041,6 +1164,22 @@ impl ToolCallingOperation<'_> {
                             .to_string(),
                         )
                         .await?;
+                    // Send tool call denied notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call_update",
+                                    "toolCallId": proposed.id,
+                                    "status": "failed"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     conversation.push(ProviderMessage {
                         role: "tool".to_string(),
                         content: deny_json,
@@ -1124,6 +1263,24 @@ impl ToolCallingOperation<'_> {
                         decision = "allow",
                         "Tool call allowed by policy"
                     );
+                    // Send tool call started notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call",
+                                    "toolCallId": proposed.id,
+                                    "title": proposed.tool_name,
+                                    "kind": "other",
+                                    "status": "in_progress"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     let tool_out = self
                         .runtime
                         .execute_allowed_tool(
@@ -1136,6 +1293,22 @@ impl ToolCallingOperation<'_> {
                             tool_executor,
                         )
                         .await?;
+                    // Send tool call completed notification
+                    if let Some(tx) = &self.notification_tx {
+                        let notification = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": self.chat_id,
+                                "update": {
+                                    "sessionUpdate": "tool_call_update",
+                                    "toolCallId": proposed.id,
+                                    "status": "completed"
+                                }
+                            }
+                        });
+                        let _ = tx.send(notification.to_string());
+                    }
                     conversation.push(ProviderMessage {
                         role: "tool".to_string(),
                         content: tool_out,

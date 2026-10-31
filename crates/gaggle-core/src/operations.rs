@@ -10,7 +10,7 @@ use crate::{
         ProviderError, TokenUsage,
     },
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value;
@@ -83,28 +83,23 @@ impl InferenceOperation {
         }
 
         let completion = match done_response {
-            Some(response) if response.text.is_empty() && !streamed_text.is_empty() => {
-                ModelCompletionResponse {
-                    text: streamed_text,
-                    ..response
-                }
-            }
-            Some(response) if response.tool_calls.is_empty() && !streamed_calls.is_empty() => {
-                ModelCompletionResponse {
-                    tool_calls: streamed_calls,
-                    ..response
-                }
-            }
-            Some(response)
-                if response.usage == TokenUsage::default()
-                    && streamed_usage != TokenUsage::default() =>
-            {
-                ModelCompletionResponse {
-                    usage: streamed_usage,
-                    ..response
-                }
-            }
-            Some(response) => response,
+            Some(response) => ModelCompletionResponse {
+                text: if response.text.is_empty() {
+                    streamed_text
+                } else {
+                    response.text
+                },
+                tool_calls: if response.tool_calls.is_empty() {
+                    streamed_calls
+                } else {
+                    response.tool_calls
+                },
+                usage: if response.usage == TokenUsage::default() {
+                    streamed_usage
+                } else {
+                    response.usage
+                },
+            },
             None => ModelCompletionResponse {
                 text: streamed_text,
                 tool_calls: streamed_calls,
@@ -262,7 +257,7 @@ mod tests {
                 async move {
                     deltas
                         .lock()
-                        .map_err(|_| anyhow!("delta collector lock poisoned"))?
+                        .map_err(|_| anyhow::anyhow!("delta collector lock poisoned"))?
                         .push(delta);
                     Ok(())
                 }

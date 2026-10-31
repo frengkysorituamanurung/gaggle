@@ -220,7 +220,7 @@ async fn main() -> Result<()> {
                     project,
                     import_credentials,
                 } => {
-                    let summary = gaggle_cli::goose_import::import_goose_session_with_credentials(
+                    let summary = gaggle_cli::gaggle_import::import_goose_session_with_credentials(
                         &pool,
                         &source_database,
                         &session,

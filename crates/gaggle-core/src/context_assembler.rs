@@ -219,10 +219,26 @@ impl ContextAssembler {
             .map(|doc| doc.relative_path.clone())
             .collect::<Vec<_>>();
 
+        // Load MOIM instructions for this chat
+        let moim_instructions = {
+            let moim = crate::moim::MoimManager::new(self.pool.clone());
+            moim.list_instructions(chat_id).await.unwrap_or_default()
+        };
+        let moim_text = if moim_instructions.is_empty() {
+            String::new()
+        } else {
+            let mut text = String::from("\n\nModel-owned instructions:\n");
+            for instr in &moim_instructions {
+                text.push_str(&format!("- {}\n", instr.instruction));
+            }
+            text
+        };
+
         let raw_system_core = build_system_core(
             settings.as_ref().and_then(|s| s.instructions.as_deref()),
             &agents_docs,
         );
+        let raw_system_core = format!("{}{}", raw_system_core, moim_text);
         let redacted_system_core = redact_context_secrets(&raw_system_core);
 
         // Cap the system core at 60% of the budget, but grant a 256 token floor so small

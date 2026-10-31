@@ -197,7 +197,7 @@ impl CredentialStore for KeyringCredentialStore {
 
     fn delete_secret(&self, secret_ref: &str) -> Result<(), CredentialError> {
         let entry = self.entry(secret_ref)?;
-        match entry.delete_password() {
+        match entry.delete_credential() {
             Ok(()) => Ok(()),
             Err(error) if error.to_string().contains("No entry") => Ok(()),
             Err(_) => Err(CredentialError::StoreError(

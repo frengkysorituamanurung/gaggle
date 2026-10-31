@@ -90,6 +90,7 @@ pub struct AppState {
     pub oauth_sessions: Arc<RwLock<HashMap<String, PendingOAuthSession>>>,
     pub terminal_manager: Arc<TerminalManager>,
     pub mcp_connections: McpConnectionManager,
+    pub permission_bridge: Arc<acp::PermissionBridge>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -585,6 +586,7 @@ pub async fn initialize_server_state_with_credential_store(
     let active_runs = ActiveRunRegistry::new();
     let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
     let mcp_connections = McpConnectionManager::with_pool(pool.clone());
+    let permission_bridge = Arc::new(acp::PermissionBridge::new());
     let state = AppState {
         pool,
         db_path,
@@ -593,6 +595,7 @@ pub async fn initialize_server_state_with_credential_store(
         oauth_sessions: Arc::new(RwLock::new(HashMap::new())),
         terminal_manager,
         mcp_connections,
+        permission_bridge,
     };
     let _ = missed_run_catchup(&state).await;
     Ok(state)
@@ -2292,11 +2295,20 @@ fn provider_catalog_endpoint(kind: &str, base_url: &str) -> Option<String> {
         _ => return None,
     }
 
+    let google_openai_suffix = url.path().trim_end_matches('/').ends_with("/openai");
+    let google_has_v1beta =
+        google_openai_suffix || url.path().trim_end_matches('/').ends_with("/v1beta");
     let mut segments = url.path_segments_mut().ok()?;
     segments.pop_if_empty();
     match kind {
         "google" => {
-            segments.push("v1beta").push("models");
+            if google_openai_suffix {
+                segments.pop();
+            }
+            if !google_has_v1beta {
+                segments.push("v1beta");
+            }
+            segments.push("models");
         }
         "ollama" if ollama_base_has_api_segment => {
             segments.push("tags");
@@ -2522,14 +2534,6 @@ fn build_provider_adapter(
             DEFAULT_PROVIDER_TIMEOUT_MS,
         )
         .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
-        "google" => GoogleGeminiAdapter::new(
-            provider.name.clone(),
-            &base_url,
-            provider.secret_ref.clone(),
-            state.credential_store.clone(),
-            DEFAULT_PROVIDER_TIMEOUT_MS,
-        )
-        .map(|adapter| Box::new(adapter) as Box<dyn ModelProviderAdapter>),
         "azure" => OpenAiCompatibleAdapter::new_with_auth_header(
             provider.name.clone(),
             &base_url,
@@ -2589,7 +2593,7 @@ fn build_provider_adapter(
     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
-async fn resolve_chat_provider(
+pub async fn resolve_chat_provider(
     state: &AppState,
     chat: &Chat,
     requested_model_key: &str,
@@ -3209,6 +3213,7 @@ async fn start_chat_run(
                 &cancel_token,
                 Some(run_id_clone.clone()),
                 Some(user_msg_id),
+                None,
             )
             .await;
     });
@@ -3216,7 +3221,7 @@ async fn start_chat_run(
     Ok(Json(StartRunResponse { run_id }))
 }
 
-fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
+pub fn outcome_kind(outcome: &AgentLoopOutcome) -> &'static str {
     match outcome {
         AgentLoopOutcome::Completed { .. } => "completed",
         AgentLoopOutcome::WaitingApproval { .. } => "waiting_approval",

@@ -8,11 +8,15 @@ import { Input } from "../components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Switch } from "../components/ui/Switch";
 import ThemeSelector from "../components/GooseSidebar/ThemeSelector";
+import ThemeSettingsSection from "../components/settings/ThemeSettingsSection";
+import KeyboardShortcutsSection from "../components/settings/KeyboardShortcutsSection";
 import ModelsSection from "../components/settings/models/ModelsSection";
 import ModeSection from "../components/settings/chat/ModeSection";
 import GoosehintsSection from "../components/settings/chat/GoosehintsSection";
 import LiveVoiceSettings from "../components/settings/chat/LiveVoiceSettings";
 import DictationSettings from "../components/settings/chat/DictationSettings";
+import LiveVoiceSettingsSection from "../components/settings/LiveVoiceSettingsSection";
+import DictationSettingsSection from "../components/settings/DictationSettingsSection";
 import ResponseStylesSection from "../components/settings/chat/ResponseStylesSection";
 import SecurityToggle from "../components/settings/chat/SecurityToggle";
 import SpellcheckToggle from "../components/settings/chat/SpellcheckToggle";
@@ -73,6 +77,8 @@ export default function SettingsScreen() {
           <TabsTrigger value="keyboard">Keyboard</TabsTrigger>
           <TabsTrigger value="auth">Auth</TabsTrigger>
           <TabsTrigger value="app">App</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="voice">Voice</TabsTrigger>
         </TabsList>
 
         <TabsContent value="models">
@@ -169,6 +175,20 @@ export default function SettingsScreen() {
                 ))}
               </CardContent>
             </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="appearance">
+          <div className="flex flex-col gap-4">
+            <ThemeSettingsSection />
+            <KeyboardShortcutsSection />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="voice">
+          <div className="flex flex-col gap-4">
+            <LiveVoiceSettingsSection />
+            <DictationSettingsSection />
           </div>
         </TabsContent>
 

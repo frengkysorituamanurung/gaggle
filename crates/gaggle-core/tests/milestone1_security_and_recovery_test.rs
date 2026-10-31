@@ -141,7 +141,7 @@ async fn test_safe_run_recovery_and_diagnostics() -> Result<()> {
     let diag = collect_diagnostics(&pool, Path::new(":memory:")).await?;
     assert!(diag.db_healthy);
     assert!(diag.foreign_keys_enabled);
-    assert_eq!(diag.applied_migrations, 1);
+    assert_eq!(diag.applied_migrations, 4);
     assert_eq!(diag.active_projects_count, 1);
     assert_eq!(diag.pending_approvals_count, 0);
 

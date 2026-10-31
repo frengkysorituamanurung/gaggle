@@ -8,6 +8,13 @@ import { Navigation } from "./components/Layout/NavigationPanel";
 import { defineMessages, useIntl } from "./i18n";
 import ChatScreen from "./screens/ChatScreen";
 import HubScreen from "./screens/HubScreen";
+import DiagnosticsScreen from "./screens/DiagnosticsScreen";
+import WorktreeScreen from "./screens/WorktreeScreen";
+import ContextScreen from "./screens/ContextScreen";
+import MemoryManagementScreen from "./screens/MemoryManagementScreen";
+import RecipeManagementScreen from "./screens/RecipeManagementScreen";
+import ExtensionManagementScreen from "./screens/ExtensionManagementScreen";
+import QuickLauncher from "./components/QuickLauncher";
 import OnboardingGuard from "./components/onboarding/OnboardingGuard";
 import AnnouncementModal from "./components/AnnouncementModal";
 import TelemetryConsentPrompt from "./components/TelemetryConsentPrompt";
@@ -27,7 +34,22 @@ import LauncherView from "./components/LauncherView";
 import AppsView from "./components/apps/AppsView";
 import StandaloneAppView from "./components/apps/StandaloneAppView";
 
+import React from "react";
+
 function Shell() {
+  const [launcherOpen, setLauncherOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setLauncherOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <NavigationProvider>
       <OnboardingGuard>
@@ -40,17 +62,24 @@ function Shell() {
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/skills" element={<SkillsScreen />} />
           <Route path="/recipes" element={<RecipesScreen />} />
+          <Route path="/recipes/manage" element={<RecipeManagementScreen />} />
           <Route path="/extensions" element={<ExtensionsScreen />} />
+          <Route path="/extensions/manage" element={<ExtensionManagementScreen />} />
           <Route path="/scheduler" element={<SchedulerScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/memories" element={<MemoriesScreen />} />
+          <Route path="/memories/manage" element={<MemoryManagementScreen />} />
           <Route path="/permissions" element={<PermissionScreen />} />
           <Route path="/workspace" element={<WorkspaceScreen />} />
           <Route path="/terminal" element={<TerminalScreen />} />
+          <Route path="/diagnostics" element={<DiagnosticsScreen />} />
+          <Route path="/worktrees" element={<WorktreeScreen projectId="" />} />
+          <Route path="/context" element={<ContextScreen chatId="" />} />
           <Route path="/standalone-app" element={<StandaloneAppView />} />
           <Route path="/launcher" element={<LauncherView />} />
           <Route path="/configure-providers" element={<ConfigureProvidersScreen />} />
         </Routes>
+        <QuickLauncher open={launcherOpen} onClose={() => setLauncherOpen(false)} />
         </AppLayout>
       </OnboardingGuard>
     </NavigationProvider>

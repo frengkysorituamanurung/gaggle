@@ -802,7 +802,7 @@ fn escape_markdown_content(text: &str) -> String {
 
 /// Renders single-line text (title, tag) safely for use inside a Markdown line.
 fn inline_text(text: &str) -> String {
-    let single_line = text.replace('\r', " ").replace('\n', " ");
+    let single_line = text.replace(['\r', '\n'], " ");
     let single_line = single_line.trim();
     redact_secrets(single_line)
         .replace('`', "'")
