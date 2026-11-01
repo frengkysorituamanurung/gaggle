@@ -226,7 +226,8 @@ mod tests {
     #[cfg(feature = "wasm")]
     #[test]
     fn invalid_module_path_errors() {
-        let err = WasmExtensionRuntime::run_module("/nonexistent/module.wasm", json!({})).unwrap_err();
+        let err =
+            WasmExtensionRuntime::run_module("/nonexistent/module.wasm", json!({})).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.is_empty());
     }
@@ -238,3 +239,4 @@ mod tests {
         assert!(err.to_string().contains("feature not enabled"));
     }
 }
+

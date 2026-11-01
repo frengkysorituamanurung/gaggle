@@ -1264,7 +1264,10 @@ impl McpClient {
         self.resources_list().await
     }
 
-    pub async fn list_resources_typed(&self, _req: ListResourcesRequest) -> Result<ListResourcesResponse> {
+    pub async fn list_resources_typed(
+        &self,
+        _req: ListResourcesRequest,
+    ) -> Result<ListResourcesResponse> {
         let r = self.resources_list().await?;
         Ok(ListResourcesResponse {
             resources: r.resources,
@@ -1312,15 +1315,24 @@ impl McpClient {
         Ok(ReadResourceResponse { contents: out })
     }
 
-    pub async fn read_resource_typed(&self, req: ReadResourceRequest) -> Result<ReadResourceResponse> {
+    pub async fn read_resource_typed(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
         self.resources_read(req).await
     }
 
-    pub async fn resources_read_request(&self, req: ReadResourceRequest) -> Result<ReadResourceResponse> {
+    pub async fn resources_read_request(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
         self.resources_read(req).await
     }
 
-    pub async fn read_resource_request(&self, req: ReadResourceRequest) -> Result<ReadResourceResponse> {
+    pub async fn read_resource_request(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
         self.resources_read(req).await
     }
 
@@ -1371,7 +1383,10 @@ impl McpClient {
         self.prompts_list().await
     }
 
-    pub async fn list_prompts_typed(&self, _req: ListPromptsRequest) -> Result<ListPromptsResponse> {
+    pub async fn list_prompts_typed(
+        &self,
+        _req: ListPromptsRequest,
+    ) -> Result<ListPromptsResponse> {
         let r = self.prompts_list().await?;
         Ok(ListPromptsResponse {
             prompts: r.prompts,
@@ -1448,8 +1463,9 @@ impl ExtensionRegistry {
             resources: std::sync::Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
-            prompts: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-        }
+            prompts: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),        }
     }
 
     pub fn with_connection_manager(pool: SqlitePool, connections: McpConnectionManager) -> Self {
@@ -1459,8 +1475,9 @@ impl ExtensionRegistry {
             resources: std::sync::Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
-            prompts: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-        }
+            prompts: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),        }
     }
 
     pub async fn list_enabled_extensions(&self) -> Result<Vec<Extension>> {
@@ -1777,7 +1794,10 @@ impl ExtensionRegistry {
         Ok(prompts)
     }
 
-    pub async fn invalidate_and_rediscover_resources(&self, ext_id: &str) -> Result<Vec<McpResource>> {
+    pub async fn invalidate_and_rediscover_resources(
+        &self,
+        ext_id: &str,
+    ) -> Result<Vec<McpResource>> {
         let _ = self.connections.invalidate(ext_id).await;
         self.discover_resources(ext_id).await
     }
@@ -2083,7 +2103,9 @@ mod tests {
 
     #[test]
     fn typed_structs_roundtrip() {
-        let req = ReadResourceRequest { uri: "file:///a".into() };
+        let req = ReadResourceRequest {
+            uri: "file:///a".into(),
+        };
         let json = serde_json::to_string(&req).unwrap();
         let back: ReadResourceRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.uri, "file:///a");
@@ -2099,12 +2121,15 @@ mod tests {
     async fn capability_store_roundtrip() {
         let store = McpCapabilityStore::new();
         store
-            .store_resources("ext", vec![McpResource {
-                uri: "u".into(),
-                name: Some("r".into()),
-                description: None,
-                mime_type: None,
-            }])
+            .store_resources(
+                "ext",
+                vec![McpResource {
+                    uri: "u".into(),
+                    name: Some("r".into()),
+                    description: None,
+                    mime_type: None,
+                }],
+            )
             .await;
         assert_eq!(store.resources("ext").await.len(), 1);
         assert!(store.resources("missing").await.is_empty());
