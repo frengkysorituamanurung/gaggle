@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use gaggle_core::{
-    DiagnosticReport, HealthStatus, WorkspacePathPolicy, collect_diagnostics, init_tracing,
+    AcpClient, DiagnosticReport, HealthStatus, WorkspacePathPolicy, collect_diagnostics,
+    init_tracing, snapshots::SnapshotManager,
 };
 use gaggle_db::{connect_db, default_db_path, repositories::projects::ProjectRepository};
 use gaggle_tools::register_builtin_extensions;
@@ -63,6 +64,19 @@ enum Commands {
         /// Verify checksums and integrity without changing any data
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Manage chat snapshots for undo/redo
+    Snapshot {
+        #[command(subcommand)]
+        action: SnapshotCommands,
+    },
+    /// Talk to an external ACP agent
+    Acp {
+        /// Base URL of the ACP agent
+        #[arg(long)]
+        url: String,
+        #[command(subcommand)]
+        action: AcpCommands,
     },
     /// Show the resolved path to the global SQLite database
     DbPath,
@@ -135,6 +149,34 @@ enum ImportCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum AcpCommands {
+    /// Initialize the ACP connection
+    Init,
+    /// Create a new ACP session
+    NewSession { cwd: Option<String> },
+    /// Send a prompt to an ACP session
+    Prompt { session: String, text: String },
+    /// Cancel an ACP session
+    Cancel { session: String },
+    /// List ACP sessions
+    List,
+}
+
+#[derive(Subcommand)]
+enum SnapshotCommands {
+    /// Create a snapshot of a chat
+    Create { chat: String },
+    /// List snapshots for a chat
+    List { chat: String },
+    /// Restore a chat to a snapshot
+    Restore { chat: String, snapshot: String },
+    /// Undo the last change
+    Undo { chat: String },
+    /// Redo the last undone change
+    Redo { chat: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing()?;
@@ -146,6 +188,57 @@ async fn main() -> Result<()> {
     };
 
     match cli.command {
+        Commands::Snapshot { action } => {
+            let pool = connect_db(&db_path).await?;
+            let manager = SnapshotManager::new(pool);
+            match action {
+                SnapshotCommands::Create { chat } => {
+                    let snap = manager.create_snapshot(&chat).await?;
+                    println!("{}", serde_json::to_string_pretty(&snap)?);
+                }
+                SnapshotCommands::List { chat } => {
+                    let snaps = manager.list_snapshots(&chat).await?;
+                    println!("{}", serde_json::to_string_pretty(&snaps)?);
+                }
+                SnapshotCommands::Restore { chat, snapshot } => {
+                    let snap = manager.restore_snapshot(&chat, &snapshot).await?;
+                    println!("{}", serde_json::to_string_pretty(&snap)?);
+                }
+                SnapshotCommands::Undo { chat } => {
+                    let snap = manager.undo(&chat).await?;
+                    println!("{}", serde_json::to_string_pretty(&snap)?);
+                }
+                SnapshotCommands::Redo { chat } => {
+                    let snap = manager.redo(&chat).await?;
+                    println!("{}", serde_json::to_string_pretty(&snap)?);
+                }
+            }
+        }
+        Commands::Acp { url, action } => {
+            let client = AcpClient::new(&url);
+            match action {
+                AcpCommands::Init => {
+                    let resp = client.initialize().await?;
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                }
+                AcpCommands::NewSession { cwd } => {
+                    let resp = client.new_session(cwd).await?;
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                }
+                AcpCommands::Prompt { session, text } => {
+                    let resp = client.prompt(&session, &text).await?;
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                }
+                AcpCommands::Cancel { session } => {
+                    client.cancel(&session).await?;
+                    println!("{{\"cancelled\": true}}");
+                }
+                AcpCommands::List => {
+                    let resp = client.list_sessions().await?;
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                }
+            }
+        }
         Commands::DbPath => {
             println!("{}", db_path.display());
         }
@@ -220,7 +313,7 @@ async fn main() -> Result<()> {
                     project,
                     import_credentials,
                 } => {
-                    let summary = gaggle_cli::goose_import::import_goose_session_with_credentials(
+                    let summary = gaggle_cli::gaggle_import::import_goose_session_with_credentials(
                         &pool,
                         &source_database,
                         &session,

@@ -244,26 +244,34 @@ impl CompactionEngine {
 
         // Build the summarization prompt using the ported compaction template.
         // Tool request/response pairs are grouped so they are summarized as a unit.
+        // A single assistant turn may be followed by several tool results; keep
+        // all of them in the same chunk so a pair is never split across chunks.
         let mut message_chunks: Vec<String> = Vec::new();
         let mut i = 0;
         while i < summarizable.len() {
-            if i + 1 < summarizable.len()
-                && summarizable[i].1 == "assistant"
-                && summarizable[i + 1].1 == "tool"
-            {
-                message_chunks.push(format!(
-                    "[tool pair seq {}-{}]\nassistant: {}\ntool: {}",
-                    summarizable[i].0,
-                    summarizable[i + 1].0,
-                    summarizable[i].2,
-                    summarizable[i + 1].2
-                ));
-                i += 2;
-            } else {
-                let (seq, role, content) = &summarizable[i];
-                message_chunks.push(format_message_for_compacting(*seq, role, content));
-                i += 1;
+            if summarizable[i].1 == "assistant" {
+                let mut j = i + 1;
+                while j < summarizable.len() && summarizable[j].1 == "tool" {
+                    j += 1;
+                }
+                if j > i + 1 {
+                    let first_seq = summarizable[i].0;
+                    let last_seq = summarizable[j - 1].0;
+                    let mut chunk = format!(
+                        "[tool pair seq {}-{}]\nassistant: {}",
+                        first_seq, last_seq, summarizable[i].2
+                    );
+                    for entry in &summarizable[i + 1..j] {
+                        chunk.push_str(&format!("\ntool: {}", entry.2));
+                    }
+                    message_chunks.push(chunk);
+                    i = j;
+                    continue;
+                }
             }
+            let (seq, role, content) = &summarizable[i];
+            message_chunks.push(format_message_for_compacting(*seq, role, content));
+            i += 1;
         }
         let messages_text = message_chunks.join("\n");
         let templates = CompactionTemplates::default();
@@ -480,7 +488,7 @@ impl CompactionEngine {
 fn render_parts(parts: &[MessagePart]) -> String {
     let mut chunks = Vec::new();
     for part in parts {
-        if part.kind != "text" && part.kind != "tool_result" {
+        if part.kind != "text" && part.kind != "tool_result" && part.kind != "tool_call" {
             continue;
         }
         if let Some(content) = part.content.as_deref()
@@ -491,10 +499,159 @@ fn render_parts(parts: &[MessagePart]) -> String {
                 chunks.push(format!(
                     "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
                 ));
+            } else if part.kind == "tool_call" {
+                chunks.push(format!("<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"));
             } else {
                 chunks.push(content.to_string());
             }
         }
     }
     chunks.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ModelCompletionResponse, ProviderError, TokenUsage};
+    use async_trait::async_trait;
+    use gaggle_db::{
+        connect_in_memory, repositories::chats::ChatRepository,
+        repositories::projects::ProjectRepository, repositories::runs::RunRepository,
+    };
+    use std::sync::Mutex;
+
+    struct CapturingProvider {
+        captured: Mutex<String>,
+    }
+
+    #[async_trait]
+    impl ModelProviderAdapter for CapturingProvider {
+        fn provider_name(&self) -> &str {
+            "capturing"
+        }
+        async fn complete(
+            &self,
+            req: &ModelCompletionRequest,
+        ) -> Result<ModelCompletionResponse, ProviderError> {
+            if let Some(msg) = req.messages.first() {
+                *self.captured.lock().unwrap() = msg.content.clone();
+            }
+            Ok(ModelCompletionResponse {
+                text: r#"{"user_intent":["test"],"pending_tasks":["keep"]}"#.to_string(),
+                tool_calls: vec![],
+                usage: TokenUsage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cached_tokens: 0,
+                },
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn compaction_groups_tool_call_and_result() -> anyhow::Result<()> {
+        let pool = connect_in_memory().await?;
+        let project = ProjectRepository::new(pool.clone())
+            .create("p", "/tmp/x", "none")
+            .await?;
+        let chat = ChatRepository::new(pool.clone())
+            .create(&project.id, "c", "user", "local", "ask")
+            .await?;
+
+        let assistant = ChatRepository::new(pool.clone())
+            .append_message(&chat.id, None, "assistant", "calling tool")
+            .await?;
+        sqlx::query(
+            "INSERT INTO message_parts (id, message_id, idx, kind, content) VALUES (?, ?, 1, 'tool_call', ?)",
+        )
+        .bind(uuid::Uuid::now_v7().to_string())
+        .bind(&assistant.id)
+        .bind(r#"{"tool":"fs.read"}"#)
+        .execute(&pool)
+        .await?;
+
+        let tool_msg = ChatRepository::new(pool.clone())
+            .append_message(&chat.id, None, "tool", "placeholder")
+            .await?;
+        sqlx::query("UPDATE message_parts SET kind = 'tool_result', content = 'tool output' WHERE message_id = ? AND idx = 0")
+            .bind(&tool_msg.id)
+            .execute(&pool)
+            .await?;
+
+        ChatRepository::new(pool.clone())
+            .append_message(&chat.id, None, "user", &"x".repeat(200))
+            .await?;
+
+        let provider = CapturingProvider {
+            captured: Mutex::new(String::new()),
+        };
+        let result =
+            CompactionEngine::maybe_compact_chat(pool.clone(), &chat.id, 10, &provider, "manual")
+                .await?;
+        assert!(result.is_some());
+        let captured = provider.captured.lock().unwrap().clone();
+        assert!(
+            captured.contains("[tool pair"),
+            "missing tool pair chunk: {captured}"
+        );
+        assert!(
+            captured.contains("<<<TOOL_CALL>>>"),
+            "missing tool call: {captured}"
+        );
+        assert!(
+            captured.contains("<<<TOOL_RESULT>>>"),
+            "missing tool result: {captured}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn compaction_preserves_unresolved_approvals() -> anyhow::Result<()> {
+        let pool = connect_in_memory().await?;
+        let project = ProjectRepository::new(pool.clone())
+            .create("p", "/tmp/x", "none")
+            .await?;
+        let chat = ChatRepository::new(pool.clone())
+            .create(&project.id, "c", "user", "local", "ask")
+            .await?;
+        ChatRepository::new(pool.clone())
+            .append_message(&chat.id, None, "user", &"x".repeat(200))
+            .await?;
+
+        let run_repo = RunRepository::new(pool.clone());
+        let run = run_repo.create(&chat.id, None, None).await?;
+        let tool_call = run_repo
+            .record_tool_call(
+                &run.id,
+                1,
+                "native",
+                "shell.exec",
+                "{}",
+                "awaiting_approval",
+            )
+            .await?;
+        let approval = run_repo
+            .create_approval(
+                &tool_call.id,
+                "shell",
+                "summary",
+                Some("rm -rf /"),
+                Some("/tmp/x"),
+            )
+            .await?;
+
+        let provider = CapturingProvider {
+            captured: Mutex::new(String::new()),
+        };
+        let result =
+            CompactionEngine::maybe_compact_chat(pool.clone(), &chat.id, 10, &provider, "manual")
+                .await?;
+        let cr = result.expect("compaction should run");
+        assert!(
+            cr.summary.contains(&approval.id),
+            "approval id missing: {}",
+            cr.summary
+        );
+        Ok(())
+    }
 }

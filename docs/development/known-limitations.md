@@ -7,15 +7,16 @@ the UI/backend integration audit.
 ## Credentials and secrets
 
 - API keys and OAuth tokens are stored in the OS credential vault (macOS Keychain / Linux Secret Service) through `KeyringCredentialStore`; an in-memory fallback remains for tests and unsupported platforms.
-- Desktop Electron shell is rebranded from Goose to Gaggle (binary name, package name, branding).
-- ACP backend integration: agent-client-protocol and agent-client-protocol-http crates added as dependencies. Minimal ACP-compatible endpoints (/health, /status) and in-memory session manager implemented. Full ACP server requires porting Goose's HandleDispatchFrom<Client> trait (4000+ lines) which wraps StateMachineServices. This is a major milestone.
-- Desktop Electron shell rebranded from Goose to Gaggle. Full ACP integration needed for Electron desktop to function with Gaggle backend. Tauri desktop remains the primary desktop option.
-- Desktop uses Tauri with dynamic port binding as a fallback.
-- Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake are supported. ChatGPT OAuth, local inference, and additional providers are planned.
-- Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.
-- UI supports English, Indonesian, and Japanese locales; full Goose i18n parity is in progress.
-  abstraction. OS keychain integration is planned but not yet wired.
 - The database stores only `secret_ref` identifiers, never plaintext secrets.
+- Desktop: Electron is the primary desktop shell (rebranded from Goose). Tauri is deprecated and will be removed.
+- ACP backend: WebSocket JSON-RPC at `/acp` with all core methods (initialize, session/new, session/prompt, session/cancel, session/list, session/load, session/delete, session/close, session/fork, session/setConfigOption). Streaming notifications and permission bridging (30s timeout, auto-deny) implemented.
+- UI screens added: Onboarding, Diagnostics, Worktrees, Context Management, Memory Management, Recipe Management, Extension Management, Quick Launcher (Ctrl+K).
+- Settings sections added: Theme, Keyboard Shortcuts, Live Voice, Dictation.
+- McpApps renderer with iframe sandbox and message passing.
+- Native menu localization: Chinese (existing); multi-locale framework added (i18n-menu.ts). Full translation files for all 16 locales pending.
+- Provider adapters: Anthropic, Ollama, OpenAI-compatible, Google Gemini, Azure, Databricks, Snowflake supported. ChatGPT OAuth, local inference, and additional providers planned.
+- Goose session import preserves usage and metadata in redacted artifact tables; credentials are not copied unless `--import-goose-credentials` is used.
+- UI supports English, Indonesian, and Japanese locales; full Goose i18n parity in progress.
 
 ## Optional capabilities
 

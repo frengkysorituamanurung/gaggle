@@ -8,12 +8,24 @@ export default function LauncherView() {
   return (
     <div className="flex items-center justify-center h-full p-6">
       <Card className="w-full max-w-md">
-        <CardHeader><CardTitle className="text-text-primary">Gaggle Launcher</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-text-primary">Gaggle Launcher</CardTitle>
+        </CardHeader>
         <CardContent>
           <p className="text-text-secondary text-sm mb-3">Start a new chat or open settings.</p>
-          <div className="flex gap-2">
-            <Button variant="default" onClick={() => navigate("/")}>Home</Button>
-            <Button variant="secondary" onClick={() => navigate("/settings")}>Settings</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="default" onClick={() => navigate("/")}>
+              Home
+            </Button>
+            <Button variant="secondary" onClick={() => navigate("/chat")}>
+              Chat
+            </Button>
+            <Button variant="secondary" onClick={() => navigate("/settings")}>
+              Settings
+            </Button>
+            <Button variant="secondary" onClick={() => navigate("/extensions")}>
+              Extensions
+            </Button>
           </div>
         </CardContent>
       </Card>

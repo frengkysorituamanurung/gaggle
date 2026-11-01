@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
+import { EmptyState } from "../components/EmptyState";
+import { LoadingState } from "../components/LoadingState";
 
 export default function HistoryScreen() {
   const navigate = useNavigate();
@@ -44,8 +46,8 @@ export default function HistoryScreen() {
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
-      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
-      {chats.length === 0 && !loading && <div className="text-text-secondary text-center py-12">No chats yet.</div>}
+      {loading && <LoadingState />}
+      {chats.length === 0 && !loading && <EmptyState title="No chats yet." description="Start a new chat to see history." />}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

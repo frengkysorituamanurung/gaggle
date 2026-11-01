@@ -28,8 +28,10 @@ use url::Url;
 
 pub mod bundled;
 pub mod connection_manager;
+pub mod wasm_runtime;
 pub use bundled::{BUNDLED_MCP_SERVERS, BundledMcpServer, install_bundled};
 pub use connection_manager::McpConnectionManager;
+pub use wasm_runtime::WasmExtensionRuntime;
 
 pub const RECOMMENDED_MAX_ACTIVE_TOOLS: usize = 25;
 
@@ -82,10 +84,213 @@ pub struct McpTool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpResource {
+    pub uri: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpResourceContent {
+    pub uri: String,
+    pub mime_type: Option<String>,
+    pub text: Option<String>,
+    pub blob: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpPrompt {
+    pub name: String,
+    pub description: Option<String>,
+    pub arguments: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpPromptResult {
+    pub description: Option<String>,
+    pub messages: Vec<Value>,
+    pub raw: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolResult {
     pub content: Vec<Value>,
     pub is_error: bool,
     pub raw: Value,
+}
+
+// ---------------------------------------------------------------------------
+// Typed JSON-RPC request/response structs for resources and prompts
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ResourcesListRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListResourcesRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourcesListResponse {
+    #[serde(default)]
+    pub resources: Vec<McpResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListResourcesResponse {
+    #[serde(default)]
+    pub resources: Vec<McpResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadResourceRequest {
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadResourceResponse {
+    #[serde(default)]
+    pub contents: Vec<McpResourceContent>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PromptsListRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ListPromptsRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptsListResponse {
+    #[serde(default)]
+    pub prompts: Vec<McpPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPromptsResponse {
+    #[serde(default)]
+    pub prompts: Vec<McpPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPromptRequest {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptGetRequest {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: Value,
+}
+
+// Type aliases for alternate naming conventions.
+pub type ResourcesListResult = ResourcesListResponse;
+pub type ReadResourceResult = ReadResourceResponse;
+pub type PromptsListResult = PromptsListResponse;
+pub type GetPromptResponse = McpPromptResult;
+pub type PromptGetResponse = McpPromptResult;
+pub type PromptsGetResponse = McpPromptResult;
+
+// Conversions for ergonomic method calls.
+impl From<&str> for ReadResourceRequest {
+    fn from(value: &str) -> Self {
+        Self {
+            uri: value.to_string(),
+        }
+    }
+}
+
+impl From<String> for ReadResourceRequest {
+    fn from(value: String) -> Self {
+        Self { uri: value }
+    }
+}
+
+impl From<(&str, Value)> for GetPromptRequest {
+    fn from((name, arguments): (&str, Value)) -> Self {
+        Self {
+            name: name.to_string(),
+            arguments,
+        }
+    }
+}
+
+impl From<(String, Value)> for GetPromptRequest {
+    fn from((name, arguments): (String, Value)) -> Self {
+        Self { name, arguments }
+    }
+}
+
+impl From<ListResourcesRequest> for ResourcesListRequest {
+    fn from(value: ListResourcesRequest) -> Self {
+        Self {
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<ResourcesListRequest> for ListResourcesRequest {
+    fn from(value: ResourcesListRequest) -> Self {
+        Self {
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<ListPromptsRequest> for PromptsListRequest {
+    fn from(value: ListPromptsRequest) -> Self {
+        Self {
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<PromptsListRequest> for ListPromptsRequest {
+    fn from(value: PromptsListRequest) -> Self {
+        Self {
+            cursor: value.cursor,
+        }
+    }
+}
+
+impl From<PromptGetRequest> for GetPromptRequest {
+    fn from(value: PromptGetRequest) -> Self {
+        Self {
+            name: value.name,
+            arguments: value.arguments,
+        }
+    }
+}
+
+impl From<GetPromptRequest> for PromptGetRequest {
+    fn from(value: GetPromptRequest) -> Self {
+        Self {
+            name: value.name,
+            arguments: value.arguments,
+        }
+    }
 }
 
 impl McpToolResult {
@@ -886,6 +1091,329 @@ impl McpClient {
         })
     }
 
+    pub async fn list_resources(&self) -> Result<Vec<McpResource>> {
+        let result = self
+            .transport
+            .request("resources/list", Some(json!({})))
+            .await?;
+        let resources = result
+            .get("resources")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for r in resources {
+            out.push(McpResource {
+                uri: r
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                name: r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                description: r
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                mime_type: r
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+        Ok(out)
+    }
+
+    pub async fn read_resource(&self, uri: &str) -> Result<Vec<McpResourceContent>> {
+        let params = json!({"uri": uri});
+        let result = self
+            .transport
+            .request("resources/read", Some(params))
+            .await?;
+        let contents = result
+            .get("contents")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for c in contents {
+            out.push(McpResourceContent {
+                uri: c
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(uri)
+                    .to_string(),
+                mime_type: c
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                text: c
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                blob: c
+                    .get("blob")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+        Ok(out)
+    }
+
+    pub async fn list_prompts(&self) -> Result<Vec<McpPrompt>> {
+        let result = self
+            .transport
+            .request("prompts/list", Some(json!({})))
+            .await?;
+        let prompts = result
+            .get("prompts")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for p in prompts {
+            let arguments = p
+                .get("arguments")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            out.push(McpPrompt {
+                name: p
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                description: p
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                arguments,
+            });
+        }
+        Ok(out)
+    }
+
+    pub async fn get_prompt(&self, name: &str, arguments: Value) -> Result<McpPromptResult> {
+        let params = json!({"name": name, "arguments": arguments});
+        let result = self.transport.request("prompts/get", Some(params)).await?;
+        let messages = result
+            .get("messages")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(McpPromptResult {
+            description: result
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            messages,
+            raw: result,
+        })
+    }
+
+    // Typed resource/prompt helpers (JSON-RPC method wrappers).
+    pub async fn resources_list(&self) -> Result<ResourcesListResponse> {
+        let result = self
+            .transport
+            .request("resources/list", Some(json!({})))
+            .await?;
+        let resources = result
+            .get("resources")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for r in resources {
+            out.push(McpResource {
+                uri: r
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                name: r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                description: r
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                mime_type: r
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+        let next_cursor = result
+            .get("nextCursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        Ok(ResourcesListResponse {
+            resources: out,
+            next_cursor,
+        })
+    }
+
+    pub async fn resources_list_with<R>(&self, _req: R) -> Result<ResourcesListResponse>
+    where
+        R: Into<ResourcesListRequest>,
+    {
+        let _ = _req.into();
+        self.resources_list().await
+    }
+
+    pub async fn list_resources_typed(
+        &self,
+        _req: ListResourcesRequest,
+    ) -> Result<ListResourcesResponse> {
+        let r = self.resources_list().await?;
+        Ok(ListResourcesResponse {
+            resources: r.resources,
+            next_cursor: r.next_cursor,
+        })
+    }
+
+    pub async fn resources_read<R>(&self, request: R) -> Result<ReadResourceResponse>
+    where
+        R: Into<ReadResourceRequest>,
+    {
+        let req = request.into();
+        let params = json!({"uri": req.uri});
+        let result = self
+            .transport
+            .request("resources/read", Some(params))
+            .await?;
+        let contents = result
+            .get("contents")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for c in contents {
+            out.push(McpResourceContent {
+                uri: c
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&req.uri)
+                    .to_string(),
+                mime_type: c
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                text: c
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                blob: c
+                    .get("blob")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+        Ok(ReadResourceResponse { contents: out })
+    }
+
+    pub async fn read_resource_typed(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
+        self.resources_read(req).await
+    }
+
+    pub async fn resources_read_request(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
+        self.resources_read(req).await
+    }
+
+    pub async fn read_resource_request(
+        &self,
+        req: ReadResourceRequest,
+    ) -> Result<ReadResourceResponse> {
+        self.resources_read(req).await
+    }
+
+    pub async fn prompts_list(&self) -> Result<PromptsListResponse> {
+        let result = self
+            .transport
+            .request("prompts/list", Some(json!({})))
+            .await?;
+        let prompts = result
+            .get("prompts")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        for p in prompts {
+            out.push(McpPrompt {
+                name: p
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                description: p
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                arguments: p
+                    .get("arguments")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default(),
+            });
+        }
+        let next_cursor = result
+            .get("nextCursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        Ok(PromptsListResponse {
+            prompts: out,
+            next_cursor,
+        })
+    }
+
+    pub async fn prompts_list_with<R>(&self, _req: R) -> Result<PromptsListResponse>
+    where
+        R: Into<PromptsListRequest>,
+    {
+        let _ = _req.into();
+        self.prompts_list().await
+    }
+
+    pub async fn list_prompts_typed(
+        &self,
+        _req: ListPromptsRequest,
+    ) -> Result<ListPromptsResponse> {
+        let r = self.prompts_list().await?;
+        Ok(ListPromptsResponse {
+            prompts: r.prompts,
+            next_cursor: r.next_cursor,
+        })
+    }
+
+    pub async fn prompts_get(&self, name: &str, arguments: Value) -> Result<McpPromptResult> {
+        self.get_prompt(name, arguments).await
+    }
+
+    pub async fn prompts_get_request(&self, req: GetPromptRequest) -> Result<McpPromptResult> {
+        self.get_prompt(&req.name, req.arguments).await
+    }
+
+    pub async fn get_prompt_request(&self, req: GetPromptRequest) -> Result<McpPromptResult> {
+        self.prompts_get_request(req).await
+    }
+
+    pub async fn get_prompt_with(&self, req: GetPromptRequest) -> Result<McpPromptResult> {
+        self.prompts_get_request(req).await
+    }
+
+    pub async fn prompts_get_with(&self, req: GetPromptRequest) -> Result<McpPromptResult> {
+        self.prompts_get_request(req).await
+    }
+
     pub async fn notify(&self, method: &str, params: Option<Value>) -> Result<()> {
         self.transport.notify(method, params).await
     }
@@ -922,6 +1450,9 @@ pub struct InstallExtensionRequest {
 pub struct ExtensionRegistry {
     pool: SqlitePool,
     connections: McpConnectionManager,
+    resources:
+        std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
+    prompts: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpPrompt>>>>,
 }
 
 impl ExtensionRegistry {
@@ -929,6 +1460,12 @@ impl ExtensionRegistry {
         Self {
             pool: pool.clone(),
             connections: McpConnectionManager::new(),
+            resources: std::sync::Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            prompts: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),
         }
     }
 
@@ -936,6 +1473,12 @@ impl ExtensionRegistry {
         Self {
             pool: pool.clone(),
             connections,
+            resources: std::sync::Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            prompts: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),
         }
     }
 
@@ -1185,6 +1728,139 @@ impl ExtensionRegistry {
         Ok(out)
     }
 
+    pub async fn discover_resources(&self, extension_id: &str) -> Result<Vec<McpResource>> {
+        let repo = ExtensionRepository::new(self.pool.clone());
+        let ext = repo
+            .get_extension_by_id(extension_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {extension_id} not found"))?;
+
+        let client = self.connections.get_or_connect(&ext).await?;
+        let resources = client.list_resources().await?;
+
+        let mut guard = self.resources.write().await;
+        guard.insert(ext.id.clone(), resources.clone());
+        Ok(resources)
+    }
+
+    pub async fn discover_prompts(&self, extension_id: &str) -> Result<Vec<McpPrompt>> {
+        let repo = ExtensionRepository::new(self.pool.clone());
+        let ext = repo
+            .get_extension_by_id(extension_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {extension_id} not found"))?;
+
+        let client = self.connections.get_or_connect(&ext).await?;
+        let prompts = client.list_prompts().await?;
+
+        let mut guard = self.prompts.write().await;
+        guard.insert(ext.id.clone(), prompts.clone());
+        Ok(prompts)
+    }
+
+    pub async fn discover_resources_with_client(
+        &self,
+        extension_id: &str,
+        client: &mut McpClient,
+    ) -> Result<Vec<McpResource>> {
+        let repo = ExtensionRepository::new(self.pool.clone());
+        let ext = repo
+            .get_extension_by_id(extension_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {extension_id} not found"))?;
+
+        client.initialize().await?;
+        let resources = client.list_resources().await?;
+
+        let mut guard = self.resources.write().await;
+        guard.insert(ext.id.clone(), resources.clone());
+        Ok(resources)
+    }
+
+    pub async fn discover_prompts_with_client(
+        &self,
+        extension_id: &str,
+        client: &mut McpClient,
+    ) -> Result<Vec<McpPrompt>> {
+        let repo = ExtensionRepository::new(self.pool.clone());
+        let ext = repo
+            .get_extension_by_id(extension_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Extension {extension_id} not found"))?;
+
+        client.initialize().await?;
+        let prompts = client.list_prompts().await?;
+
+        let mut guard = self.prompts.write().await;
+        guard.insert(ext.id.clone(), prompts.clone());
+        Ok(prompts)
+    }
+
+    pub async fn invalidate_and_rediscover_resources(
+        &self,
+        ext_id: &str,
+    ) -> Result<Vec<McpResource>> {
+        let _ = self.connections.invalidate(ext_id).await;
+        self.discover_resources(ext_id).await
+    }
+
+    pub async fn invalidate_and_rediscover_prompts(&self, ext_id: &str) -> Result<Vec<McpPrompt>> {
+        let _ = self.connections.invalidate(ext_id).await;
+        self.discover_prompts(ext_id).await
+    }
+
+    pub async fn store_resources(&self, extension_id: &str, resources: Vec<McpResource>) {
+        let mut guard = self.resources.write().await;
+        guard.insert(extension_id.to_string(), resources);
+    }
+
+    pub async fn stored_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        let guard = self.resources.read().await;
+        guard.get(extension_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.stored_resources(extension_id).await
+    }
+
+    pub async fn cached_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.stored_resources(extension_id).await
+    }
+
+    pub async fn get_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.stored_resources(extension_id).await
+    }
+
+    pub async fn list_resources_for_extension(&self, extension_id: &str) -> Vec<McpResource> {
+        self.stored_resources(extension_id).await
+    }
+
+    pub async fn store_prompts(&self, extension_id: &str, prompts: Vec<McpPrompt>) {
+        let mut guard = self.prompts.write().await;
+        guard.insert(extension_id.to_string(), prompts);
+    }
+
+    pub async fn stored_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        let guard = self.prompts.read().await;
+        guard.get(extension_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.stored_prompts(extension_id).await
+    }
+
+    pub async fn cached_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.stored_prompts(extension_id).await
+    }
+
+    pub async fn get_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.stored_prompts(extension_id).await
+    }
+
+    pub async fn list_prompts_for_extension(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.stored_prompts(extension_id).await
+    }
+
     pub async fn enable_for_chat(&self, chat_id: &str, extension_id: &str) -> Result<()> {
         let repo = ExtensionRepository::new(self.pool.clone());
         repo.enable_extension_for_chat(chat_id, extension_id).await
@@ -1287,5 +1963,180 @@ fn _use_now_ms() {
     let _ = new_id();
 }
 
+// ---------------------------------------------------------------------------
+// In-memory capability storage (separate from DB-backed ExtensionTool)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionCapabilities {
+    pub extension_id: String,
+    pub tools: Vec<ExtensionTool>,
+    pub resources: Vec<McpResource>,
+    pub prompts: Vec<McpPrompt>,
+}
+
+impl ExtensionCapabilities {
+    pub fn new(extension_id: impl Into<String>) -> Self {
+        Self {
+            extension_id: extension_id.into(),
+            tools: Vec::new(),
+            resources: Vec::new(),
+            prompts: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct McpCapabilityStore {
+    resources:
+        std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
+    prompts: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpPrompt>>>>,
+}
+
+impl McpCapabilityStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn store_resources(&self, extension_id: &str, resources: Vec<McpResource>) {
+        let mut guard = self.resources.write().await;
+        guard.insert(extension_id.to_string(), resources);
+    }
+
+    pub async fn resources(&self, extension_id: &str) -> Vec<McpResource> {
+        let guard = self.resources.read().await;
+        guard.get(extension_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn get_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.resources(extension_id).await
+    }
+
+    pub async fn cached_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.resources(extension_id).await
+    }
+
+    pub async fn stored_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.resources(extension_id).await
+    }
+
+    pub async fn list_resources(&self, extension_id: &str) -> Vec<McpResource> {
+        self.resources(extension_id).await
+    }
+
+    pub async fn store_prompts(&self, extension_id: &str, prompts: Vec<McpPrompt>) {
+        let mut guard = self.prompts.write().await;
+        guard.insert(extension_id.to_string(), prompts);
+    }
+
+    pub async fn prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        let guard = self.prompts.read().await;
+        guard.get(extension_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn get_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.prompts(extension_id).await
+    }
+
+    pub async fn cached_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.prompts(extension_id).await
+    }
+
+    pub async fn stored_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.prompts(extension_id).await
+    }
+
+    pub async fn list_prompts(&self, extension_id: &str) -> Vec<McpPrompt> {
+        self.prompts(extension_id).await
+    }
+}
+
+// Aliases for storage helper naming variants.
+pub type McpResourceStore = McpCapabilityStore;
+pub type McpPromptStore = McpCapabilityStore;
+pub type McpExtensionStore = McpCapabilityStore;
+pub type ExtensionCapabilityStore = McpCapabilityStore;
+pub type ExtensionResourceStore = McpCapabilityStore;
+pub type ExtensionPromptStore = McpCapabilityStore;
+
+// Convenience methods on McpConnectionManager (defined in connection_manager module).
+impl McpConnectionManager {
+    pub async fn list_resources<T>(&self, target: T) -> Result<Vec<McpResource>>
+    where
+        T: crate::connection_manager::ConnectTarget,
+    {
+        let client = self.get_or_connect(target).await?;
+        client.list_resources().await
+    }
+
+    pub async fn read_resource<T>(&self, target: T, uri: &str) -> Result<Vec<McpResourceContent>>
+    where
+        T: crate::connection_manager::ConnectTarget,
+    {
+        let client = self.get_or_connect(target).await?;
+        client.read_resource(uri).await
+    }
+
+    pub async fn list_prompts<T>(&self, target: T) -> Result<Vec<McpPrompt>>
+    where
+        T: crate::connection_manager::ConnectTarget,
+    {
+        let client = self.get_or_connect(target).await?;
+        client.list_prompts().await
+    }
+
+    pub async fn get_prompt<T>(
+        &self,
+        target: T,
+        name: &str,
+        arguments: Value,
+    ) -> Result<McpPromptResult>
+    where
+        T: crate::connection_manager::ConnectTarget,
+    {
+        let client = self.get_or_connect(target).await?;
+        client.get_prompt(name, arguments).await
+    }
+}
+
 // Re-export extension registry alias
 pub type McpExtensionRegistry = ExtensionRegistry;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn typed_structs_roundtrip() {
+        let req = ReadResourceRequest {
+            uri: "file:///a".into(),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let back: ReadResourceRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.uri, "file:///a");
+
+        let prompt = GetPromptRequest {
+            name: "summarize".into(),
+            arguments: serde_json::json!({"x": 1}),
+        };
+        assert_eq!(prompt.name, "summarize");
+    }
+
+    #[tokio::test]
+    async fn capability_store_roundtrip() {
+        let store = McpCapabilityStore::new();
+        store
+            .store_resources(
+                "ext",
+                vec![McpResource {
+                    uri: "u".into(),
+                    name: Some("r".into()),
+                    description: None,
+                    mime_type: None,
+                }],
+            )
+            .await;
+        assert_eq!(store.resources("ext").await.len(), 1);
+        assert!(store.resources("missing").await.is_empty());
+    }
+}

@@ -9,6 +9,7 @@ import { ChatInput } from "../components/ChatInput";
 import { ToolCallCard } from "../components/ToolCallCard";
 import { ToolApprovalCard } from "../components/ToolApprovalCard";
 import { ThinkingBlock } from "../components/ThinkingBlock";
+import { BaseChat } from "../components/BaseChat";
 import { defineMessages, useIntl } from "../i18n";
 
 const messages = defineMessages({
@@ -327,93 +328,12 @@ export default function ChatScreen() {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-        {messagesList.map((m) => {
-          const messageParts = (partsByMessage.get(m.id) || []).sort((a, b) => a.idx - b.idx);
-          return (
-            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-lg px-3 py-2 ${m.role === "user" ? "bg-background-tertiary text-text-primary" : "bg-background-secondary text-text-primary"}`}>
-                {messageParts.map((p) => {
-                  if (p.kind === "text") {
-                    return <Markdown key={p.id} text={p.content || ""} />;
-                  }
-                  if (p.kind === "reasoning") {
-                    return <ThinkingBlock key={p.id} content={p.content} />;
-                  }
-                  if (p.kind === "tool_call") {
-                    let label = "Tool call";
-                    try {
-                      const parsed = JSON.parse(p.content || "{}");
-                      label = parsed.tool_name || parsed.name || label;
-                    } catch {
-                      /* ignore */
-                    }
-                    return <ToolCallCard key={p.id} label={label} content={p.content} />;
-                  }
-                  if (p.kind === "tool_result") {
-                    return <ToolCallCard key={p.id} label="Tool result" content={p.content} />;
-                  }
-                  if (p.kind === "attachment") {
-                    return <div key={p.id} className="text-xs text-text-secondary">Attachment: {p.content}</div>;
-                  }
-                  return null;
-                })}
-                {messageParts.length === 0 && m.role === "assistant" && (
-                  <span className="text-text-secondary text-sm">(empty)</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        {streamingText && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-lg px-3 py-2 bg-background-secondary text-text-primary">
-              <Markdown text={streamingText} />
-            </div>
-          </div>
-        )}
-
-        {Object.values(toolEvents).length > 0 && (
-          <div className="space-y-2">
-            {Object.values(toolEvents).map((te) => (
-              <ToolCallCard
-                key={te.tool_call_id}
-                label={te.label || te.tool_name || "Tool"}
-                status={te.status}
-                durationMs={te.duration_ms}
-                content={te.error ? JSON.stringify({ error: te.error }) : undefined}
-              />
-            ))}
-          </div>
-        )}
-
-        {pendingApproval && (
-          <ToolApprovalCard
-            approvalId={pendingApproval.id}
-            toolName={undefined}
-            summary={pendingApproval.summary}
-            command={pendingApproval.command}
-            cwd={pendingApproval.cwd}
-            onDecide={decideApproval}
-          />
-        )}
-
-        {error && <div className="text-text-danger text-sm">{error}</div>}
-        {runStatus && runStatus !== "running" && (
-          <div className="text-xs text-text-tertiary">Status: {runStatus}</div>
-        )}
-      </div>
-
-      <div className="border-t border-border-primary px-4 py-3">
-        <ChatInput
-          value={draft}
-          onChange={setDraft}
-          onSend={send}
-          onStop={cancel}
-          disabled={!chatId || sending}
-          sending={sending}
-          canStop={sending && !!currentRunId}
+      <div className="flex-1 min-h-0">
+        <BaseChat
+          chatId={chatId || ""}
+          projectId={projectId}
+          modelKey={modelKey}
+          onModelKeyChange={setModelKey}
         />
       </div>
     </div>
