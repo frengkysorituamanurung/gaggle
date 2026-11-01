@@ -1286,6 +1286,7 @@ async fn handle_request(
         method
             if method.starts_with("_goose/unstable/")
                 || method.starts_with("_gaggle/unstable/") =>
+        {
             // Generic dispatcher for Goose custom methods: acknowledge unknown methods
             // so clients can probe capabilities without hard failures.
             Some(JsonRpcResponse {
