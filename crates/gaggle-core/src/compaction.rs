@@ -488,8 +488,8 @@ impl CompactionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::{ModelCompletionResponse, ProviderError, TokenUsage};
+    use async_trait::async_trait;
     use gaggle_db::{
         connect_in_memory, repositories::chats::ChatRepository,
         repositories::projects::ProjectRepository, repositories::runs::RunRepository,

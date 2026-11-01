@@ -245,37 +245,51 @@ impl From<(String, Value)> for GetPromptRequest {
 
 impl From<ListResourcesRequest> for ResourcesListRequest {
     fn from(value: ListResourcesRequest) -> Self {
-        Self { cursor: value.cursor }
+        Self {
+            cursor: value.cursor,
+        }
     }
 }
 
 impl From<ResourcesListRequest> for ListResourcesRequest {
     fn from(value: ResourcesListRequest) -> Self {
-        Self { cursor: value.cursor }
+        Self {
+            cursor: value.cursor,
+        }
     }
 }
 
 impl From<ListPromptsRequest> for PromptsListRequest {
     fn from(value: ListPromptsRequest) -> Self {
-        Self { cursor: value.cursor }
+        Self {
+            cursor: value.cursor,
+        }
     }
 }
 
 impl From<PromptsListRequest> for ListPromptsRequest {
     fn from(value: PromptsListRequest) -> Self {
-        Self { cursor: value.cursor }
+        Self {
+            cursor: value.cursor,
+        }
     }
 }
 
 impl From<PromptGetRequest> for GetPromptRequest {
     fn from(value: PromptGetRequest) -> Self {
-        Self { name: value.name, arguments: value.arguments }
+        Self {
+            name: value.name,
+            arguments: value.arguments,
+        }
     }
 }
 
 impl From<GetPromptRequest> for PromptGetRequest {
     fn from(value: GetPromptRequest) -> Self {
-        Self { name: value.name, arguments: value.arguments }
+        Self {
+            name: value.name,
+            arguments: value.arguments,
+        }
     }
 }
 
@@ -1213,14 +1227,33 @@ impl McpClient {
         let mut out = Vec::new();
         for r in resources {
             out.push(McpResource {
-                uri: r.get("uri").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                name: r.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                description: r.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                mime_type: r.get("mimeType").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                uri: r
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                name: r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                description: r
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                mime_type: r
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
-        let next_cursor = result.get("nextCursor").and_then(|v| v.as_str()).map(|s| s.to_string());
-        Ok(ResourcesListResponse { resources: out, next_cursor })
+        let next_cursor = result
+            .get("nextCursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        Ok(ResourcesListResponse {
+            resources: out,
+            next_cursor,
+        })
     }
 
     pub async fn resources_list_with<R>(&self, _req: R) -> Result<ResourcesListResponse>
@@ -1245,7 +1278,10 @@ impl McpClient {
     {
         let req = request.into();
         let params = json!({"uri": req.uri});
-        let result = self.transport.request("resources/read", Some(params)).await?;
+        let result = self
+            .transport
+            .request("resources/read", Some(params))
+            .await?;
         let contents = result
             .get("contents")
             .and_then(|v| v.as_array())
@@ -1254,10 +1290,23 @@ impl McpClient {
         let mut out = Vec::new();
         for c in contents {
             out.push(McpResourceContent {
-                uri: c.get("uri").and_then(|v| v.as_str()).unwrap_or(&req.uri).to_string(),
-                mime_type: c.get("mimeType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                text: c.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                blob: c.get("blob").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                uri: c
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&req.uri)
+                    .to_string(),
+                mime_type: c
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                text: c
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                blob: c
+                    .get("blob")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
         Ok(ReadResourceResponse { contents: out })
@@ -1288,13 +1337,30 @@ impl McpClient {
         let mut out = Vec::new();
         for p in prompts {
             out.push(McpPrompt {
-                name: p.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                description: p.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                arguments: p.get("arguments").and_then(|v| v.as_array()).cloned().unwrap_or_default(),
+                name: p
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                description: p
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                arguments: p
+                    .get("arguments")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default(),
             });
         }
-        let next_cursor = result.get("nextCursor").and_then(|v| v.as_str()).map(|s| s.to_string());
-        Ok(PromptsListResponse { prompts: out, next_cursor })
+        let next_cursor = result
+            .get("nextCursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        Ok(PromptsListResponse {
+            prompts: out,
+            next_cursor,
+        })
     }
 
     pub async fn prompts_list_with<R>(&self, _req: R) -> Result<PromptsListResponse>
@@ -1369,7 +1435,8 @@ pub struct InstallExtensionRequest {
 pub struct ExtensionRegistry {
     pool: SqlitePool,
     connections: McpConnectionManager,
-    resources: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
+    resources:
+        std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
     prompts: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpPrompt>>>>,
 }
 
@@ -1378,7 +1445,9 @@ impl ExtensionRegistry {
         Self {
             pool: pool.clone(),
             connections: McpConnectionManager::new(),
-            resources: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            resources: std::sync::Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
             prompts: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
         }
     }
@@ -1387,7 +1456,9 @@ impl ExtensionRegistry {
         Self {
             pool: pool.clone(),
             connections,
-            resources: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            resources: std::sync::Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
             prompts: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
         }
     }
@@ -1895,7 +1966,8 @@ impl ExtensionCapabilities {
 
 #[derive(Clone, Default)]
 pub struct McpCapabilityStore {
-    resources: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
+    resources:
+        std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpResource>>>>,
     prompts: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Vec<McpPrompt>>>>,
 }
 

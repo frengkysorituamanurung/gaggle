@@ -16,9 +16,9 @@ use gaggle_core::adversary_mode::AdversaryConfig;
 use gaggle_core::live_voice::LiveVoiceConfig;
 use gaggle_core::moim::ModelInstruction;
 use gaggle_core::{
-    AcpClient, ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
-    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, ChatSnapshot,
-    CompositeToolExecutor, CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
+    AcpClient, ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime,
+    AnthropicAdapter, BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig,
+    ChatSnapshot, CompositeToolExecutor, CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
     DataPreservation, DiagnosticReport, DiagnosticsExport, FailureCategory, GoogleGeminiAdapter,
     InMemoryCredentialStore, KeyringCredentialStore, MockProviderAdapter, ModelCompletionResponse,
     ModelProviderAdapter, MoimManager, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine,
@@ -3619,9 +3619,7 @@ async fn download_progress_handler(
         match download_task.await {
             Ok(Ok(path)) => {
                 let data = serde_json::json!({"path": path.display().to_string()}).to_string();
-                let _ = tx
-                    .send(Ok(Event::default().event("done").data(data)))
-                    .await;
+                let _ = tx.send(Ok(Event::default().event("done").data(data))).await;
             }
             Ok(Err(e)) => {
                 let data = serde_json::json!({"error": e.to_string()}).to_string();
