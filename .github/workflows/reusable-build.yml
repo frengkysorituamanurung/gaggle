@@ -99,7 +99,7 @@ jobs:
           sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Setup Node for frontend build
-        uses: actions/setup-node@49933ea5288caeca86422071d121c1d3a5683285 # v4
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"

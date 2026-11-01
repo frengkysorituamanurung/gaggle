@@ -66,7 +66,8 @@ pub struct JsonRpcError {
 
 /// Bridge for form elicitation request/response correlation.
 pub struct ElicitationBridge {
-    pending: std::sync::Mutex<std::collections::HashMap<String, oneshot::Sender<serde_json::Value>>>,
+    pending:
+        std::sync::Mutex<std::collections::HashMap<String, oneshot::Sender<serde_json::Value>>>,
 }
 
 impl ElicitationBridge {
@@ -338,14 +339,16 @@ async fn handle_request(
     let id = req.id.clone();
     // Normalize Gaggle-branded custom method names to the canonical (Goose-compatible) form.
     let normalized_method = if req.method.starts_with("_gaggle/unstable/") {
-        req.method.replacen("_gaggle/unstable/", "_goose/unstable/", 1)
+        req.method
+            .replacen("_gaggle/unstable/", "_goose/unstable/", 1)
     } else {
         req.method.clone()
     };
 
     match normalized_method.as_str() {
         "authenticate" => {
-            let repo = gaggle_db::repositories::providers::ProviderRepository::new(state.pool.clone());
+            let repo =
+                gaggle_db::repositories::providers::ProviderRepository::new(state.pool.clone());
             let providers = repo.list_providers().await.unwrap_or_default();
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -562,14 +565,20 @@ async fn handle_request(
                 let session_id_for_notif = session_id.clone();
                 tokio::spawn(async move {
                     while let Some(notification) = notif_rx.recv().await {
-                        let adjusted = if let Ok(mut value) = serde_json::from_str::<Value>(&notification) {
-                            if let Some(params) = value.get_mut("params").and_then(|p| p.as_object_mut()) {
-                                params.insert("sessionId".to_string(), Value::String(session_id_for_notif.clone()));
-                            }
-                            serde_json::to_string(&value).unwrap_or(notification)
-                        } else {
-                            notification
-                        };
+                        let adjusted =
+                            if let Ok(mut value) = serde_json::from_str::<Value>(&notification) {
+                                if let Some(params) =
+                                    value.get_mut("params").and_then(|p| p.as_object_mut())
+                                {
+                                    params.insert(
+                                        "sessionId".to_string(),
+                                        Value::String(session_id_for_notif.clone()),
+                                    );
+                                }
+                                serde_json::to_string(&value).unwrap_or(notification)
+                            } else {
+                                notification
+                            };
                         let _ = tx_clone.send(adjusted).await;
                     }
                 });
@@ -649,8 +658,12 @@ async fn handle_request(
 
                 // Send usage update notification with real totals from usage_records for this run.
                 let run_id = match &outcome {
-                    Ok(gaggle_core::AgentLoopOutcome::Completed { run, .. }) => Some(run.id.clone()),
-                    Ok(gaggle_core::AgentLoopOutcome::WaitingApproval { run, .. }) => Some(run.id.clone()),
+                    Ok(gaggle_core::AgentLoopOutcome::Completed { run, .. }) => {
+                        Some(run.id.clone())
+                    }
+                    Ok(gaggle_core::AgentLoopOutcome::WaitingApproval { run, .. }) => {
+                        Some(run.id.clone())
+                    }
                     Ok(gaggle_core::AgentLoopOutcome::Cancelled { run }) => Some(run.id.clone()),
                     Ok(gaggle_core::AgentLoopOutcome::Failed { run, .. }) => Some(run.id.clone()),
                     Err(_) => None,
@@ -1190,7 +1203,8 @@ async fn handle_request(
             })
         }
         "_goose/unstable/providers/list" => {
-            let repo = gaggle_db::repositories::providers::ProviderRepository::new(state.pool.clone());
+            let repo =
+                gaggle_db::repositories::providers::ProviderRepository::new(state.pool.clone());
             let providers = repo.list_providers().await.unwrap_or_default();
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
