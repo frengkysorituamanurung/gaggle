@@ -38,8 +38,7 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
     if url.trim().is_empty() {
         return Err(DownloadError::EmptyUrl);
     }
-    let parsed =
-        reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(DownloadError::InvalidUrl(
             "Unsupported URL scheme".to_string(),
@@ -50,9 +49,9 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
             "Credentials must not be embedded in the URL".to_string(),
         ));
     }
-    let host = parsed.host_str().ok_or_else(|| {
-        DownloadError::InvalidUrl("Missing host".to_string())
-    })?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| DownloadError::InvalidUrl("Missing host".to_string()))?;
     let normalized = host
         .trim_start_matches('[')
         .trim_end_matches(']')
@@ -68,10 +67,7 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
     if let Ok(ip) = normalized.parse::<std::net::IpAddr>() {
         let blocked = match ip {
             std::net::IpAddr::V4(v4) => {
-                v4.is_link_local()
-                    || v4.is_multicast()
-                    || v4.is_unspecified()
-                    || v4.is_broadcast()
+                v4.is_link_local() || v4.is_multicast() || v4.is_unspecified() || v4.is_broadcast()
             }
             std::net::IpAddr::V6(v6) => {
                 v6.is_unicast_link_local() || v6.is_multicast() || v6.is_unspecified()
