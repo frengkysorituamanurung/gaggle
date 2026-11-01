@@ -5,10 +5,10 @@ import AuthSettingsSection from "./auth/AuthSettingsSection";
 import ModelsSection from "./models/ModelsSection";
 import AgentLoopSettings from "./agent/AgentLoopSettings";
 import ExternalBackendSection from "./agent/ExternalBackendSection";
-import KeyboardShortcutsSection from "../KeyboardShortcutsSection";
+import KeyboardShortcutsSection from "./KeyboardShortcutsSection";
 import ThemeSettingsSection from "./ThemeSettingsSection";
-import LiveVoiceSettingsSection from "../LiveVoiceSettingsSection";
-import DictationSettingsSection from "../DictationSettingsSection";
+import LiveVoiceSettingsSection from "./LiveVoiceSettingsSection";
+import DictationSettingsSection from "./DictationSettingsSection";
 
 export function SettingsView() {
   return (

@@ -1,5 +1,5 @@
 import React from "react";
-import { Button } from "../../../ui/Button";
+import { Button } from "../../../../ui/Button";
 export function ProviderSetupActions({ onSave, onCancel }: { onSave?: () => void; onCancel?: () => void }) {
   return (
     <div className="flex justify-end gap-2">

@@ -584,7 +584,9 @@ async fn handle_request(
                 });
 
                 let cancel_token = gaggle_core::CancellationToken::new();
-                state.acp_sessions.register_cancel_token(&session_id, cancel_token.clone());
+                state
+                    .acp_sessions
+                    .register_cancel_token(&session_id, cancel_token.clone());
                 let outcome = runtime
                     .run_turn_with_notifications(
                         &chat_id,
