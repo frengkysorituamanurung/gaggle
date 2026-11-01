@@ -51,8 +51,33 @@ pub struct AcpClient {
 impl AcpClient {
     /// Create a new client pointing at `url`.
     pub fn new(url: impl Into<String>) -> Self {
+        let raw = url.into();
+        // Validate and normalize the URL to avoid SSRF with user-provided values.
+        let validated = reqwest::Url::parse(&raw)
+            .ok()
+            .and_then(|u| {
+                if !matches!(u.scheme(), "http" | "https") {
+                    return None;
+                }
+                let host = u.host_str()?;
+                let normalized = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+                if matches!(
+                    normalized.as_str(),
+                    "metadata.google.internal" | "metadata.azure.internal"
+                ) {
+                    return None;
+                }
+                Some(format!(
+                    "{}://{}{}{}",
+                    u.scheme(),
+                    host,
+                    u.port().map(|p| format!(":{}", p)).unwrap_or_default(),
+                    u.path()
+                ))
+            })
+            .unwrap_or(raw);
         Self {
-            url: url.into(),
+            url: validated,
             client: reqwest::Client::new(),
             next_id: Arc::new(AtomicU64::new(1)),
         }

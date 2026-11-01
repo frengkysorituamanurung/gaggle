@@ -287,7 +287,8 @@ mod tests {
     #[test]
     fn authorization_url_requires_config() {
         let proxy = OidcProxy::new(OidcProxyConfig::default());
-        assert!(proxy.authorization_url("state", "nonce").is_err());
+        let nonce = format!("n-{}", 1);
+        assert!(proxy.authorization_url("state", &nonce).is_err());
     }
 
     #[test]
@@ -300,13 +301,14 @@ mod tests {
             ..OidcProxyConfig::default()
         };
         let proxy = OidcProxy::new(config);
-        let url = proxy.authorization_url("st", "nc").unwrap();
+        let nonce = format!("n-{}", 2);
+        let url = proxy.authorization_url("st", &nonce).unwrap();
         let parsed = reqwest::Url::parse(&url).unwrap();
         let pairs: std::collections::HashMap<String, String> =
             parsed.query_pairs().into_owned().collect();
         assert_eq!(pairs.get("client_id").map(String::as_str), Some("client-1"));
         assert_eq!(pairs.get("state").map(String::as_str), Some("st"));
-        assert_eq!(pairs.get("nonce").map(String::as_str), Some("nc"));
+        assert_eq!(pairs.get("nonce").map(String::as_str), Some("n-2"));
         assert_eq!(pairs.get("response_type").map(String::as_str), Some("code"));
     }
 
@@ -325,7 +327,8 @@ mod tests {
             ..OidcProxyConfig::default()
         };
         let proxy = OidcProxy::new(config);
-        assert!(proxy.authorization_url("", "nonce").is_err());
+        let nonce = format!("n-{}", 3);
+        assert!(proxy.authorization_url("", &nonce).is_err());
     }
 }
 

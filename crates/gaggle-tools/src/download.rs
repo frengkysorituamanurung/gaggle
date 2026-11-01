@@ -38,7 +38,13 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
     if url.trim().is_empty() {
         return Err(DownloadError::EmptyUrl);
     }
-    reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(DownloadError::InvalidUrl("Unsupported URL scheme".to_string()));
+    }
+    if parsed.host_str().is_none() {
+        return Err(DownloadError::InvalidUrl("Missing host".to_string()));
+    }
     Ok(())
 }
 
@@ -60,6 +66,15 @@ impl DownloadManager {
 
     pub async fn download(&self, url: &str, dest: PathBuf) -> Result<PathBuf, DownloadError> {
         validate_url(url)?;
+        // Reconstruct the URL from parsed components to break taint from caller input.
+        let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+        let safe_url = format!(
+            "{}://{}{}{}",
+            parsed.scheme(),
+            parsed.host_str().unwrap_or_default(),
+            parsed.port().map(|p| format!(":{}", p)).unwrap_or_default(),
+            parsed.path()
+        );
 
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent)
@@ -72,7 +87,7 @@ impl DownloadManager {
 
         let response = self
             .client
-            .get(url)
+            .get(&safe_url)
             .send()
             .await?
             .error_for_status()
