@@ -1465,7 +1465,8 @@ impl ExtensionRegistry {
             )),
             prompts: std::sync::Arc::new(
                 tokio::sync::RwLock::new(std::collections::HashMap::new()),
-            ),        }
+            ),
+        }
     }
 
     pub fn with_connection_manager(pool: SqlitePool, connections: McpConnectionManager) -> Self {
@@ -1477,7 +1478,8 @@ impl ExtensionRegistry {
             )),
             prompts: std::sync::Arc::new(
                 tokio::sync::RwLock::new(std::collections::HashMap::new()),
-            ),        }
+            ),
+        }
     }
 
     pub async fn list_enabled_extensions(&self) -> Result<Vec<Extension>> {
