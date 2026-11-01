@@ -1,5 +1,5 @@
 import React from "react";
-import { Button } from "../../../ui/Button";
+import { Button } from "../../../../ui/Button";
 export function DefaultCardButtons({ onEdit, onDelete }: { onEdit?: () => void; onDelete?: () => void }) {
   return (
     <div className="flex gap-2">

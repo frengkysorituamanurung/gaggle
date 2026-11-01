@@ -18,7 +18,7 @@ export default function WorktreeScreen({ projectId }: WorktreeScreenProps) {
   const load = async () => {
     if (!projectId) return;
     try {
-      const wts = await api.worktrees.list(projectId);
+      const wts = await api.projects.worktrees(projectId);
       setWorktrees(wts);
     } catch (e) {
       setError(String(e));
@@ -34,7 +34,7 @@ export default function WorktreeScreen({ projectId }: WorktreeScreenProps) {
     setLoading(true);
     try {
       const d = await api.worktrees.diff(id);
-      setDiff(d);
+      setDiff(d.patch);
     } catch (e) {
       setError(String(e));
     } finally {

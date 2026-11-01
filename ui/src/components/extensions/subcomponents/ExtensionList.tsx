@@ -1,5 +1,5 @@
 import React from "react";
-import type * as T from "../../types";
+import type * as T from "../../../types";
 import { ExtensionItem } from "./ExtensionItem";
 export function ExtensionList({ extensions = [], onToggle }: { extensions?: T.Extension[]; onToggle?: (id: string, enabled: boolean) => void }) {
   return (

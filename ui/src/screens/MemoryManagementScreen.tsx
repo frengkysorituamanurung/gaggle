@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useApp } from "../lib/store";
 import { api } from "../lib/api";
 import type * as T from "../types";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
@@ -6,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 
 export default function MemoryManagementScreen() {
+  const { projectId } = useApp();
   const [memories, setMemories] = useState<T.Memory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,7 @@ export default function MemoryManagementScreen() {
   const load = async () => {
     setLoading(true);
     try {
-      const ms = await api.memories.list();
+      const ms = await api.memories.list(projectId || undefined);
       setMemories(ms);
     } catch (e) {
       setError(String(e));
@@ -32,7 +34,7 @@ export default function MemoryManagementScreen() {
   const create = async () => {
     if (!newTitle.trim() || !newContent.trim()) return;
     try {
-      await api.memories.create({ title: newTitle.trim(), content: newContent.trim(), kind: newKind });
+      await api.memories.create({ project_id: projectId || "", title: newTitle.trim(), content: newContent.trim(), kind: newKind });
       setNewTitle(""); setNewContent(""); setShowForm(false);
       await load();
     } catch (e) { setError(String(e)); }

@@ -17,7 +17,7 @@ export default function RecipeManagementScreen() {
   const load = async () => {
     setLoading(true);
     try {
-      const rs = await api.recipes.list();
+      const rs = await api.recipes();
       setRecipes(rs);
     } catch (e) {
       setError(String(e));
@@ -31,7 +31,7 @@ export default function RecipeManagementScreen() {
   const create = async () => {
     if (!newName.trim() || !newTitle.trim()) return;
     try {
-      await api.recipes.create({
+      await api.recipe.create({
         name: newName.trim(),
         title: newTitle.trim(),
         description: newDescription.trim(),
@@ -44,14 +44,14 @@ export default function RecipeManagementScreen() {
   const remove = async (id: string) => {
     if (!confirm("Delete this recipe?")) return;
     try {
-      await api.recipes.delete(id);
+      await api.recipe.delete(id);
       await load();
     } catch (e) { setError(String(e)); }
   };
 
   const execute = async (id: string) => {
     try {
-      await api.recipes.execute(id);
+      await api.recipe.execute(id);
       await load();
     } catch (e) { setError(String(e)); }
   };

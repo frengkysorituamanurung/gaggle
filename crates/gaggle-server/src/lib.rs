@@ -3225,8 +3225,8 @@ async fn start_chat_run(
 
     // Persist attachments as message parts (best-effort).
     if let Some(attachments) = &req.attachments {
-        let mut idx: i64 = 1;
-        for att in attachments {
+        for (i, att) in attachments.iter().enumerate() {
+            let idx = i as i64 + 1;
             let part_id = new_id();
             let _ = sqlx::query(
                 r#"INSERT INTO message_parts (id, message_id, idx, kind, content) VALUES (?, ?, ?, 'attachment', ?)"#,
@@ -3237,7 +3237,6 @@ async fn start_chat_run(
             .bind(&att.name)
             .execute(&state.pool)
             .await;
-            idx += 1;
         }
     }
 

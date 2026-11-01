@@ -1,6 +1,5 @@
 import React from "react";
 import { Button } from "./ui/Button";
-import type { QueuedMessage } from "./MessageQueue";
 
 export type QueuedMessage = {
   id: string;

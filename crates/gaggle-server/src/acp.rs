@@ -584,7 +584,7 @@ async fn handle_request(
                 });
 
                 let cancel_token = gaggle_core::CancellationToken::new();
-                session_manager.register_cancel_token(&session_id, cancel_token.clone());
+                state.acp_sessions.register_cancel_token(&session_id, cancel_token.clone());
                 let outcome = runtime
                     .run_turn_with_notifications(
                         &chat_id,
@@ -947,7 +947,7 @@ async fn handle_request(
                 .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if let Some(mut session) = session_manager.get_session(session_id) {
+            if let Some(session) = session_manager.get_session(session_id) {
                 // Store title in cwd field as a lightweight placeholder.
                 let _ = title;
                 session_manager.update_session(session);
@@ -1393,7 +1393,7 @@ impl HandleDispatchFrom for AcpSessionManager {
     }
 
     fn handle_session_new(&self, cwd: Option<String>) -> JsonRpcResponse {
-        let session = self.create_session(cwd);
+        let session = self.create_session(cwd, None);
         JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id: None,
@@ -1471,7 +1471,7 @@ impl HandleDispatchFrom for AcpSessionManager {
     fn handle_session_fork(&self, session_id: &str) -> JsonRpcResponse {
         match self.get_session(session_id) {
             Some(s) => {
-                let new_session = self.create_session(s.cwd.clone());
+                let new_session = self.create_session(s.cwd.clone(), s.session_type.clone());
                 JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     id: None,
@@ -1519,7 +1519,7 @@ mod tests {
     #[test]
     fn session_manager_creates_and_retrieves_sessions() {
         let manager = AcpSessionManager::new();
-        let session = manager.create_session(Some("/tmp".to_string()));
+        let session = manager.create_session(Some("/tmp".to_string()), None);
         assert!(!session.session_id.is_empty());
         assert!(manager.get_session(&session.session_id).is_some());
         manager.remove_session(&session.session_id);
@@ -1529,16 +1529,16 @@ mod tests {
     #[test]
     fn session_manager_lists_sessions() {
         let manager = AcpSessionManager::new();
-        manager.create_session(Some("/tmp".to_string()));
-        manager.create_session(Some("/home".to_string()));
+        manager.create_session(Some("/tmp".to_string()), None);
+        manager.create_session(Some("/home".to_string()), None);
         assert_eq!(manager.list_sessions().len(), 2);
     }
 
     #[test]
     fn session_manager_forks_session() {
         let manager = AcpSessionManager::new();
-        let session = manager.create_session(Some("/tmp".to_string()));
-        let forked = manager.create_session(session.cwd.clone());
+        let session = manager.create_session(Some("/tmp".to_string()), None);
+        let forked = manager.create_session(session.cwd.clone(), None);
         assert_ne!(session.session_id, forked.session_id);
         assert_eq!(session.cwd, forked.cwd);
     }

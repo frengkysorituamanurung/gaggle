@@ -1,10 +1,10 @@
 import React from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/Dialog";
-import { Button } from "../../ui/Button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../ui/Dialog";
+import { Button } from "../../../ui/Button";
 
 export function SwitchModelModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Switch Model</DialogTitle>

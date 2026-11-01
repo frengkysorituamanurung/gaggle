@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/Dialog";
-import { Button } from "../../ui/Button";
-import { Input } from "../../ui/Input";
-import { api } from "../../../lib/api";
-import type * as T from "../../../types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../ui/Dialog";
+import { Button } from "../../../ui/Button";
+import { Input } from "../../../ui/Input";
+import { api } from "../../../../lib/api";
+import type * as T from "../../../../types";
 
 export function ProviderConfigurationModal({
   open,
@@ -40,9 +40,7 @@ export function ProviderConfigurationModal({
     setSaving(true);
     setError(null);
     try {
-      if (initial?.provider.id) {
-        // Gaggle has no update endpoint for provider kind; just refresh.
-      } else {
+      if (!initial?.provider.id) {
         await api.providers.create({ kind, name: name.trim(), base_url: baseUrl || undefined, auth_kind: authKind, api_key: apiKey || undefined });
       }
       onSaved?.();
@@ -55,17 +53,17 @@ export function ProviderConfigurationModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v: boolean) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{initial?.provider.id ? "Edit Provider" : "Add Provider"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input placeholder="Kind (openai/anthropic/...)" value={kind} onChange={(e) => setKind(e.target.value)} />
-          <Input placeholder="Base URL (optional)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          <Input placeholder="Auth kind (api_key/oauth)" value={authKind} onChange={(e) => setAuthKind(e.target.value)} />
-          <Input placeholder="API key (optional)" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+          <Input placeholder="Name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} />
+          <Input placeholder="Kind (openai/anthropic/...)" value={kind} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKind(e.target.value)} />
+          <Input placeholder="Base URL (optional)" value={baseUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)} />
+          <Input placeholder="Auth kind (api_key/oauth)" value={authKind} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAuthKind(e.target.value)} />
+          <Input placeholder="API key (optional)" type="password" value={apiKey} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)} />
           {error && <div className="text-text-danger text-sm">{error}</div>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>

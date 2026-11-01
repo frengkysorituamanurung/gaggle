@@ -18,9 +18,10 @@ export default function ThemeSettingsSection() {
   }, [theme]);
 
   const apply = (t: string) => {
+    const resolved = t === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
     setSelected(t);
-    setTheme(t);
-    document.documentElement.setAttribute("data-theme", t === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t);
+    setTheme(resolved as any);
+    document.documentElement.setAttribute("data-theme", resolved);
   };
 
   return (

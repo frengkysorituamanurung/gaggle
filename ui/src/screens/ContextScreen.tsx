@@ -17,7 +17,7 @@ export default function ContextScreen({ chatId }: ContextScreenProps) {
     setLoading(true);
     try {
       const msgs = await api.chats.messages(chatId);
-      setMessages(msgs);
+      setMessages(msgs.messages);
     } catch (e) {
       setError(String(e));
     } finally {
