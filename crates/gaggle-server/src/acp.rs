@@ -852,7 +852,8 @@ async fn handle_request(
             let session = session_manager.get_session(session_id);
             match session {
                 Some(s) => {
-                    let new_session = session_manager.create_session(s.cwd.clone(), s.session_type.clone());
+                    let new_session =
+                        session_manager.create_session(s.cwd.clone(), s.session_type.clone());
                     let response = JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -923,25 +924,29 @@ async fn handle_request(
             };
             Some(response)
         }
-        "_goose/unstable/config/write" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/providers/setup" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
+        "_goose/unstable/config/write" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/providers/setup" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
         "_goose/unstable/sessions/rename" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
-            let title = req.params.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let title = req
+                .params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if let Some(mut session) = session_manager.get_session(session_id) {
                 // Store title in cwd field as a lightweight placeholder.
                 let _ = title;
@@ -955,9 +960,19 @@ async fn handle_request(
             })
         }
         "_goose/unstable/elicitations/request" => {
-            let elic_id = format!("elic-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+            let elic_id = format!(
+                "elic-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
             let rx = state.elicitation_bridge.register(elic_id.clone());
-            let form = req.params.get("form").cloned().unwrap_or(serde_json::json!({}));
+            let form = req
+                .params
+                .get("form")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
             let notification = serde_json::json!({
                 "jsonrpc": "2.0",
                 "method": "elicitations/request",
@@ -977,32 +992,30 @@ async fn handle_request(
                 error: None,
             })
         }
-        "_goose/unstable/elicitations/respond" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/recipes/get" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"recipe": null})),
-                error: None,
-            })
-        }
-        "_goose/unstable/recipes/validate" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"valid": true})),
-                error: None,
-            })
-        }
+        "_goose/unstable/elicitations/respond" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/recipes/get" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"recipe": null})),
+            error: None,
+        }),
+        "_goose/unstable/recipes/validate" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"valid": true})),
+            error: None,
+        }),
         "_goose/unstable/sessions/get" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let session = session_manager.get_session(session_id);
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1011,56 +1024,48 @@ async fn handle_request(
                 error: None,
             })
         }
-        "_goose/unstable/tools/get" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"tool": null})),
-                error: None,
-            })
-        }
-        "_goose/unstable/extensions/get" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"extension": null})),
-                error: None,
-            })
-        }
-        "_goose/unstable/extensions/enable" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/extensions/disable" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/providers/get" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"provider": null})),
-                error: None,
-            })
-        }
-        "_goose/unstable/providers/configure" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
+        "_goose/unstable/tools/get" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"tool": null})),
+            error: None,
+        }),
+        "_goose/unstable/extensions/get" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"extension": null})),
+            error: None,
+        }),
+        "_goose/unstable/extensions/enable" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/extensions/disable" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/providers/get" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"provider": null})),
+            error: None,
+        }),
+        "_goose/unstable/providers/configure" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
         "_goose/unstable/working_dir/get" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let cwd = session_manager.get_session(session_id).and_then(|s| s.cwd);
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1070,8 +1075,16 @@ async fn handle_request(
             })
         }
         "_goose/unstable/working_dir/set" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
-            let cwd = req.params.get("cwd").and_then(|v| v.as_str()).map(String::from);
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let cwd = req
+                .params
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             if let Some(mut session) = session_manager.get_session(session_id) {
                 session.cwd = cwd;
                 session_manager.update_session(session);
@@ -1083,24 +1096,24 @@ async fn handle_request(
                 error: None,
             })
         }
-        "_goose/unstable/modes/list" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"modes": ["auto", "chat", "code"]})),
-                error: None,
-            })
-        }
-        "_goose/unstable/config/get" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"config": {}})),
-                error: None,
-            })
-        }
+        "_goose/unstable/modes/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"modes": ["auto", "chat", "code"]})),
+            error: None,
+        }),
+        "_goose/unstable/config/get" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"config": {}})),
+            error: None,
+        }),
         "_goose/unstable/sessions/close" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             session_manager.remove_session(session_id);
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -1110,11 +1123,16 @@ async fn handle_request(
             })
         }
         "_goose/unstable/sessions/fork" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let session = session_manager.get_session(session_id);
             match session {
                 Some(s) => {
-                    let new_session = session_manager.create_session(s.cwd.clone(), s.session_type.clone());
+                    let new_session =
+                        session_manager.create_session(s.cwd.clone(), s.session_type.clone());
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -1133,32 +1151,30 @@ async fn handle_request(
                 }),
             }
         }
-        "_goose/unstable/tools/execute" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/extensions/install" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/providers/readiness" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ready": true})),
-                error: None,
-            })
-        }
+        "_goose/unstable/tools/execute" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/extensions/install" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/providers/readiness" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ready": true})),
+            error: None,
+        }),
         "_goose/unstable/working_dir/reset" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if let Some(mut session) = session_manager.get_session(session_id) {
                 session.cwd = None;
                 session_manager.update_session(session);
@@ -1171,7 +1187,11 @@ async fn handle_request(
             })
         }
         "_goose/unstable/modes/set" => {
-            let session_id = req.params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = req
+                .params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let mode = req.params.get("mode").and_then(|v| v.as_str());
             if let Some(mut session) = session_manager.get_session(session_id)
                 && let Some(mode) = mode
@@ -1186,22 +1206,18 @@ async fn handle_request(
                 error: None,
             })
         }
-        "_goose/unstable/elicitations/cancel" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"ok": true})),
-                error: None,
-            })
-        }
-        "_goose/unstable/config/read" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"config": {}})),
-                error: None,
-            })
-        }
+        "_goose/unstable/elicitations/cancel" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"ok": true})),
+            error: None,
+        }),
+        "_goose/unstable/config/read" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"config": {}})),
+            error: None,
+        }),
         "_goose/unstable/providers/list" => {
             let repo =
                 gaggle_db::repositories::providers::ProviderRepository::new(state.pool.clone());
@@ -1213,30 +1229,24 @@ async fn handle_request(
                 error: None,
             })
         }
-        "_goose/unstable/recipes/list" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"recipes": []})),
-                error: None,
-            })
-        }
-        "_goose/unstable/tools/list" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"tools": []})),
-                error: None,
-            })
-        }
-        "_goose/unstable/extensions/list" => {
-            Some(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                id,
-                result: Some(serde_json::json!({"extensions": []})),
-                error: None,
-            })
-        }
+        "_goose/unstable/recipes/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"recipes": []})),
+            error: None,
+        }),
+        "_goose/unstable/tools/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"tools": []})),
+            error: None,
+        }),
+        "_goose/unstable/extensions/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(serde_json::json!({"extensions": []})),
+            error: None,
+        }),
         "session/setMode" => {
             let session_id = req
                 .params
@@ -1273,7 +1283,9 @@ async fn handle_request(
                 error: None,
             })
         }
-        method if method.starts_with("_goose/unstable/") || method.starts_with("_gaggle/unstable/") => {
+        method
+            if method.starts_with("_goose/unstable/")
+                || method.starts_with("_gaggle/unstable/") =>
             // Generic dispatcher for Goose custom methods: acknowledge unknown methods
             // so clients can probe capabilities without hard failures.
             Some(JsonRpcResponse {
