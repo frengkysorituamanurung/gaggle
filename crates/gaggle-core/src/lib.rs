@@ -1,6 +1,9 @@
 pub mod acp;
+pub mod acp_client;
 pub mod adversary_mode;
+pub use adversary_mode::{AdversaryConfig, AdversaryRunner, AdversaryTestResult};
 pub mod agent_loop;
+pub mod agent_state;
 pub mod code_mode;
 pub mod compaction;
 pub mod computer_controller;
@@ -48,10 +51,14 @@ pub mod workspace_policy;
 pub use acp::{
     AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport,
 };
+pub use acp_client::{
+    AcpClient, AcpClientError, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
+};
 pub use agent_loop::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, CompositeToolExecutor,
     DEFAULT_MAX_AGENT_STEPS, MAX_TOOL_RESPONSE_CHARS, ToolExecutor,
 };
+pub use agent_state::AgentRunState;
 pub use context_assembler::{
     AgentsDocument, AssembledContext, ContextAssembler, ContextAssemblyOptions,
     DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_AGENTS_MD_BYTES, DEFAULT_MAX_AGENTS_MD_FILES,
@@ -87,7 +94,7 @@ pub use provider_oauth::{
 };
 pub use run_engine::RunEngine;
 pub use slash_commands::{SlashCommand, SlashCommandResult, parse_slash_command};
-pub use snapshots::SnapshotManager;
+pub use snapshots::{ChatSnapshot, SnapshotManager};
 pub use subagents::{
     DEFAULT_MAX_PARALLEL_SUBAGENTS, DEFAULT_SUBAGENT_DEPTH, DEFAULT_SUBAGENT_MAX_STEPS,
     SubagentConfig, SubagentManager, SubagentOutcome, SubagentSpawnRequest,

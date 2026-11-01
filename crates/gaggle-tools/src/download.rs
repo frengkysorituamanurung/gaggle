@@ -77,8 +77,8 @@ impl DownloadManager {
             .await?
             .error_for_status()
             .map_err(|e| {
-                if e.status().is_some() {
-                    DownloadError::HttpStatus(e.status().unwrap().as_u16())
+                if let Some(status) = e.status() {
+                    DownloadError::HttpStatus(status.as_u16())
                 } else {
                     DownloadError::Request(e)
                 }
@@ -94,6 +94,11 @@ impl DownloadManager {
             })?;
 
         let mut bytes_downloaded: u64 = 0;
+        let _ = self.progress_tx.send(DownloadProgress {
+            bytes_downloaded,
+            total_bytes,
+        });
+
         let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
@@ -153,11 +158,31 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn accept_valid_url() {
+        assert!(validate_url("https://example.com/file").is_ok());
+    }
+
     #[tokio::test]
     async fn download_rejects_empty_url() {
         let manager = DownloadManager::new();
         let dest = std::env::temp_dir().join("gaggle-download-empty");
         let result = manager.download("", dest).await;
         assert!(matches!(result, Err(DownloadError::EmptyUrl)));
+    }
+
+    #[tokio::test]
+    async fn download_rejects_invalid_url() {
+        let manager = DownloadManager::new();
+        let dest = std::env::temp_dir().join("gaggle-download-invalid");
+        let result = manager.download("not a url", dest).await;
+        assert!(matches!(result, Err(DownloadError::InvalidUrl(_))));
+    }
+
+    #[test]
+    fn take_progress_receiver_once() {
+        let manager = DownloadManager::new();
+        assert!(manager.take_progress_receiver().is_some());
+        assert!(manager.take_progress_receiver().is_none());
     }
 }

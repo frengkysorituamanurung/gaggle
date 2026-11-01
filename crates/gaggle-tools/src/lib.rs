@@ -179,6 +179,38 @@ pub const BUILTIN_TOOLS: &[BuiltinToolSpec] = &[
         schema_json: r#"{"type":"object","properties":{"format":{"type":"string","enum":["text","html"]}}}"#,
     },
     BuiltinToolSpec {
+        extension_name: "gaggle.computer",
+        extension_desc: "Built-in macOS computer control tools for Gaggle",
+        tool_name: "computer.screenshot",
+        description: "Capture a screenshot to a file path",
+        is_read_only: true,
+        schema_json: r#"{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.computer",
+        extension_desc: "Built-in macOS computer control tools for Gaggle",
+        tool_name: "computer.click",
+        description: "Click at screen coordinates",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.computer",
+        extension_desc: "Built-in macOS computer control tools for Gaggle",
+        tool_name: "computer.type",
+        description: "Type text via keyboard simulation",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#,
+    },
+    BuiltinToolSpec {
+        extension_name: "gaggle.computer",
+        extension_desc: "Built-in macOS computer control tools for Gaggle",
+        tool_name: "computer.scroll",
+        description: "Scroll in a direction by an amount",
+        is_read_only: false,
+        schema_json: r#"{"type":"object","properties":{"direction":{"type":"string"},"amount":{"type":"integer"}},"required":["direction","amount"]}"#,
+    },
+    BuiltinToolSpec {
         extension_name: "gaggle.agent",
         extension_desc: "Built-in agent output tools for Gaggle",
         tool_name: "agent.final_output",
@@ -545,6 +577,70 @@ impl ToolExecutor for BuiltinToolExecutor {
                     "results": items
                 }))
                 .map_err(|e| e.to_string())
+            }
+            "computer.screenshot" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("/tmp/gaggle-screenshot.png");
+                let controller = gaggle_core::computer_controller::ComputerController::new(
+                    gaggle_core::computer_controller::ComputerControllerConfig {
+                        enabled: true,
+                        allowed_actions: vec!["screenshot".into()],
+                    },
+                );
+                match controller.screenshot(path) {
+                    Ok(p) => serde_json::to_string(&serde_json::json!({"path": p}))
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e),
+                }
+            }
+            "computer.click" => {
+                let x = args.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let y = args.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let controller = gaggle_core::computer_controller::ComputerController::new(
+                    gaggle_core::computer_controller::ComputerControllerConfig {
+                        enabled: true,
+                        allowed_actions: vec!["click".into()],
+                    },
+                );
+                match controller.click(x, y) {
+                    Ok(()) => serde_json::to_string(&serde_json::json!({"clicked": true}))
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e),
+                }
+            }
+            "computer.type" => {
+                let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                let controller = gaggle_core::computer_controller::ComputerController::new(
+                    gaggle_core::computer_controller::ComputerControllerConfig {
+                        enabled: true,
+                        allowed_actions: vec!["type".into()],
+                    },
+                );
+                match controller.type_text(text) {
+                    Ok(()) => serde_json::to_string(&serde_json::json!({"typed": true}))
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e),
+                }
+            }
+            "computer.scroll" => {
+                let direction = args
+                    .get("direction")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("down");
+                let amount = args.get("amount").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
+                let controller = gaggle_core::computer_controller::ComputerController::new(
+                    gaggle_core::computer_controller::ComputerControllerConfig {
+                        enabled: true,
+                        allowed_actions: vec!["scroll".into()],
+                    },
+                );
+                match controller.scroll(direction, amount) {
+                    Ok(()) => serde_json::to_string(&serde_json::json!({"scrolled": true}))
+                        .map_err(|e| e.to_string()),
+                    Err(e) => Err(e),
+                }
             }
             "agent.final_output" => {
                 // Produce a structured final output

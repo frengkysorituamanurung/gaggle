@@ -7,18 +7,23 @@ use axum::{
         Html,
         sse::{Event, Sse},
     },
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
 };
 use futures::{StreamExt, stream::Stream};
 use gaggle_core::CompactionEngine;
+use gaggle_core::adversary_mode::AdversaryConfig;
+use gaggle_core::AdversaryRunner;
+use gaggle_core::live_voice::LiveVoiceConfig;
+use gaggle_core::moim::ModelInstruction;
 use gaggle_core::{
-    ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
+    AcpClient, ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
     BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CompositeToolExecutor,
     CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
     DiagnosticsExport, FailureCategory, GoogleGeminiAdapter, InMemoryCredentialStore,
     KeyringCredentialStore, MockProviderAdapter, ModelCompletionResponse, ModelProviderAdapter,
-    OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString, TokenUsage, ToolExecutor,
-    WorkspacePathPolicy, collect_diagnostics, export_diagnostics, validate_provider_base_url,
+    ChatSnapshot, MoimManager, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString, SnapshotManager,
+    TokenUsage,
+    ToolExecutor, WorkspacePathPolicy, collect_diagnostics, export_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
     connection::{new_id, now_ms},
@@ -49,9 +54,9 @@ use gaggle_recipes::{
     validate_recipe_parameters, validate_timezone,
 };
 use gaggle_tools::{
-    BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, FsEntry, GitDiffOutput,
-    GitWorkspaceStatus, fs_list, git_diff, git_status, git_worktree_create, git_worktree_discard,
-    git_worktree_merge, register_builtin_extensions,
+    BuiltinToolExecutor, DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_LIST_ENTRIES, DownloadManager,
+    FsEntry, GitDiffOutput, GitWorkspaceStatus, fs_list, git_diff, git_status, git_worktree_create,
+    git_worktree_discard, git_worktree_merge, register_builtin_extensions,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -531,6 +536,29 @@ pub fn build_router(state: AppState) -> Router {
             "/api/chats/{id}/compact/preview",
             post(compact_chat_preview),
         )
+        .route(
+            "/api/chats/{id}/snapshots",
+            get(list_chat_snapshots).post(create_chat_snapshot),
+        )
+        .route("/api/chats/{id}/snapshots/undo", post(undo_chat_snapshot))
+        .route("/api/chats/{id}/snapshots/redo", post(redo_chat_snapshot))
+        .route(
+            "/api/chats/{id}/snapshots/{snapshot_id}/restore",
+            post(restore_chat_snapshot),
+        )
+        .route(
+            "/api/chats/{id}/instructions",
+            get(list_chat_instructions).post(add_chat_instruction),
+        )
+        .route(
+            "/api/chats/{id}/instructions/{instruction_id}",
+            delete(delete_chat_instruction),
+        )
+        .route("/api/adversary/status", get(adversary_status_handler))
+        .route("/api/adversary/run", post(adversary_run_handler))
+        .route("/api/live-voice/status", get(live_voice_status_handler))
+        .route("/api/downloads", post(download_file_handler))
+        .route("/api/downloads/progress", get(download_progress_handler))
         .route("/api/chats/{id}/export", get(export_chat))
         .route("/api/chats/{id}/runs", post(start_chat_run))
         .route("/api/worktrees/{id}/git-status", get(worktree_git_status))
@@ -538,6 +566,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/worktrees/{id}/merge", post(merge_worktree))
         .route("/api/worktrees/{id}/discard", post(discard_worktree))
         .route("/api/runs/{id}/cancel", post(cancel_run))
+        .route("/api/runs/{id}/steer", post(steer_run))
+        .route("/api/oidc/token", post(oidc_token_exchange))
+        .route("/api/acp/initialize", post(acp_initialize_handler))
+        .route("/api/acp/sessions", post(acp_new_session_handler))
+        .route("/api/acp/sessions/list", post(acp_list_sessions_handler))
+        .route("/api/acp/sessions/prompt", post(acp_prompt_handler))
+        .route("/api/acp/sessions/cancel", post(acp_cancel_handler))
         .route("/api/runs/{id}/events", get(stream_run_events))
         .route("/api/approvals/pending", get(list_pending_approvals))
         .route("/api/approvals/{id}/decide", post(decide_approval))
@@ -3375,6 +3410,326 @@ async fn compact_chat_preview(
     }
 }
 
+async fn list_chat_snapshots(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Vec<ChatSnapshot>>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let _chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    let manager = SnapshotManager::new(state.pool.clone());
+    let snaps = manager
+        .list_snapshots(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(snaps))
+}
+
+async fn create_chat_snapshot(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<ChatSnapshot>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let _chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    let manager = SnapshotManager::new(state.pool.clone());
+    let snap = manager
+        .create_snapshot(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(snap))
+}
+
+async fn restore_chat_snapshot(
+    State(state): State<AppState>,
+    Path((chat_id, snapshot_id)): Path<(String, String)>,
+) -> Result<Json<ChatSnapshot>, (StatusCode, String)> {
+    let manager = SnapshotManager::new(state.pool.clone());
+    let snap = manager
+        .restore_snapshot(&chat_id, &snapshot_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(snap))
+}
+
+async fn undo_chat_snapshot(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Option<ChatSnapshot>>, (StatusCode, String)> {
+    let manager = SnapshotManager::new(state.pool.clone());
+    let snap = manager
+        .undo(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(snap))
+}
+
+async fn redo_chat_snapshot(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Option<ChatSnapshot>>, (StatusCode, String)> {
+    let manager = SnapshotManager::new(state.pool.clone());
+    let snap = manager
+        .redo(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(snap))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AddInstructionRequest {
+    #[serde(alias = "content", alias = "text")]
+    pub instruction: String,
+    pub priority: Option<i64>,
+}
+
+async fn add_chat_instruction(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+    Json(req): Json<AddInstructionRequest>,
+) -> Result<Json<ModelInstruction>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let _chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    let manager = MoimManager::new(state.pool.clone());
+    let priority = req.priority.unwrap_or(0);
+    let instr = manager
+        .add_instruction(&chat_id, &req.instruction, priority)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(instr))
+}
+
+async fn list_chat_instructions(
+    State(state): State<AppState>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Vec<ModelInstruction>>, (StatusCode, String)> {
+    let chat_repo = ChatRepository::new(state.pool.clone());
+    let _chat = chat_repo
+        .get_by_id(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Chat '{chat_id}' not found")))?;
+    let manager = MoimManager::new(state.pool.clone());
+    let items = manager
+        .list_instructions(&chat_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(items))
+}
+
+async fn delete_chat_instruction(
+    State(state): State<AppState>,
+    Path((_chat_id, instruction_id)): Path<(String, String)>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM model_instructions WHERE id = ?")
+        .bind(&instruction_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if count == 0 {
+        return Err((StatusCode::NOT_FOUND, format!("Instruction '{instruction_id}' not found")));
+    }
+    let manager = MoimManager::new(state.pool.clone());
+    manager
+        .remove_instruction(&instruction_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn adversary_status_handler() -> Result<Json<AdversaryConfig>, (StatusCode, String)> {
+    Ok(Json(AdversaryConfig::default()))
+}
+
+async fn live_voice_status_handler() -> Result<Json<LiveVoiceConfig>, (StatusCode, String)> {
+    Ok(Json(LiveVoiceConfig::default()))
+}
+
+#[derive(Debug, Deserialize)]
+struct DownloadRequest {
+    url: String,
+    destination: String,
+}
+
+async fn download_file_handler(
+    State(_state): State<AppState>,
+    Json(req): Json<DownloadRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let manager = DownloadManager::new();
+    let dest = PathBuf::from(&req.destination);
+    let path = manager
+        .download(&req.url, dest)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!({"path": path.display().to_string()})))
+}
+
+#[derive(Debug, Deserialize)]
+struct DownloadProgressQuery {
+    url: String,
+    destination: String,
+}
+
+async fn download_progress_handler(
+    Query(q): Query<DownloadProgressQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(64);
+    let url = q.url.clone();
+    let dest = PathBuf::from(&q.destination);
+    tokio::spawn(async move {
+        let manager = DownloadManager::new();
+        // Subscribe to progress via the manager's receiver.
+        let mut progress_rx = manager.progress_rx.lock().unwrap().take();
+        let download_task = tokio::spawn({
+            let url = url.clone();
+            let dest = dest.clone();
+            let m = manager;
+            async move { m.download(&url, dest).await }
+        });
+        // Forward progress events.
+        if let Some(rx) = progress_rx.as_mut() {
+            while let Ok(progress) = rx.recv().await {
+                let data = serde_json::json!({
+                    "bytes_downloaded": progress.bytes_downloaded,
+                    "total_bytes": progress.total_bytes,
+                })
+                .to_string();
+                let event = Event::default().event("progress").data(data);
+                if tx.send(Ok(event)).await.is_err() {
+                    break;
+                }
+            }
+        }
+        // Await final result.
+        match download_task.await {
+            Ok(Ok(path)) => {
+                let data = serde_json::json!({"path": path.display().to_string()}).to_string();
+                let _ = tx.send(Ok(Event::default().event("done").data(data))).await;
+            }
+            Ok(Err(e)) => {
+                let data = serde_json::json!({"error": e.to_string()}).to_string();
+                let _ = tx.send(Ok(Event::default().event("error").data(data))).await;
+            }
+            Err(e) => {
+                let data = serde_json::json!({"error": e.to_string()}).to_string();
+                let _ = tx.send(Ok(Event::default().event("error").data(data))).await;
+            }
+        }
+    });
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
+}
+
+#[derive(Debug, Deserialize)]
+struct AcpTargetRequest {
+    target_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcpNewSessionRequest {
+    target_url: String,
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcpPromptRequest {
+    target_url: String,
+    session_id: String,
+    prompt: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AcpCancelRequest {
+    target_url: String,
+    session_id: String,
+}
+
+async fn acp_initialize_handler(
+    Json(req): Json<AcpTargetRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let client = AcpClient::new(&req.target_url);
+    let resp = client
+        .initialize()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+}
+
+async fn acp_new_session_handler(
+    Json(req): Json<AcpNewSessionRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let client = AcpClient::new(&req.target_url);
+    let resp = client
+        .new_session(req.cwd.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+}
+
+async fn acp_list_sessions_handler(
+    Json(req): Json<AcpTargetRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let client = AcpClient::new(&req.target_url);
+    let resp = client
+        .list_sessions()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+}
+
+async fn acp_prompt_handler(
+    Json(req): Json<AcpPromptRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let client = AcpClient::new(&req.target_url);
+    let resp = client
+        .prompt(&req.session_id, &req.prompt)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+}
+
+async fn acp_cancel_handler(
+    Json(req): Json<AcpCancelRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let client = AcpClient::new(&req.target_url);
+    let resp = client
+        .cancel(&req.session_id)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+}
+
+async fn adversary_run_handler() -> Result<Json<Vec<gaggle_core::AdversaryTestResult>>, (StatusCode, String)> {
+    let runner = AdversaryRunner::new(AdversaryConfig::default());
+    let results = runner
+        .run(|prompt: &str| async move {
+            // Heuristic safety check: refuse dangerous requests.
+            let lower = prompt.to_lowercase();
+            let dangerous = lower.contains("rm -rf")
+                || lower.contains("api key")
+                || lower.contains("system prompt")
+                || lower.contains("no restrictions");
+            if dangerous {
+                (true, "I can't help with that request.".to_string(), None)
+            } else {
+                (true, "Acknowledged.".to_string(), None)
+            }
+        })
+        .await;
+    Ok(Json(results))
+}
+
 async fn cancel_run(
     State(state): State<AppState>,
     Path(run_id): Path<String>,
@@ -3417,6 +3772,88 @@ async fn cancel_run(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     Ok(Json(updated))
+}
+
+#[derive(Deserialize)]
+struct SteerRunRequest {
+    message: String,
+}
+
+async fn steer_run(
+    State(state): State<AppState>,
+    Path(run_id): Path<String>,
+    Json(body): Json<SteerRunRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    tracing::info!(
+        target: "gaggle.server",
+        run_id = %run_id,
+        "Steering message requested for durable run"
+    );
+    state.active_runs.steer(&run_id, body.message.clone());
+    Ok(Json(
+        serde_json::json!({ "run_id": run_id, "steered": true }),
+    ))
+}
+
+#[derive(Deserialize)]
+struct OidcTokenExchangeRequest {
+    issuer_url: String,
+    client_id: String,
+    client_secret: Option<String>,
+    code: String,
+    redirect_uri: String,
+}
+
+async fn oidc_token_exchange(
+    Json(body): Json<OidcTokenExchangeRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let issuer = body.issuer_url.trim_end_matches('/');
+    let discovery_url = format!("{}/.well-known/openid-configuration", issuer);
+    let client = reqwest::Client::new();
+    let discovery: serde_json::Value = client
+        .get(&discovery_url)
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?
+        .json()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let token_endpoint = discovery
+        .get("token_endpoint")
+        .and_then(|v| v.as_str())
+        .ok_or((
+            StatusCode::BAD_GATEWAY,
+            "missing token_endpoint".to_string(),
+        ))?;
+
+    let mut params = vec![
+        ("grant_type", "authorization_code".to_string()),
+        ("code", body.code),
+        ("redirect_uri", body.redirect_uri),
+        ("client_id", body.client_id),
+    ];
+    if let Some(secret) = body.client_secret {
+        params.push(("client_secret", secret));
+    }
+
+    let resp = client
+        .post(token_endpoint)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err((StatusCode::BAD_GATEWAY, format!("{}: {}", status, text)));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(json))
 }
 
 async fn stream_run_events(

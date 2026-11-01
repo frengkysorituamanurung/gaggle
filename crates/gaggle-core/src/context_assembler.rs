@@ -325,44 +325,84 @@ impl ContextAssembler {
             rendered_history.push((message.role, content));
         }
         let history_limit_usize = usize::try_from(history_limit).unwrap_or(usize::MAX);
-        if rendered_history.len() > history_limit_usize {
-            // Older messages exist beyond the configured window and were not considered.
-            let excess = rendered_history.len() - history_limit_usize;
-            rendered_history.drain(0..excess);
-            truncated = true;
+
+        // Group adjacent assistant/tool messages into units so a tool call and
+        // its tool result are never split when trimming history.
+        let mut units: Vec<Vec<(String, String)>> = Vec::new();
+        let mut idx = 0;
+        while idx < rendered_history.len() {
+            let mut unit = vec![rendered_history[idx].clone()];
+            if rendered_history[idx].0 == "assistant" {
+                let mut j = idx + 1;
+                while j < rendered_history.len() && rendered_history[j].0 == "tool" {
+                    unit.push(rendered_history[j].clone());
+                    j += 1;
+                }
+                if j > idx + 1 {
+                    idx = j;
+                    units.push(unit);
+                    continue;
+                }
+            }
+            idx += 1;
+            units.push(unit);
+        }
+
+        // Enforce the message-count cap without splitting a tool pair.
+        let total_unit_messages: usize = units.iter().map(|u| u.len()).sum();
+        if total_unit_messages > history_limit_usize {
+            while units.len() > 1 {
+                let current: usize = units.iter().map(|u| u.len()).sum();
+                if current <= history_limit_usize {
+                    break;
+                }
+                units.remove(0);
+                truncated = true;
+            }
         }
 
         let history_remaining =
             (budget_tokens - system_message_tokens - tools_tokens - prompt_tokens).max(0);
         let mut history: Vec<ProviderMessage> = Vec::new();
         let mut history_tokens = 0_i64;
-        for (role, content) in rendered_history.iter().rev() {
-            let role_tokens = estimate_tokens(role);
-            let message_tokens = role_tokens + estimate_tokens(content);
-            if history_tokens + message_tokens > history_remaining {
-                // Keep at least the newest message when any budget remains by truncating it;
-                // this preserves recency instead of silently dropping the latest turn.
-                if history.is_empty() && history_remaining > role_tokens {
-                    let content_budget = history_remaining - role_tokens;
-                    let (shortened, _) = truncate_to_token_budget(content, content_budget);
-                    if !shortened.is_empty() {
-                        history_tokens += role_tokens + estimate_tokens(&shortened);
-                        history.push(ProviderMessage {
-                            role: role.clone(),
-                            content: shortened,
-                            ..Default::default()
-                        });
+        for unit in units.iter().rev() {
+            let unit_tokens: i64 = unit
+                .iter()
+                .map(|(role, content)| estimate_tokens(role) + estimate_tokens(content))
+                .sum();
+            if history_tokens + unit_tokens > history_remaining {
+                // Keep at least the newest message when any budget remains by
+                // truncating it; this preserves recency instead of silently
+                // dropping the latest turn.
+                if history.is_empty() && history_remaining > 0 {
+                    // Try to fit the last message of the newest unit.
+                    if let Some((role, content)) = unit.last() {
+                        let role_tokens = estimate_tokens(role);
+                        if history_remaining > role_tokens {
+                            let content_budget = history_remaining - role_tokens;
+                            let (shortened, _) = truncate_to_token_budget(content, content_budget);
+                            if !shortened.is_empty() {
+                                history_tokens += role_tokens + estimate_tokens(&shortened);
+                                history.push(ProviderMessage {
+                                    role: role.clone(),
+                                    content: shortened,
+                                    ..Default::default()
+                                });
+                            }
+                        }
                     }
                 }
                 truncated = true;
                 break;
             }
-            history_tokens += message_tokens;
-            history.push(ProviderMessage {
-                role: role.clone(),
-                content: content.clone(),
-                ..Default::default()
-            });
+            history_tokens += unit_tokens;
+            for (role, content) in unit.iter().rev() {
+                history.push(ProviderMessage {
+                    role: role.clone(),
+                    content: content.clone(),
+                    ..Default::default()
+                });
+            }
         }
         history.reverse();
 
@@ -598,7 +638,10 @@ fn fit_memories(system_prefix: &str, memories: &[Memory], allowance: i64) -> (St
 fn render_history_content(parts: &[MessagePart]) -> Option<String> {
     let mut chunks = Vec::new();
     for part in parts {
-        if part.kind != "text" && part.kind != "tool_result" {
+        if part.kind != "text"
+            && part.kind != "tool_result"
+            && part.kind != "tool_call"
+        {
             continue;
         }
         if let Some(content) = part.content.as_deref()
@@ -608,6 +651,10 @@ fn render_history_content(parts: &[MessagePart]) -> Option<String> {
             if part.kind == "tool_result" {
                 chunks.push(format!(
                     "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
+                ));
+            } else if part.kind == "tool_call" {
+                chunks.push(format!(
+                    "<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"
                 ));
             } else {
                 chunks.push(content.to_string());

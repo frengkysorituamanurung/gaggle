@@ -382,54 +382,58 @@ impl AgentRuntime {
             .with_context(|| format!("Project '{}' not found", chat.project_id))?;
 
         // 0a. Slash command handling.
-        let effective_prompt = if let Some(cmd) =
-            crate::slash_commands::parse_slash_command(user_prompt)
-        {
-            if cmd.recognized {
-                let result =
-                    crate::slash_commands::execute_slash_command(&cmd, chat_id, &self.pool).await;
-                match result {
-                    crate::slash_commands::SlashCommandResult::Handled { output } => {
-                        chat_repo
-                            .append_message(chat_id, None, "assistant", &output)
-                            .await?;
-                        let run = run_repo
-                            .create(chat_id, None, chat.model_id.as_deref())
-                            .await?;
+        let effective_prompt =
+            if let Some(cmd) = crate::slash_commands::parse_slash_command(user_prompt) {
+                if cmd.recognized {
+                    let result = crate::slash_commands::execute_slash_command(
+                        &cmd,
+                        chat_id,
+                        &self.pool,
+                        Some(provider),
+                    )
+                    .await;
+                    match result {
+                        crate::slash_commands::SlashCommandResult::Handled { output } => {
+                            chat_repo
+                                .append_message(chat_id, None, "assistant", &output)
+                                .await?;
+                            let run = run_repo
+                                .create(chat_id, None, chat.model_id.as_deref())
+                                .await?;
 
-                        // Create a snapshot of the chat state before the run begins
-                        let _ = crate::snapshots::SnapshotManager::new(self.pool.clone())
-                            .create_snapshot(chat_id)
-                            .await;
-                        run_repo
-                            .emit_event(
-                                &run.id,
-                                "run.completed",
-                                &serde_json::json!({"slash_command": cmd.name}).to_string(),
-                            )
-                            .await?;
-                        let completed_run = run_repo
-                            .update_run_status(&run.id, "completed", None)
-                            .await?;
-                        return Ok(AgentLoopOutcome::Completed {
-                            run: completed_run,
-                            final_text: output,
-                            steps_executed: 0,
-                        });
+                            // Create a snapshot of the chat state before the run begins
+                            let _ = crate::snapshots::SnapshotManager::new(self.pool.clone())
+                                .create_snapshot(chat_id)
+                                .await;
+                            run_repo
+                                .emit_event(
+                                    &run.id,
+                                    "run.completed",
+                                    &serde_json::json!({"slash_command": cmd.name}).to_string(),
+                                )
+                                .await?;
+                            let completed_run = run_repo
+                                .update_run_status(&run.id, "completed", None)
+                                .await?;
+                            return Ok(AgentLoopOutcome::Completed {
+                                run: completed_run,
+                                final_text: output,
+                                steps_executed: 0,
+                            });
+                        }
+                        crate::slash_commands::SlashCommandResult::ContextModification {
+                            modified_prompt,
+                        } => modified_prompt,
+                        crate::slash_commands::SlashCommandResult::NotRecognized => {
+                            user_prompt.to_string()
+                        }
                     }
-                    crate::slash_commands::SlashCommandResult::ContextModification {
-                        modified_prompt,
-                    } => modified_prompt,
-                    crate::slash_commands::SlashCommandResult::NotRecognized => {
-                        user_prompt.to_string()
-                    }
+                } else {
+                    user_prompt.to_string()
                 }
             } else {
                 user_prompt.to_string()
-            }
-        } else {
-            user_prompt.to_string()
-        };
+            };
         let user_prompt = &effective_prompt;
 
         // 0. Auto-compaction: summarize older history when token ratio exceeds threshold.
@@ -708,6 +712,16 @@ impl AgentRuntime {
                         &serde_json::json!({ "completed": true, "step": step_idx }).to_string(),
                     )
                     .await?;
+                let stop_hook = HookManager::new();
+                let _ = stop_hook.emit(&HookContext {
+                    event: HookEvent::Stop,
+                    run_id: Some(run.id.clone()),
+                    chat_id: Some(chat.id.clone()),
+                    tool_name: None,
+                    tool_call_id: None,
+                    payload: serde_json::json!({ "steps_executed": step_idx }),
+                });
+
                 run_repo
                     .emit_event(
                         &run.id,
@@ -818,6 +832,16 @@ impl AgentRuntime {
             "retry_guidance": failure.retry_guidance,
         })
         .to_string();
+
+        let stop_hook = HookManager::new();
+        let _ = stop_hook.emit(&HookContext {
+            event: HookEvent::Stop,
+            run_id: Some(run_id.to_string()),
+            chat_id: None,
+            tool_name: None,
+            tool_call_id: None,
+            payload: serde_json::json!({ "failed": true }),
+        });
 
         run_repo.emit_event(run_id, "run.failed", &payload).await?;
         let failed_run = run_repo
@@ -981,6 +1005,18 @@ impl AgentRuntime {
                         .to_string(),
                     )
                     .await?;
+                // Post-tool-use hook (advisory).
+                let post_hook_manager = HookManager::new();
+                let _ = post_hook_manager.emit(&HookContext {
+                    event: HookEvent::PostToolUse,
+                    run_id: Some(run_id.to_string()),
+                    chat_id: Some(chat.id.clone()),
+                    tool_name: Some(proposed.tool_name.clone()),
+                    tool_call_id: Some(tc.id.clone()),
+                    payload: serde_json::from_str(&stored_result)
+                        .unwrap_or_else(|_| serde_json::json!({})),
+                });
+
                 Ok(stored_result)
             }
             Err(err_str) => {
@@ -1011,6 +1047,16 @@ impl AgentRuntime {
                         .to_string(),
                     )
                     .await?;
+                let post_hook_manager = HookManager::new();
+                let _ = post_hook_manager.emit(&HookContext {
+                    event: HookEvent::PostToolUseFailure,
+                    run_id: Some(run_id.to_string()),
+                    chat_id: Some(chat.id.clone()),
+                    tool_name: Some(proposed.tool_name.clone()),
+                    tool_call_id: Some(tc.id.clone()),
+                    payload: serde_json::json!({ "error": err_str }),
+                });
+
                 Ok(err_json)
             }
         }
@@ -1028,6 +1074,16 @@ impl AgentRuntime {
             data_preservation = DataPreservation::Preserved.as_str(),
             "Agent run cancelled by user"
         );
+        let stop_hook = HookManager::new();
+        let _ = stop_hook.emit(&HookContext {
+            event: HookEvent::Stop,
+            run_id: Some(run_id.to_string()),
+            chat_id: None,
+            tool_name: None,
+            tool_call_id: None,
+            payload: serde_json::json!({ "reason": "user_cancelled" }),
+        });
+
         run_repo
             .emit_event(
                 run_id,
