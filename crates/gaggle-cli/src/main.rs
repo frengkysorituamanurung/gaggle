@@ -230,8 +230,8 @@ async fn main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 }
                 AcpCommands::Cancel { session } => {
-                    let resp = client.cancel(&session).await?;
-                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                    client.cancel(&session).await?;
+                    println!("{{\"cancelled\": true}}");
                 }
                 AcpCommands::List => {
                     let resp = client.list_sessions().await?;

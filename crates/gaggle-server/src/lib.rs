@@ -3712,11 +3712,11 @@ async fn acp_cancel_handler(
     Json(req): Json<AcpCancelRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let client = AcpClient::new(&req.target_url);
-    let resp = client
+    client
         .cancel(&req.session_id)
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
-    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
+    Ok(Json(serde_json::json!({"cancelled": true})))
 }
 
 async fn adversary_run_handler()

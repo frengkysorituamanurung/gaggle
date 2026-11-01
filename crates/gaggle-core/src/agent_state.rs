@@ -23,25 +23,25 @@ pub enum AgentRunState {
 impl AgentRunState {
     pub fn can_transition_to(self, next: AgentRunState) -> bool {
         use AgentRunState::*;
-        match (self, next) {
-            (Created, Running) => true,
-            (Running, AwaitingApproval) => true,
-            (Running, Compacting) => true,
-            (Running, Streaming) => true,
-            (Running, Completed) => true,
-            (Running, Failed) => true,
-            (Running, Cancelled) => true,
-            (AwaitingApproval, Running) => true,
-            (AwaitingApproval, Cancelled) => true,
-            (AwaitingApproval, Failed) => true,
-            (Compacting, Running) => true,
-            (Compacting, Failed) => true,
-            (Streaming, Running) => true,
-            (Streaming, Completed) => true,
-            (Streaming, Failed) => true,
-            (Streaming, Cancelled) => true,
-            _ => false,
-        }
+        matches!(
+            (self, next),
+            (Created, Running)
+                | (Running, AwaitingApproval)
+                | (Running, Compacting)
+                | (Running, Streaming)
+                | (Running, Completed)
+                | (Running, Failed)
+                | (Running, Cancelled)
+                | (AwaitingApproval, Running)
+                | (AwaitingApproval, Cancelled)
+                | (AwaitingApproval, Failed)
+                | (Compacting, Running)
+                | (Compacting, Failed)
+                | (Streaming, Running)
+                | (Streaming, Completed)
+                | (Streaming, Failed)
+                | (Streaming, Cancelled)
+        )
     }
 
     pub fn is_terminal(self) -> bool {

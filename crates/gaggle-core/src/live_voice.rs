@@ -95,10 +95,10 @@ impl LiveVoiceService {
     }
 
     fn api_key(&self) -> Result<String, String> {
-        if let Some(key) = &self.config.api_key {
-            if !key.trim().is_empty() {
-                return Ok(key.clone());
-            }
+        if let Some(key) = &self.config.api_key
+            && !key.trim().is_empty()
+        {
+            return Ok(key.clone());
         }
         std::env::var("OPENAI_API_KEY")
             .map_err(|_| "Live voice API key not configured".to_string())
@@ -364,27 +364,33 @@ mod tests {
 
     #[tokio::test]
     async fn transcribe_empty_path() {
-        let mut config = LiveVoiceConfig::default();
-        config.enabled = true;
-        config.api_key = Some("key".into());
+        let config = LiveVoiceConfig {
+            enabled: true,
+            api_key: Some("key".into()),
+            ..Default::default()
+        };
         let service = LiveVoiceService::new(config);
         assert!(service.transcribe("").await.is_err());
     }
 
     #[tokio::test]
     async fn tts_empty_text() {
-        let mut config = LiveVoiceConfig::default();
-        config.enabled = true;
-        config.api_key = Some("key".into());
+        let config = LiveVoiceConfig {
+            enabled: true,
+            api_key: Some("key".into()),
+            ..Default::default()
+        };
         let service = LiveVoiceService::new(config);
         assert!(service.text_to_speech("", "/tmp/x.mp3").await.is_err());
     }
 
     #[tokio::test]
     async fn tts_empty_output_path() {
-        let mut config = LiveVoiceConfig::default();
-        config.enabled = true;
-        config.api_key = Some("key".into());
+        let config = LiveVoiceConfig {
+            enabled: true,
+            api_key: Some("key".into()),
+            ..Default::default()
+        };
         let service = LiveVoiceService::new(config);
         assert!(service.text_to_speech("hi", "").await.is_err());
     }

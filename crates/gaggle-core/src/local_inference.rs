@@ -294,16 +294,20 @@ mod tests {
 
     #[test]
     fn invalid_backend_rejected() {
-        let mut config = LocalInferenceConfig::default();
-        config.gpu_backend = Some("tpu".into());
+        let config = LocalInferenceConfig {
+            gpu_backend: Some("tpu".into()),
+            ..Default::default()
+        };
         let service = LocalInferenceService::new(config);
         assert!(service.validate_backend().is_err());
     }
 
     #[test]
     fn invalid_config_rejected() {
-        let mut config = LocalInferenceConfig::default();
-        config.context_size = 0;
+        let config = LocalInferenceConfig {
+            context_size: 0,
+            ..Default::default()
+        };
         assert!(!config.is_valid());
         let service = LocalInferenceService::new(config);
         assert!(service.validate().is_err());
@@ -311,8 +315,10 @@ mod tests {
 
     #[test]
     fn validate_model_path_missing() {
-        let mut config = LocalInferenceConfig::default();
-        config.model_path = Some("/definitely/not/a/model.gguf".into());
+        let config = LocalInferenceConfig {
+            model_path: Some("/definitely/not/a/model.gguf".into()),
+            ..Default::default()
+        };
         let service = LocalInferenceService::new(config);
         assert!(service.validate_model_path().is_err());
     }
@@ -325,9 +331,11 @@ mod tests {
 
     #[tokio::test]
     async fn generate_requires_loaded_model() {
-        let mut config = LocalInferenceConfig::default();
-        config.enabled = true;
-        config.model_path = Some("/tmp/model.gguf".into());
+        let config = LocalInferenceConfig {
+            enabled: true,
+            model_path: Some("/tmp/model.gguf".into()),
+            ..Default::default()
+        };
         let service = LocalInferenceService::new(config);
         assert!(service.generate("hi").await.is_err());
     }

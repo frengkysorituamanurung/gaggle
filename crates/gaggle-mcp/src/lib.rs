@@ -2099,6 +2099,9 @@ impl McpConnectionManager {
     }
 }
 
+// Re-export extension registry alias
+pub type McpExtensionRegistry = ExtensionRegistry;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2137,6 +2140,3 @@ mod tests {
         assert!(store.resources("missing").await.is_empty());
     }
 }
-
-// Re-export extension registry alias
-pub type McpExtensionRegistry = ExtensionRegistry;

@@ -485,6 +485,30 @@ impl CompactionEngine {
     }
 }
 
+fn render_parts(parts: &[MessagePart]) -> String {
+    let mut chunks = Vec::new();
+    for part in parts {
+        if part.kind != "text" && part.kind != "tool_result" && part.kind != "tool_call" {
+            continue;
+        }
+        if let Some(content) = part.content.as_deref()
+            && !content.trim().is_empty()
+        {
+            let content = content.trim();
+            if part.kind == "tool_result" {
+                chunks.push(format!(
+                    "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
+                ));
+            } else if part.kind == "tool_call" {
+                chunks.push(format!("<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"));
+            } else {
+                chunks.push(content.to_string());
+            }
+        }
+    }
+    chunks.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,28 +654,4 @@ mod tests {
         );
         Ok(())
     }
-}
-
-fn render_parts(parts: &[MessagePart]) -> String {
-    let mut chunks = Vec::new();
-    for part in parts {
-        if part.kind != "text" && part.kind != "tool_result" && part.kind != "tool_call" {
-            continue;
-        }
-        if let Some(content) = part.content.as_deref()
-            && !content.trim().is_empty()
-        {
-            let content = content.trim();
-            if part.kind == "tool_result" {
-                chunks.push(format!(
-                    "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
-                ));
-            } else if part.kind == "tool_call" {
-                chunks.push(format!("<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"));
-            } else {
-                chunks.push(content.to_string());
-            }
-        }
-    }
-    chunks.join("\n")
 }

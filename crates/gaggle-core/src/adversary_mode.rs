@@ -230,25 +230,31 @@ mod tests {
 
     #[test]
     fn run_tests_respects_max_iterations() {
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 2;
+        let config = AdversaryConfig {
+            max_iterations: 2,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         assert_eq!(runner.run_tests().len(), 2);
     }
 
     #[test]
     fn run_tests_zero_iterations_empty() {
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 0;
+        let config = AdversaryConfig {
+            max_iterations: 0,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         assert!(runner.run_tests().is_empty());
     }
 
     #[test]
     fn run_tests_empty_categories_unknown() {
-        let mut config = AdversaryConfig::default();
-        config.categories.clear();
-        config.max_iterations = 1;
+        let config = AdversaryConfig {
+            categories: vec![],
+            max_iterations: 1,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         let results = runner.run_tests();
         assert_eq!(results[0].category, "unknown");
@@ -285,15 +291,19 @@ mod tests {
 
     #[test]
     fn is_enabled_reflects_config() {
-        let mut config = AdversaryConfig::default();
-        config.enabled = true;
+        let config = AdversaryConfig {
+            enabled: true,
+            ..Default::default()
+        };
         assert!(AdversaryRunner::new(config).is_enabled());
     }
 
     #[tokio::test]
     async fn run_executes_prompts_and_collects_results() {
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 2;
+        let config = AdversaryConfig {
+            max_iterations: 2,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         let results = runner
             .run(
@@ -308,16 +318,20 @@ mod tests {
 
     #[tokio::test]
     async fn run_respects_max_iterations() {
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 1;
+        let config = AdversaryConfig {
+            max_iterations: 1,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config.clone());
         let results = runner
             .run(|_| async { (true, "ok".to_string(), None) })
             .await;
         assert_eq!(results.len(), 1);
 
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 0;
+        let config = AdversaryConfig {
+            max_iterations: 0,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         let results = runner
             .run(|_| async { (true, "ok".to_string(), None) })
@@ -327,8 +341,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_preserves_returned_reason() {
-        let mut config = AdversaryConfig::default();
-        config.max_iterations = 1;
+        let config = AdversaryConfig {
+            max_iterations: 1,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         let results = runner
             .run(|_| async { (false, "nope".to_string(), Some("failed".to_string())) })
@@ -340,9 +356,11 @@ mod tests {
 
     #[tokio::test]
     async fn run_empty_categories_unknown() {
-        let mut config = AdversaryConfig::default();
-        config.categories.clear();
-        config.max_iterations = 1;
+        let config = AdversaryConfig {
+            categories: vec![],
+            max_iterations: 1,
+            ..Default::default()
+        };
         let runner = AdversaryRunner::new(config);
         let results = runner
             .run(|_| async { (true, "ok".to_string(), None) })
