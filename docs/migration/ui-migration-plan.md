@@ -26,7 +26,7 @@
 - [x] Accessibility baseline: focus-visible rings in Button; reduced-motion media query added to styles.css
 - [x] LiveVoiceButton wired to useLiveVoice controller (Web Speech API)
 - [x] CI/CD updated: frontend job (tsc/build/test) in ci.yml; ui build step in reusable-build.yml; release.yml frontend verify; setup-node action fixed
-- [x] cargo fmt issues in acp.rs manually aligned to rustfmt (remaining minor diffs may need `cargo fmt --all`)
+- [ ] cargo fmt issues in acp.rs (pre-existing) — revert manual edits; run `cargo fmt --all` locally to fix
 - [x] Visual/brand icons expanded further; LoadingGoose/FlyingBird/GooseLogo/AnimatedIcons improved
 - [ ] i18n compile step (formatjs) — not adopted; Gaggle uses react-intl runtime
 - [ ] Desktop startup, asset loading, packaging — not verified in this environment
