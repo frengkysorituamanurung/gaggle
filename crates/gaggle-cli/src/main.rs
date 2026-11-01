@@ -222,7 +222,7 @@ async fn main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 }
                 AcpCommands::NewSession { cwd } => {
-                    let resp = client.new_session(cwd.as_deref()).await?;
+                    let resp = client.new_session(cwd).await?;
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 }
                 AcpCommands::Prompt { session, text } => {

@@ -291,7 +291,7 @@ impl LiveVoiceService {
     /// List available input devices.
     #[cfg(feature = "live-voice")]
     pub fn list_input_devices(&self) -> Result<Vec<String>, String> {
-        use cpal::traits::HostTrait;
+        use cpal::traits::{DeviceTrait, HostTrait};
         let host = cpal::default_host();
         let devices = host
             .input_devices()

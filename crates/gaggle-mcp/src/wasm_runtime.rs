@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,6 @@ use wasmtime::component::{Component, Linker, Val};
 use wasmtime::{Engine, Store};
 
 #[cfg(feature = "wasm")]
-#[derive(Debug)]
 pub struct WasmExtensionRuntime {
     engine: Engine,
     component: Option<Component>,
@@ -59,7 +58,7 @@ impl WasmExtensionRuntime {
     pub fn load_module(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         let component = Component::from_file(&self.engine, path)
-            .with_context(|| format!("failed to load wasm module '{}'", path.display()))?;
+            .map_err(|e| anyhow::anyhow!("failed to load wasm module '{}': {}", path.display(), e))?;
         self.component = Some(component);
         self.path = Some(path.to_path_buf());
         Ok(())
@@ -119,7 +118,7 @@ fn run_component(engine: &Engine, component: &Component, input: Value) -> Result
     let mut store = Store::new(engine, ());
     let instance = linker
         .instantiate(&mut store, component)
-        .context("failed to instantiate wasm module")?;
+        .map_err(|e| anyhow::anyhow!("failed to instantiate wasm module: {}", e))?;
     let func = instance
         .get_func(&mut store, "run")
         .context("exported 'run' function not found")?;
@@ -128,7 +127,7 @@ fn run_component(engine: &Engine, component: &Component, input: Value) -> Result
     let params = [Val::String(input_json)];
     let mut results = [Val::String(String::new())];
     func.call(&mut store, &params, &mut results)
-        .context("failed to call exported 'run' function")?;
+        .map_err(|e| anyhow::anyhow!("failed to call exported 'run' function: {}", e))?;
 
     let output = match &results[0] {
         Val::String(s) => s.clone(),

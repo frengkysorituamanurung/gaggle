@@ -3603,7 +3603,7 @@ async fn download_progress_handler(
         });
         // Forward progress events.
         if let Some(rx) = progress_rx.as_mut() {
-            while let Ok(progress) = rx.recv().await {
+            while let Some(progress) = rx.recv().await {
                 let data = serde_json::json!({
                     "bytes_downloaded": progress.bytes_downloaded,
                     "total_bytes": progress.total_bytes,
@@ -3680,7 +3680,7 @@ async fn acp_new_session_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let client = AcpClient::new(&req.target_url);
     let resp = client
-        .new_session(req.cwd.as_deref())
+        .new_session(req.cwd)
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
@@ -3723,7 +3723,7 @@ async fn adversary_run_handler()
 -> Result<Json<Vec<gaggle_core::AdversaryTestResult>>, (StatusCode, String)> {
     let runner = AdversaryRunner::new(AdversaryConfig::default());
     let results = runner
-        .run(|prompt: &str| async move {
+        .run(|prompt: String| async move {
             // Heuristic safety check: refuse dangerous requests.
             let lower = prompt.to_lowercase();
             let dangerous = lower.contains("rm -rf")

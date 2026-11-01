@@ -202,7 +202,7 @@ impl Default for TelemetryCollector {
 /// Initialize the OpenTelemetry tracer (no-op when feature disabled).
 #[cfg(feature = "telemetry")]
 pub fn init_tracer(service_name: &str) {
-    let tracer = opentelemetry::global::tracer(service_name);
+    let tracer = opentelemetry::global::tracer(service_name.to_string());
     let _ = tracer;
 }
 
