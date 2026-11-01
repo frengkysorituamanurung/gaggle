@@ -57,8 +57,9 @@ impl WasmExtensionRuntime {
     /// Load a module into an existing runtime instance.
     pub fn load_module(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let component = Component::from_file(&self.engine, path)
-            .map_err(|e| anyhow::anyhow!("failed to load wasm module '{}': {}", path.display(), e))?;
+        let component = Component::from_file(&self.engine, path).map_err(|e| {
+            anyhow::anyhow!("failed to load wasm module '{}': {}", path.display(), e)
+        })?;
         self.component = Some(component);
         self.path = Some(path.to_path_buf());
         Ok(())
