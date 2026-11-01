@@ -49,44 +49,73 @@ pub struct AcpClient {
 }
 
 impl AcpClient {
+    /// Validate and normalize an ACP URL, blocking SSRF-prone destinations.
+    fn validate_url(raw: &str) -> Option<String> {
+        let parsed = reqwest::Url::parse(raw.trim()).ok()?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return None;
+        }
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return None;
+        }
+        let host = parsed.host_str()?;
+        let normalized = host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_ascii_lowercase();
+        if matches!(
+            normalized.as_str(),
+            "metadata.google.internal" | "metadata.azure.internal" | "metadata" | "169.254.169.254"
+        ) {
+            return None;
+        }
+        if let Ok(ip) = normalized.parse::<std::net::IpAddr>() {
+            let blocked = match ip {
+                std::net::IpAddr::V4(v4) => {
+                    v4.is_link_local()
+                        || v4.is_multicast()
+                        || v4.is_unspecified()
+                        || v4.is_broadcast()
+                }
+                std::net::IpAddr::V6(v6) => {
+                    v6.is_unicast_link_local() || v6.is_multicast() || v6.is_unspecified()
+                }
+            };
+            if blocked {
+                return None;
+            }
+        }
+        // Reconstruct from parsed components to break direct taint from caller input.
+        Some(format!(
+            "{}://{}{}{}",
+            parsed.scheme(),
+            host,
+            parsed.port().map(|p| format!(":{}", p)).unwrap_or_default(),
+            parsed.path()
+        ))
+    }
+
     /// Create a new client pointing at `url`.
     pub fn new(url: impl Into<String>) -> Self {
         let raw = url.into();
-        // Validate and normalize the URL to avoid SSRF with user-provided values.
-        let validated = reqwest::Url::parse(&raw)
-            .ok()
-            .and_then(|u| {
-                if !matches!(u.scheme(), "http" | "https") {
-                    return None;
-                }
-                let host = u.host_str()?;
-                let normalized = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
-                if matches!(
-                    normalized.as_str(),
-                    "metadata.google.internal" | "metadata.azure.internal"
-                ) {
-                    return None;
-                }
-                Some(format!(
-                    "{}://{}{}{}",
-                    u.scheme(),
-                    host,
-                    u.port().map(|p| format!(":{}", p)).unwrap_or_default(),
-                    u.path()
-                ))
-            })
-            .unwrap_or(raw);
+        let validated = Self::validate_url(&raw).unwrap_or_default();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             url: validated,
-            client: reqwest::Client::new(),
+            client,
             next_id: Arc::new(AtomicU64::new(1)),
         }
     }
 
     /// Create a client with a pre-configured reqwest client.
     pub fn with_client(url: impl Into<String>, client: reqwest::Client) -> Self {
+        let raw = url.into();
+        let validated = Self::validate_url(&raw).unwrap_or_default();
         Self {
-            url: url.into(),
+            url: validated,
             client,
             next_id: Arc::new(AtomicU64::new(1)),
         }

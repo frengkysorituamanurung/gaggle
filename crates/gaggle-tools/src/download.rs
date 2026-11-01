@@ -38,12 +38,50 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
     if url.trim().is_empty() {
         return Err(DownloadError::EmptyUrl);
     }
-    let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    let parsed =
+        reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(DownloadError::InvalidUrl("Unsupported URL scheme".to_string()));
+        return Err(DownloadError::InvalidUrl(
+            "Unsupported URL scheme".to_string(),
+        ));
     }
-    if parsed.host_str().is_none() {
-        return Err(DownloadError::InvalidUrl("Missing host".to_string()));
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(DownloadError::InvalidUrl(
+            "Credentials must not be embedded in the URL".to_string(),
+        ));
+    }
+    let host = parsed.host_str().ok_or_else(|| {
+        DownloadError::InvalidUrl("Missing host".to_string())
+    })?;
+    let normalized = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "metadata.google.internal" | "metadata.azure.internal" | "metadata" | "169.254.169.254"
+    ) {
+        return Err(DownloadError::InvalidUrl(
+            "Cloud metadata endpoints are not allowed".to_string(),
+        ));
+    }
+    if let Ok(ip) = normalized.parse::<std::net::IpAddr>() {
+        let blocked = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_link_local()
+                    || v4.is_multicast()
+                    || v4.is_unspecified()
+                    || v4.is_broadcast()
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_unicast_link_local() || v6.is_multicast() || v6.is_unspecified()
+            }
+        };
+        if blocked {
+            return Err(DownloadError::InvalidUrl(
+                "Destination address is not allowed".to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -58,7 +96,10 @@ impl DownloadManager {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             progress_tx: tx,
             progress_rx: Arc::new(Mutex::new(Some(rx))),
         }
@@ -67,7 +108,8 @@ impl DownloadManager {
     pub async fn download(&self, url: &str, dest: PathBuf) -> Result<PathBuf, DownloadError> {
         validate_url(url)?;
         // Reconstruct the URL from parsed components to break taint from caller input.
-        let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+        let parsed =
+            reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
         let safe_url = format!(
             "{}://{}{}{}",
             parsed.scheme(),
