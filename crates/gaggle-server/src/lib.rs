@@ -10,20 +10,20 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use futures::{StreamExt, stream::Stream};
+use gaggle_core::AdversaryRunner;
 use gaggle_core::CompactionEngine;
 use gaggle_core::adversary_mode::AdversaryConfig;
-use gaggle_core::AdversaryRunner;
 use gaggle_core::live_voice::LiveVoiceConfig;
 use gaggle_core::moim::ModelInstruction;
 use gaggle_core::{
     AcpClient, ActionableError, ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, AnthropicAdapter,
-    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, CompositeToolExecutor,
-    CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS, DataPreservation, DiagnosticReport,
-    DiagnosticsExport, FailureCategory, GoogleGeminiAdapter, InMemoryCredentialStore,
-    KeyringCredentialStore, MockProviderAdapter, ModelCompletionResponse, ModelProviderAdapter,
-    ChatSnapshot, MoimManager, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine, SecretString, SnapshotManager,
-    TokenUsage,
-    ToolExecutor, WorkspacePathPolicy, collect_diagnostics, export_diagnostics, validate_provider_base_url,
+    BuildIdentity, ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, ChatSnapshot,
+    CompositeToolExecutor, CorrelationIds, CredentialStore, DEFAULT_MAX_AGENT_STEPS,
+    DataPreservation, DiagnosticReport, DiagnosticsExport, FailureCategory, GoogleGeminiAdapter,
+    InMemoryCredentialStore, KeyringCredentialStore, MockProviderAdapter, ModelCompletionResponse,
+    ModelProviderAdapter, MoimManager, OllamaAdapter, OpenAiCompatibleAdapter, RunEngine,
+    SecretString, SnapshotManager, TokenUsage, ToolExecutor, WorkspacePathPolicy,
+    collect_diagnostics, export_diagnostics, validate_provider_base_url,
 };
 use gaggle_db::{
     connection::{new_id, now_ms},
@@ -3537,7 +3537,10 @@ async fn delete_chat_instruction(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     if count == 0 {
-        return Err((StatusCode::NOT_FOUND, format!("Instruction '{instruction_id}' not found")));
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("Instruction '{instruction_id}' not found"),
+        ));
     }
     let manager = MoimManager::new(state.pool.clone());
     manager
@@ -3571,7 +3574,9 @@ async fn download_file_handler(
         .download(&req.url, dest)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-    Ok(Json(serde_json::json!({"path": path.display().to_string()})))
+    Ok(Json(
+        serde_json::json!({"path": path.display().to_string()}),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -3614,15 +3619,21 @@ async fn download_progress_handler(
         match download_task.await {
             Ok(Ok(path)) => {
                 let data = serde_json::json!({"path": path.display().to_string()}).to_string();
-                let _ = tx.send(Ok(Event::default().event("done").data(data))).await;
+                let _ = tx
+                    .send(Ok(Event::default().event("done").data(data)))
+                    .await;
             }
             Ok(Err(e)) => {
                 let data = serde_json::json!({"error": e.to_string()}).to_string();
-                let _ = tx.send(Ok(Event::default().event("error").data(data))).await;
+                let _ = tx
+                    .send(Ok(Event::default().event("error").data(data)))
+                    .await;
             }
             Err(e) => {
                 let data = serde_json::json!({"error": e.to_string()}).to_string();
-                let _ = tx.send(Ok(Event::default().event("error").data(data))).await;
+                let _ = tx
+                    .send(Ok(Event::default().event("error").data(data)))
+                    .await;
             }
         }
     });
@@ -3710,7 +3721,8 @@ async fn acp_cancel_handler(
     Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
 }
 
-async fn adversary_run_handler() -> Result<Json<Vec<gaggle_core::AdversaryTestResult>>, (StatusCode, String)> {
+async fn adversary_run_handler()
+-> Result<Json<Vec<gaggle_core::AdversaryTestResult>>, (StatusCode, String)> {
     let runner = AdversaryRunner::new(AdversaryConfig::default());
     let results = runner
         .run(|prompt: &str| async move {

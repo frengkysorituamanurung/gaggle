@@ -216,7 +216,9 @@ pub type PromptsGetResponse = McpPromptResult;
 // Conversions for ergonomic method calls.
 impl From<&str> for ReadResourceRequest {
     fn from(value: &str) -> Self {
-        Self { uri: value.to_string() }
+        Self {
+            uri: value.to_string(),
+        }
     }
 }
 
@@ -225,7 +227,6 @@ impl From<String> for ReadResourceRequest {
         Self { uri: value }
     }
 }
-
 
 impl From<(&str, Value)> for GetPromptRequest {
     fn from((name, arguments): (&str, Value)) -> Self {

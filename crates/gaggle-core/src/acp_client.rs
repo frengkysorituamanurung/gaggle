@@ -6,8 +6,8 @@
 use crate::acp::AcpError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Re-exported alias for callers that prefer a client-specific error name.
 pub type AcpClientError = AcpError;
@@ -129,10 +129,7 @@ impl AcpClient {
     }
 
     pub fn build_cancel_request(&self, session_id: &str) -> JsonRpcRequest {
-        self.build_notification(
-            "session/cancel",
-            json!({"sessionId": session_id}),
-        )
+        self.build_notification("session/cancel", json!({"sessionId": session_id}))
     }
 
     pub fn build_list_sessions_request(&self) -> JsonRpcRequest {
@@ -178,7 +175,10 @@ impl AcpClient {
             )));
         }
 
-        let bytes = response.bytes().await.map_err(|e| AcpError::Io(e.to_string()))?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AcpError::Io(e.to_string()))?;
         if bytes.is_empty() {
             return Ok(None);
         }

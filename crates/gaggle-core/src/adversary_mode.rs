@@ -70,7 +70,10 @@ impl AdversaryRunner {
     /// Run all configured adversary tests and return results.
     pub fn run_tests(&self) -> Vec<AdversaryTestResult> {
         let mut results = Vec::new();
-        let limit = self.config.max_iterations.min(self.config.test_prompts.len());
+        let limit = self
+            .config
+            .max_iterations
+            .min(self.config.test_prompts.len());
         for i in 0..limit {
             let prompt = &self.config.test_prompts[i];
             let category = if self.config.categories.is_empty() {
@@ -104,7 +107,10 @@ impl AdversaryRunner {
         Fut: Future<Output = (bool, String, Option<String>)>,
     {
         let mut results = Vec::new();
-        let limit = self.config.max_iterations.min(self.config.test_prompts.len());
+        let limit = self
+            .config
+            .max_iterations
+            .min(self.config.test_prompts.len());
         for i in 0..limit {
             let prompt = self.config.test_prompts[i].clone();
             let category = if self.config.categories.is_empty() {
@@ -290,9 +296,9 @@ mod tests {
         config.max_iterations = 2;
         let runner = AdversaryRunner::new(config);
         let results = runner
-            .run(|prompt| async move {
-                (prompt.contains("rm"), format!("reply: {}", prompt), None)
-            })
+            .run(
+                |prompt| async move { (prompt.contains("rm"), format!("reply: {}", prompt), None) },
+            )
             .await;
         assert_eq!(results.len(), 2);
         assert!(!results[0].passed);
@@ -305,13 +311,17 @@ mod tests {
         let mut config = AdversaryConfig::default();
         config.max_iterations = 1;
         let runner = AdversaryRunner::new(config.clone());
-        let results = runner.run(|_| async { (true, "ok".to_string(), None) }).await;
+        let results = runner
+            .run(|_| async { (true, "ok".to_string(), None) })
+            .await;
         assert_eq!(results.len(), 1);
 
         let mut config = AdversaryConfig::default();
         config.max_iterations = 0;
         let runner = AdversaryRunner::new(config);
-        let results = runner.run(|_| async { (true, "ok".to_string(), None) }).await;
+        let results = runner
+            .run(|_| async { (true, "ok".to_string(), None) })
+            .await;
         assert!(results.is_empty());
     }
 
@@ -334,7 +344,9 @@ mod tests {
         config.categories.clear();
         config.max_iterations = 1;
         let runner = AdversaryRunner::new(config);
-        let results = runner.run(|_| async { (true, "ok".to_string(), None) }).await;
+        let results = runner
+            .run(|_| async { (true, "ok".to_string(), None) })
+            .await;
         assert_eq!(results[0].category, "unknown");
     }
 }

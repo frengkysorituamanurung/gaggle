@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use gaggle_core::{
-    AcpClient, DiagnosticReport, HealthStatus, WorkspacePathPolicy, collect_diagnostics, init_tracing,
-    snapshots::SnapshotManager,
+    AcpClient, DiagnosticReport, HealthStatus, WorkspacePathPolicy, collect_diagnostics,
+    init_tracing, snapshots::SnapshotManager,
 };
 use gaggle_db::{connect_db, default_db_path, repositories::projects::ProjectRepository};
 use gaggle_tools::register_builtin_extensions;

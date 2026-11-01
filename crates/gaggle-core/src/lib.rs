@@ -51,9 +51,7 @@ pub mod workspace_policy;
 pub use acp::{
     AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport,
 };
-pub use acp_client::{
-    AcpClient, AcpClientError, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
-};
+pub use acp_client::{AcpClient, AcpClientError, JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use agent_loop::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, CompositeToolExecutor,
     DEFAULT_MAX_AGENT_STEPS, MAX_TOOL_RESPONSE_CHARS, ToolExecutor,

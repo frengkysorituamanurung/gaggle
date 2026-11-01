@@ -638,10 +638,7 @@ fn fit_memories(system_prefix: &str, memories: &[Memory], allowance: i64) -> (St
 fn render_history_content(parts: &[MessagePart]) -> Option<String> {
     let mut chunks = Vec::new();
     for part in parts {
-        if part.kind != "text"
-            && part.kind != "tool_result"
-            && part.kind != "tool_call"
-        {
+        if part.kind != "text" && part.kind != "tool_result" && part.kind != "tool_call" {
             continue;
         }
         if let Some(content) = part.content.as_deref()
@@ -653,9 +650,7 @@ fn render_history_content(parts: &[MessagePart]) -> Option<String> {
                     "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
                 ));
             } else if part.kind == "tool_call" {
-                chunks.push(format!(
-                    "<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"
-                ));
+                chunks.push(format!("<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"));
             } else {
                 chunks.push(content.to_string());
             }

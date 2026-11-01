@@ -490,7 +490,10 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use crate::{ModelCompletionResponse, ProviderError, TokenUsage};
-    use gaggle_db::{connect_in_memory, repositories::chats::ChatRepository, repositories::projects::ProjectRepository, repositories::runs::RunRepository};
+    use gaggle_db::{
+        connect_in_memory, repositories::chats::ChatRepository,
+        repositories::projects::ProjectRepository, repositories::runs::RunRepository,
+    };
     use std::sync::Mutex;
 
     struct CapturingProvider {
@@ -563,9 +566,18 @@ mod tests {
                 .await?;
         assert!(result.is_some());
         let captured = provider.captured.lock().unwrap().clone();
-        assert!(captured.contains("[tool pair"), "missing tool pair chunk: {captured}");
-        assert!(captured.contains("<<<TOOL_CALL>>>"), "missing tool call: {captured}");
-        assert!(captured.contains("<<<TOOL_RESULT>>>"), "missing tool result: {captured}");
+        assert!(
+            captured.contains("[tool pair"),
+            "missing tool pair chunk: {captured}"
+        );
+        assert!(
+            captured.contains("<<<TOOL_CALL>>>"),
+            "missing tool call: {captured}"
+        );
+        assert!(
+            captured.contains("<<<TOOL_RESULT>>>"),
+            "missing tool result: {captured}"
+        );
         Ok(())
     }
 
@@ -585,10 +597,23 @@ mod tests {
         let run_repo = RunRepository::new(pool.clone());
         let run = run_repo.create(&chat.id, None, None).await?;
         let tool_call = run_repo
-            .record_tool_call(&run.id, 1, "native", "shell.exec", "{}", "awaiting_approval")
+            .record_tool_call(
+                &run.id,
+                1,
+                "native",
+                "shell.exec",
+                "{}",
+                "awaiting_approval",
+            )
             .await?;
         let approval = run_repo
-            .create_approval(&tool_call.id, "shell", "summary", Some("rm -rf /"), Some("/tmp/x"))
+            .create_approval(
+                &tool_call.id,
+                "shell",
+                "summary",
+                Some("rm -rf /"),
+                Some("/tmp/x"),
+            )
             .await?;
 
         let provider = CapturingProvider {
@@ -598,7 +623,11 @@ mod tests {
             CompactionEngine::maybe_compact_chat(pool.clone(), &chat.id, 10, &provider, "manual")
                 .await?;
         let cr = result.expect("compaction should run");
-        assert!(cr.summary.contains(&approval.id), "approval id missing: {}", cr.summary);
+        assert!(
+            cr.summary.contains(&approval.id),
+            "approval id missing: {}",
+            cr.summary
+        );
         Ok(())
     }
 }
@@ -606,10 +635,7 @@ mod tests {
 fn render_parts(parts: &[MessagePart]) -> String {
     let mut chunks = Vec::new();
     for part in parts {
-        if part.kind != "text"
-            && part.kind != "tool_result"
-            && part.kind != "tool_call"
-        {
+        if part.kind != "text" && part.kind != "tool_result" && part.kind != "tool_call" {
             continue;
         }
         if let Some(content) = part.content.as_deref()
@@ -621,9 +647,7 @@ fn render_parts(parts: &[MessagePart]) -> String {
                     "<<<TOOL_RESULT>>>\n{content}\n<<<END_TOOL_RESULT>>>"
                 ));
             } else if part.kind == "tool_call" {
-                chunks.push(format!(
-                    "<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"
-                ));
+                chunks.push(format!("<<<TOOL_CALL>>>\n{content}\n<<<END_TOOL_CALL>>>"));
             } else {
                 chunks.push(content.to_string());
             }

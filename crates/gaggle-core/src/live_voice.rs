@@ -327,8 +327,10 @@ impl LiveVoiceService {
             return false;
         }
         // OpenAI Whisper supports many languages; accept for configured providers.
-        matches!(self.config.provider.as_str(), "openai" | "whisper" | "azure")
-            || self.config.provider.trim().is_empty()
+        matches!(
+            self.config.provider.as_str(),
+            "openai" | "whisper" | "azure"
+        ) || self.config.provider.trim().is_empty()
     }
 }
 

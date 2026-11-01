@@ -94,12 +94,10 @@ impl OidcProxy {
             return Err("redirect_uri is required".to_string());
         }
         if let Some(issuer) = &self.config.issuer_url {
-            reqwest::Url::parse(issuer)
-                .map_err(|e| format!("Invalid issuer_url: {}", e))?;
+            reqwest::Url::parse(issuer).map_err(|e| format!("Invalid issuer_url: {}", e))?;
         }
         if let Some(redirect) = &self.config.redirect_uri {
-            reqwest::Url::parse(redirect)
-                .map_err(|e| format!("Invalid redirect_uri: {}", e))?;
+            reqwest::Url::parse(redirect).map_err(|e| format!("Invalid redirect_uri: {}", e))?;
         }
         Ok(())
     }
@@ -129,8 +127,8 @@ impl OidcProxy {
             .ok_or("redirect_uri not configured")?;
 
         let base = format!("{}/authorize", issuer.trim_end_matches('/'));
-        let mut url = reqwest::Url::parse(&base)
-            .map_err(|e| format!("Invalid authorization URL: {}", e))?;
+        let mut url =
+            reqwest::Url::parse(&base).map_err(|e| format!("Invalid authorization URL: {}", e))?;
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("response_type", "code");
@@ -220,7 +218,9 @@ impl OidcProxy {
         token: &str,
         jwks: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation, jwk::JwkSet};
+        use jsonwebtoken::{
+            Algorithm, DecodingKey, Validation, decode, decode_header, jwk::JwkSet,
+        };
 
         let header = decode_header(token).map_err(|e| format!("Invalid token header: {}", e))?;
         let jwk_set: JwkSet =
@@ -231,8 +231,8 @@ impl OidcProxy {
             .iter()
             .find(|k| k.common.key_id.as_deref() == Some(kid.as_str()))
             .ok_or_else(|| "matching JWK not found".to_string())?;
-        let decoding_key = DecodingKey::from_jwk(jwk)
-            .map_err(|e| format!("Invalid decoding key: {}", e))?;
+        let decoding_key =
+            DecodingKey::from_jwk(jwk).map_err(|e| format!("Invalid decoding key: {}", e))?;
         let mut validation = Validation::new(header.alg);
         if let Some(issuer) = &self.config.issuer_url {
             validation.set_issuer(&[issuer.as_str()]);
