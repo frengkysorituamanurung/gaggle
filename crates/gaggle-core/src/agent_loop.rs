@@ -40,6 +40,7 @@ pub const MAX_TOOL_RESPONSE_CHARS: usize = 200_000;
 
 /// Thread-safe cooperative cancellation token for an active run.
 #[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct CancellationToken {
     cancelled: Arc<AtomicBool>,
     notify: Arc<Notify>,

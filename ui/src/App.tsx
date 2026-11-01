@@ -35,6 +35,7 @@ import AppsView from "./components/apps/AppsView";
 import StandaloneAppView from "./components/apps/StandaloneAppView";
 
 import React from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function Shell() {
   const [launcherOpen, setLauncherOpen] = React.useState(false);
@@ -93,6 +94,7 @@ const appMessages = defineMessages({
 export default function App() {
   const intl = useIntl();
   return (
+    <ErrorBoundary>
     <AppProvider>
       <BrowserRouter>
         <div className="titlebar-drag-region" />
@@ -113,5 +115,6 @@ export default function App() {
         />
       </BrowserRouter>
     </AppProvider>
+    </ErrorBoundary>
   );
 }

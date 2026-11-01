@@ -96,6 +96,8 @@ pub struct AppState {
     pub terminal_manager: Arc<TerminalManager>,
     pub mcp_connections: McpConnectionManager,
     pub permission_bridge: Arc<acp::PermissionBridge>,
+    pub elicitation_bridge: Arc<acp::ElicitationBridge>,
+    pub acp_sessions: Arc<acp::AcpSessionManager>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -239,9 +241,16 @@ pub struct CreateModelRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct ChatAttachmentInput {
+    pub name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SubmitChatMessageRequest {
     pub prompt: String,
     pub model_key: Option<String>,
+    pub attachments: Option<Vec<ChatAttachmentInput>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -622,6 +631,8 @@ pub async fn initialize_server_state_with_credential_store(
     let terminal_manager = Arc::new(TerminalManager::new(pool.clone()));
     let mcp_connections = McpConnectionManager::with_pool(pool.clone());
     let permission_bridge = Arc::new(acp::PermissionBridge::new());
+    let elicitation_bridge = Arc::new(acp::ElicitationBridge::new());
+    let acp_sessions = Arc::new(acp::AcpSessionManager::new());
     let state = AppState {
         pool,
         db_path,
@@ -631,6 +642,8 @@ pub async fn initialize_server_state_with_credential_store(
         terminal_manager,
         mcp_connections,
         permission_bridge,
+        elicitation_bridge,
+        acp_sessions,
     };
     let _ = missed_run_catchup(&state).await;
     Ok(state)
@@ -3209,6 +3222,25 @@ async fn start_chat_run(
         .append_message(&chat_id, None, "user", &req.prompt)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Persist attachments as message parts (best-effort).
+    if let Some(attachments) = &req.attachments {
+        let mut idx: i64 = 1;
+        for att in attachments {
+            let part_id = new_id();
+            let _ = sqlx::query(
+                r#"INSERT INTO message_parts (id, message_id, idx, kind, content) VALUES (?, ?, ?, 'attachment', ?)"#,
+            )
+            .bind(&part_id)
+            .bind(&user_msg.id)
+            .bind(idx)
+            .bind(&att.name)
+            .execute(&state.pool)
+            .await;
+            idx += 1;
+        }
+    }
+
     let run_repo = RunRepository::new(state.pool.clone());
     let run = run_repo
         .create(&chat_id, Some(&user_msg.id), chat.model_id.as_deref())

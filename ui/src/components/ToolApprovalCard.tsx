@@ -30,6 +30,7 @@ export function ToolApprovalCard({
   const intl = useIntl();
   const [remember, setRemember] = useState(false);
   const [matchKind, setMatchKind] = useState<"exact" | "prefix">("exact");
+  const [always, setAlways] = useState(false);
 
   return (
     <div className="mt-3 rounded-md border border-border-primary bg-background-secondary p-3 text-sm">
@@ -56,9 +57,12 @@ export function ToolApprovalCard({
           </select>
         )}
       </label>
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button size="sm" variant="default" onClick={() => onDecide(true, remember && command ? { pattern: command, matchKind } : undefined)}>
           {intl.formatMessage(messages.approve)}
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => onDecide(true, command ? { pattern: command, matchKind: "prefix" } : undefined)}>
+          Allow always
         </Button>
         <Button size="sm" variant="destructive" onClick={() => onDecide(false)}>
           {intl.formatMessage(messages.deny)}

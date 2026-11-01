@@ -82,6 +82,39 @@ jobs:
       - name: Validate shell script syntax
         run: bash -n .github/scripts/*.sh scripts/*.sh
 
+  frontend:
+    name: Frontend build, typecheck & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca86422071d121c1d3a5683285 # v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Typecheck frontend (tsc)
+        working-directory: ui
+        run: npx tsc --noEmit
+
+      - name: Build frontend (vite)
+        working-directory: ui
+        run: npm run build
+
+      - name: Run frontend tests (vitest)
+        working-directory: ui
+        run: npm test
+
   service-smoke:
     name: Service smoke test (PR to development)
     runs-on: ubuntu-latest
