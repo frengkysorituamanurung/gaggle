@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+
 export function InstructionsEditor({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
   const [text, setText] = useState(value || "");
   return (
@@ -9,4 +10,5 @@ export function InstructionsEditor({ value, onChange }: { value?: string; onChan
     />
   );
 }
-export default InstructionsEditor;<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: ui/src/components/recipes/shared/InstructionsEditor.tsx
+
+export default InstructionsEditor;

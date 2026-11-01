@@ -18,4 +18,4 @@ export function ConfigureApproveMode({ mode, onChange }: { mode?: string; onChan
   );
 }
 
-export default ConfigureApproveMode;><|end|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: ui/src/components/settings/mode/ConfigureApproveMode.tsx
+export default ConfigureApproveMode;

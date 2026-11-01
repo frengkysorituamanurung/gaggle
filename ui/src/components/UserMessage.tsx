@@ -11,4 +11,4 @@ export function UserMessage({ content }: { content: string }) {
   );
 }
 
-export default UserMessage;><|start|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: ui/src/components/UserMessage.tsx
+export default UserMessage;

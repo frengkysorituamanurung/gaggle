@@ -11,4 +11,4 @@ export function GitBranchIndicator({ branch }: { branch?: string | null }) {
   );
 }
 
-export default GitBranchIndicator;<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: ui/src/components/GitBranchIndicator.tsx
+export default GitBranchIndicator;
