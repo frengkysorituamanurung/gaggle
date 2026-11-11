@@ -6,6 +6,7 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use sqlx::SqlitePool;
 
+#[derive(Clone)]
 pub struct RunRepository {
     pool: SqlitePool,
     correlation: CorrelationIds,

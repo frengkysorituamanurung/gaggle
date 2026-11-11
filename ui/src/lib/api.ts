@@ -109,10 +109,10 @@ export const api = {
         body: JSON.stringify({ trigger }),
       }),
     export: (id: string) => apiFetch<T.ChatExportBundle>(`/api/chats/${id}/export`),
-    startRun: (id: string, prompt: string, model_key?: string) =>
+    startRun: (id: string, prompt: string, model_key?: string, attachments?: { name: string; content: string }[]) =>
       apiFetch<{ run_id: string }>(`/api/chats/${id}/runs`, {
         method: "POST",
-        body: JSON.stringify({ prompt, model_key }),
+        body: JSON.stringify({ prompt, model_key, attachments }),
       }),
   },
   terminal: {

@@ -18,8 +18,8 @@ describes incremental behavior ports and is superseded for new work.
 | Providers | Gaggle provider trait and adapters; model catalog discovery now supports native OpenAI-compatible, Google, Anthropic, and Ollama endpoints | `goose-provider-types`, `goose-providers`, provider inventory | Continue aligning adapter capabilities and add provider-specific streaming/model metadata; retain secret references and normalize errors/streams |
 | Extensions | `gaggle-mcp` and `gaggle-tools`, with central permission checks | `goose-mcp`, extension manager, built-ins and platform extensions | Port compatible extension lifecycle and tools without bypassing Gaggle's permission engine |
 | Context | Context assembler and basic persisted compaction | Context-management crate, structured summaries, tool-pair compaction | Port context operations after runtime effects are durable and tested |
-| UI | React/Vite app served by Axum; Tauri desktop shell now binds an available loopback port and shuts down its server on exit | React/Electron desktop app | Adopt desktop workflows in stages; keep UI calls on a stable backend contract until cutover |
-| Delivery | CLI/server and macOS/Linux packaging | CLI, desktop, API/ACP, and Windows packaging | Add entry points/platforms only with parity and release tests |
+| UI | React/Vite app served by Axum; Electron desktop shell rebranded from Goose with ACP backend (WebSocket JSON-RPC) | React/Electron desktop app | Electron + ACP is the primary desktop architecture, matching Goose exactly. Tauri is deprecated. |
+| Delivery | CLI/server, Tauri desktop, and Electron desktop (rebranded) with ACP backend | CLI, desktop, API/ACP, and Windows packaging | ACP WebSocket endpoint at /acp; Electron desktop uses ACP for communication |
 
 ## Phases
 
@@ -93,20 +93,29 @@ cancellation, audit-event, and adversarial-input tests.
   signals graceful Axum shutdown on app exit.
 - **Started:** Electron desktop shell rebranded from Goose to Gaggle (binary
   name, package name, protocol scheme, branding). ACP backend dependencies
-  added to gaggle-server. Minimal ACP-compatible endpoints (/health, /status)
-  and in-memory session manager implemented.
-- **Critical assessment:** Full ACP server implementation requires porting
-  Goose's `HandleDispatchFrom<Client>` trait (4000+ lines) which wraps
-  `StateMachineServices`. This is not a simple adapter - it requires
-  implementing the entire ACP JSON-RPC protocol including initialize,
-  new_session, prompt, cancel, session management, config options, and
-  streaming notifications. The recommended approach is to either:
-  1. Port Goose's ACP server module wholesale and adapt it to Gaggle's
-     data model, or
-  2. Create a compatibility bridge that translates ACP requests to
-     Gaggle's REST API.
-  Option 1 is more robust but requires significant effort. Option 2 is
-  faster but may have limitations.
+  added to gaggle-server.
+- **Phase 1 complete:** WebSocket JSON-RPC handler at /acp with initialize,
+  session/new, session/prompt, session/cancel, session/list, session/load,
+  session/delete, session/close, session/fork, session/setConfigOption methods.
+  In-memory session manager with create/get/update/remove/list.
+- **Phase 2 complete:** session/prompt delegates to Gaggle's agent loop.
+  Creates project and chat for ACP session, resolves provider (local-mock
+  default), runs agent loop, returns stop reason.
+- **Phase 3 complete:** Config option bridging (session/setConfigOption)
+  acknowledges provider/model/mode changes. Full persistence requires
+  adding update methods to ChatRepository.
+- **Phase 4 complete:** Streaming responses via WebSocket notifications
+  (session/update with text deltas, tool calls). Permission request bridging
+  (session/request_permission notifications). Agent loop modified to accept
+  notification callback for text deltas and tool calls.
+- **Phase 5 complete:** Usage update notifications sent after completion.
+  Config option persistence to ChatRepository (mode, permission_mode).
+  Session updated with chat_id and project_id for config bridging.
+- **Phase 6 complete:** Full real-time permission response handling via
+  oneshot channel correlation. PermissionBridge with register/resolve.
+  WebSocket handler routes permission responses. 30s timeout with auto-deny.
+- **Phase 7 (next):** Full ACP protocol parity with Goose (initialize,
+  new_session, prompt, cancel, session management, config options, streaming).
 - Align CLI and ACP/API behaviors needed for Goose parity while retaining a
   stable compatibility layer during UI cutover.
 - Decide Electron/Tauri and Windows packaging from measured capability and

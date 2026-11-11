@@ -26,7 +26,10 @@ export function ToolCallCard({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-background-tertiary/80"
       >
-        <span className="font-medium text-text-primary">{label}</span>
+        <span className="flex items-center gap-2 font-medium text-text-primary">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-background-secondary text-xs">T</span>
+          {label}
+        </span>
         <span className="flex items-center gap-2 text-xs">
           {status && <span className={statusColor}>{status}</span>}
           {durationMs != null && <span className="text-text-tertiary">{durationMs}ms</span>}

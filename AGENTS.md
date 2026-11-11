@@ -6,6 +6,7 @@ These instructions are automatically loaded by OpenCode in every session within 
 
 - Use the provided GitHub token for all `gh`/GitHub operations; do not print or commit the token.
 - Quality gates may be run locally when explicitly requested by the user.
+- Do not execute any shell commands or CLI tools. Only modify the codebase (read/edit/write files). Verification and quality gates are the user's responsibility.
 
 ## 1. Mandatory Skill Routing & Discovery
 

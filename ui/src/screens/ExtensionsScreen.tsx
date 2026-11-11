@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type * as T from "../types";
 import { Button } from "../components/ui/Button";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
+import { LoadingState } from "../components/LoadingState";
 
 export default function ExtensionsScreen() {
   const [inv, setInv] = useState<T.ExtensionsInventory | null>(null);
@@ -18,8 +21,11 @@ export default function ExtensionsScreen() {
         <h2 className="text-xl font-semibold text-text-primary">Extensions</h2>
         <Button size="sm" variant="secondary" onClick={async () => { await api.extensions.installBundled(); refresh(); }}>Install Bundled</Button>
       </div>
-      {loading && <div className="text-text-secondary text-sm">Loading…</div>}
-      {error && <div className="text-danger text-sm">{error}</div>}
+      {loading && <LoadingState />}
+      {error && <ErrorState message={error} onRetry={refresh} />}
+      {inv && inv.extensions.length === 0 && !loading && !error && (
+        <EmptyState title="No extensions installed." description="Install bundled extensions to get started." />
+      )}
       {inv && (
         <>
           <p className="text-sm text-text-secondary">

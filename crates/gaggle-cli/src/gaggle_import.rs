@@ -395,7 +395,7 @@ pub async fn import_goose_session_with_credentials(
         project_id: project_id.to_string(),
         result,
         provider_configuration_migrated: false,
-        credentials_imported: _import_credentials,
+        credentials_imported: import_credentials,
         metadata_records,
         usage_records: usage_record_count,
         metadata_values_redacted,
@@ -443,7 +443,7 @@ fn redact_metadata_value(value: Value, redacted: &mut bool) -> Value {
 }
 
 fn is_sensitive_metadata_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase().replace('-', "_").replace('.', "_");
+    let key = key.to_ascii_lowercase().replace(['-', '.'], "_");
     [
         "secret",
         "token",

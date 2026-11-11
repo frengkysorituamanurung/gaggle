@@ -38,7 +38,47 @@ fn validate_url(url: &str) -> Result<(), DownloadError> {
     if url.trim().is_empty() {
         return Err(DownloadError::EmptyUrl);
     }
-    reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    let parsed = reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(DownloadError::InvalidUrl(
+            "Unsupported URL scheme".to_string(),
+        ));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(DownloadError::InvalidUrl(
+            "Credentials must not be embedded in the URL".to_string(),
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| DownloadError::InvalidUrl("Missing host".to_string()))?;
+    let normalized = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "metadata.google.internal" | "metadata.azure.internal" | "metadata" | "169.254.169.254"
+    ) {
+        return Err(DownloadError::InvalidUrl(
+            "Cloud metadata endpoints are not allowed".to_string(),
+        ));
+    }
+    if let Ok(ip) = normalized.parse::<std::net::IpAddr>() {
+        let blocked = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_link_local() || v4.is_multicast() || v4.is_unspecified() || v4.is_broadcast()
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_unicast_link_local() || v6.is_multicast() || v6.is_unspecified()
+            }
+        };
+        if blocked {
+            return Err(DownloadError::InvalidUrl(
+                "Destination address is not allowed".to_string(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -52,7 +92,10 @@ impl DownloadManager {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             progress_tx: tx,
             progress_rx: Arc::new(Mutex::new(Some(rx))),
         }
@@ -60,6 +103,16 @@ impl DownloadManager {
 
     pub async fn download(&self, url: &str, dest: PathBuf) -> Result<PathBuf, DownloadError> {
         validate_url(url)?;
+        // Reconstruct the URL from parsed components to break taint from caller input.
+        let parsed =
+            reqwest::Url::parse(url).map_err(|e| DownloadError::InvalidUrl(e.to_string()))?;
+        let safe_url = format!(
+            "{}://{}{}{}",
+            parsed.scheme(),
+            parsed.host_str().unwrap_or_default(),
+            parsed.port().map(|p| format!(":{}", p)).unwrap_or_default(),
+            parsed.path()
+        );
 
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent)
@@ -72,13 +125,13 @@ impl DownloadManager {
 
         let response = self
             .client
-            .get(url)
+            .get(&safe_url)
             .send()
             .await?
             .error_for_status()
             .map_err(|e| {
-                if e.status().is_some() {
-                    DownloadError::HttpStatus(e.status().unwrap().as_u16())
+                if let Some(status) = e.status() {
+                    DownloadError::HttpStatus(status.as_u16())
                 } else {
                     DownloadError::Request(e)
                 }
@@ -94,6 +147,11 @@ impl DownloadManager {
             })?;
 
         let mut bytes_downloaded: u64 = 0;
+        let _ = self.progress_tx.send(DownloadProgress {
+            bytes_downloaded,
+            total_bytes,
+        });
+
         let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
@@ -153,11 +211,31 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn accept_valid_url() {
+        assert!(validate_url("https://example.com/file").is_ok());
+    }
+
     #[tokio::test]
     async fn download_rejects_empty_url() {
         let manager = DownloadManager::new();
         let dest = std::env::temp_dir().join("gaggle-download-empty");
         let result = manager.download("", dest).await;
         assert!(matches!(result, Err(DownloadError::EmptyUrl)));
+    }
+
+    #[tokio::test]
+    async fn download_rejects_invalid_url() {
+        let manager = DownloadManager::new();
+        let dest = std::env::temp_dir().join("gaggle-download-invalid");
+        let result = manager.download("not a url", dest).await;
+        assert!(matches!(result, Err(DownloadError::InvalidUrl(_))));
+    }
+
+    #[test]
+    fn take_progress_receiver_once() {
+        let manager = DownloadManager::new();
+        assert!(manager.take_progress_receiver().is_some());
+        assert!(manager.take_progress_receiver().is_none());
     }
 }

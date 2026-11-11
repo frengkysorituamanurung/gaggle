@@ -21,7 +21,7 @@ Goose snapshot: `775b3958c`
 | Extensions | MCP + builtins + platform extensions | MCP + builtins | Partial |
 | Desktop | Electron + ACP | Tauri + Axum (Electron rebranded, ACP deps added) | Partial |
 | CLI | Full CLI with ACP | Full CLI | Partial |
-| ACP | Full ACP server | Minimal endpoints (/health, /status) + session manager | Partial |
+| ACP | Full ACP server | WebSocket JSON-RPC with streaming notifications + permission bridging | Partial |
 | i18n | 15 locales | 16 locales | Parity |
 | Local inference | llama.cpp with GPU | None (Ollama only) | Missing |
 | OIDC proxy | Yes | No | Missing |

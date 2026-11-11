@@ -1,10 +1,16 @@
 pub mod acp;
+pub mod acp_client;
+pub mod adversary_mode;
+pub use adversary_mode::{AdversaryConfig, AdversaryRunner, AdversaryTestResult};
 pub mod agent_loop;
+pub mod agent_state;
 pub mod code_mode;
 pub mod compaction;
+pub mod computer_controller;
 pub mod context_assembler;
 pub mod context_limit;
 pub mod observability;
+pub mod oidc_proxy;
 pub mod structured_summary;
 
 pub use compaction::{
@@ -17,7 +23,10 @@ pub use structured_summary::{
     CompactionTemplates, FileActivity, StructuredSummary, Templates, auto_compact_threshold,
     format_message_for_compacting, render_template,
 };
+pub mod genai_telemetry;
 pub mod hooks;
+pub mod live_voice;
+pub mod local_inference;
 pub use hooks::{HookContext, HookDecision, HookEvent, HookManager, HookResult};
 pub mod credentials;
 pub mod diagnostics;
@@ -27,10 +36,13 @@ pub use operations::{
     InferenceOperation, InferenceOperationError, InferenceOutput, Operation, OperationContext,
     OperationOutcome, OperationRunner,
 };
+pub mod moim;
 pub mod permission_engine;
 pub mod provider;
 pub mod provider_oauth;
 pub mod run_engine;
+pub mod slash_commands;
+pub mod snapshots;
 pub mod subagent;
 pub mod subagent_manager;
 pub mod subagents;
@@ -39,10 +51,12 @@ pub mod workspace_policy;
 pub use acp::{
     AcpError, AcpMessage, AcpResponse, AcpTransport, HttpAcpTransport, InMemoryAcpTransport,
 };
+pub use acp_client::{AcpClient, AcpClientError, JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use agent_loop::{
     ActiveRunRegistry, AgentLoopOutcome, AgentRuntime, CancellationToken, CompositeToolExecutor,
     DEFAULT_MAX_AGENT_STEPS, MAX_TOOL_RESPONSE_CHARS, ToolExecutor,
 };
+pub use agent_state::AgentRunState;
 pub use context_assembler::{
     AgentsDocument, AssembledContext, ContextAssembler, ContextAssemblyOptions,
     DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_AGENTS_MD_BYTES, DEFAULT_MAX_AGENTS_MD_FILES,
@@ -60,6 +74,8 @@ pub use diagnostics::{
 };
 pub use errors::{ActionableError, DataPreservation, FailureCategory};
 pub use gaggle_db::CorrelationIds;
+pub use genai_telemetry::TelemetryCollector;
+pub use moim::MoimManager;
 pub use observability::{
     MAX_ARG_VALUE_CHARS, MAX_ARGS_SUMMARY_CHARS, MAX_ERROR_MESSAGE_CHARS, RedactingMakeWriter,
     RedactingWriter, fingerprint_text, init_tracing, redact_log_text, summarize_tool_arguments,
@@ -75,6 +91,8 @@ pub use provider_oauth::{
     ChatGptAdapter, ChatGptOAuthClient, ChatGptOAuthConfig, OAuthTokenSet, PkceAuthorization,
 };
 pub use run_engine::RunEngine;
+pub use slash_commands::{SlashCommand, SlashCommandResult, parse_slash_command};
+pub use snapshots::{ChatSnapshot, SnapshotManager};
 pub use subagents::{
     DEFAULT_MAX_PARALLEL_SUBAGENTS, DEFAULT_SUBAGENT_DEPTH, DEFAULT_SUBAGENT_MAX_STEPS,
     SubagentConfig, SubagentManager, SubagentOutcome, SubagentSpawnRequest,
