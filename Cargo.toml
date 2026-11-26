@@ -33,7 +33,7 @@ axum = { version = "0.8", features = ["ws", "macros"] }
 clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
-croner = "4"
+croner = "5"
 directories = "6"
 flate2 = "1"
 futures = "0.3"
